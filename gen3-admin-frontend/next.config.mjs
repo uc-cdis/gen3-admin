@@ -1,0 +1,24 @@
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
+
+
+const isDevelopment = process.env.NODE_ENV !== "production";
+const rewritesConfig = isDevelopment
+  ? [
+      {
+        source: "/admin-api/:path*", // Matched parameters can be used in the destination
+        destination: "http://localhost:8000/:path*", // Destination URL can be configured by providing a "destination" property
+      },
+    ]
+  : [];
+
+export default withBundleAnalyzer({
+  reactStrictMode: false,
+  rewrites: async () => rewritesConfig,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+});
