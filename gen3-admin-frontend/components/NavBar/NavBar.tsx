@@ -7,7 +7,12 @@ export function NavBar() {
     const router = useRouter();
     return (
         <>
-            <Group direction="column" spacing="xs">
+            <Group>
+                <NavLink
+                    label="Cluster Overview"
+                    active={router.pathname === '/cluster'}
+                    onClick={() => router.push('/cluster')}
+                />
                 <NavLink
                     label="Jobs"
                     active={router.pathname === '/jobs'}

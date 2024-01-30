@@ -1,6 +1,26 @@
-import { Title, Text, Anchor,  Button, Table, HoverCard } from '@mantine/core';
+import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip } from '@mantine/core';
 import { useEffect, useState } from 'react';
+import { differenceInMinutes, differenceInHours, differenceInDays, format } from 'date-fns';
 
+
+const calculateAge = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+  
+    const minutes = differenceInMinutes(now, date);
+    if (minutes < 60) {
+      return `${minutes} minutes old`;
+    }
+  
+    const hours = differenceInHours(now, date);
+    if (hours < 24) {
+      return `${hours} hours old`;
+    }
+  
+    const days = differenceInDays(now, date);
+    return `${days} days old`;
+  };
+  
 
 async function fetchDeployments() {
     try {
@@ -28,14 +48,25 @@ export function DeploymentsPage() {
         });
     }, []);
 
-    const Body = deployments.map((deployment, index) => (
+    const Body = deployments.map((deployment, index) => 
+    
+            {
+                const age = calculateAge(deployment.created);
+                return(
                 <Table.Tr key={index}>
-                    <Table.Td>{deployment.ready ? <>Ready</> : <>Not Ready</>} </Table.Td>
                     <Table.Td>
-                        <HoverCard width={100}>
-                            <HoverCard.Target>
-                                <Button>{deployment.name}</Button>
-                            </HoverCard.Target>
+                        {deployment.ready ? <Badge 
+                                variant="gradient"
+                                gradient={{ from: 'green', to: 'lime', deg: 90 }}>Active</Badge> 
+                        : <Badge 
+                                variant="gradient"
+                                gradient={{ from: 'red', to: 'orange', deg: 90 }}>Inactive</Badge>}
+                    </Table.Td>
+                    <Table.Td>
+                        {/* <HoverCard width={100}>
+                            <HoverCard.Target> */}
+                                <Anchor>{deployment.name}</Anchor>
+                            {/* </HoverCard.Target>
                             <HoverCard.Dropdown>
                                 {
                                     // Print labels as string
@@ -44,21 +75,27 @@ export function DeploymentsPage() {
                                     ))
                                 }
                             </HoverCard.Dropdown>
-                        </HoverCard>
+                        </HoverCard> */}
                     </Table.Td>
                     <Table.Td>{deployment.image}</Table.Td>
-                    <Table.Td>{deployment.created}</Table.Td>
+                    <Table.Td>1/1</Table.Td>
+                    <Table.Td>1</Table.Td>
+                    <Table.Td>1</Table.Td>
+                    <Table.Td>21</Table.Td>
+                    <Table.Td><Tooltip label={format(new Date(deployment.created), "PPpp")}><Text>{age}</Text></Tooltip></Table.Td>
+                    <Table.Td><Progress color="green" value={100}></Progress></Table.Td>
+                    <Table.Td><Button>..</Button> </Table.Td>
                 </Table.Tr>
-        ));
+        )});
 
     return (
         <>
-        <Title ta="center" mt={100}>
+        <Title ta="center" my={20}>
                 This is the {' '}
-                <Text inherit variant="gradient" component="span" gradient={{ from: 'pink', to: 'yellow' }}>
+                <Text inherit variant="gradient" component="span" gradient={{ from: 'blue', to: 'black' }}>
                     Deployments
                     </Text>
-                    {' '}Page
+                    {' '} Overview Page
             </Title>
 
             {deployments.length > 0 ? (
@@ -68,7 +105,12 @@ export function DeploymentsPage() {
                             <Table.Th>Ready</Table.Th>
                             <Table.Th>Deployment Name</Table.Th>
                             <Table.Th>Image</Table.Th>
-                            <Table.Th>Created</Table.Th>
+                            <Table.Th>Ready</Table.Th>
+                            <Table.Th>Up To Date</Table.Th>
+                            <Table.Th>Available</Table.Th>
+                            <Table.Th>Restarts</Table.Th>
+                            <Table.Th>Age</Table.Th>
+                            <Table.Th>Health</Table.Th>
                         </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
