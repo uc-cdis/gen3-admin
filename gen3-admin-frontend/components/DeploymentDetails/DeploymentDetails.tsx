@@ -11,8 +11,7 @@ import { differenceInMinutes, differenceInHours, differenceInDays, format } from
 
 
 async function fetchDeployment(name) {
-
-    console.log(name)
+    
     try {
         const response = await fetch("/admin-api-go/deployments/" + name); // This endpoint will be redirected by your proxy
         if (!response.ok) {
@@ -31,8 +30,7 @@ export function DeploymentDetails({ name }) {
     const [deployments, setDeployments] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
 
-    console.log(name)
-
+    
     useEffect(() => {
         if (!name) {
             return;
@@ -43,7 +41,7 @@ export function DeploymentDetails({ name }) {
             setDeployments(data?.pods);
             setIsLoading(false);
         });
-    }, []);
+    }, [name]);
 
     const Body = deployments.map((deployment, index) => {
         return (
