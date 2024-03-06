@@ -159,11 +159,11 @@ func ExecIntoPod(conn *websocket.Conn) error {
 	req := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		// Name("sheepdog-deployment-d4dc7486d-vhklx").
-		Name("sheepdog-deployment-7b9df8bfc9-bt5g2").
-		Namespace("qa-brh").
+		Name("nginx-test").
+		Namespace("default").
 		SubResource("exec").
 		VersionedParams(&v1.PodExecOptions{
-			Command: []string{"/bin/bash"},
+			Command: []string{"/bin/sh"},
 			Stdin:   true,
 			Stdout:  true,
 			Stderr:  true,

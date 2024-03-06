@@ -49,11 +49,12 @@ type Deployment struct {
 	Volumes     []v1.Volume       `json:"volumes"`
 }
 
-type Deployments struct {
-	Deployments []Deployment `json:"deployments"`
-}
+// type Deployments struct {
+// 	Deployments []Deployment `json:"deployments"`
+// }
 
-func GetDeployments(ctx context.Context) (*Deployments, error) {
+
+func GetDeployments(ctx context.Context) ([]Deployment, error) {
 	// / Load kubeconfig
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -74,7 +75,7 @@ func GetDeployments(ctx context.Context) (*Deployments, error) {
 		return nil, err
 	}
 
-	depList := Deployments{}
+	depList := []Deployment{}
 	for _, deployment := range deployments.Items {
 		dep := Deployment{
 			Name:        deployment.GetName(),
@@ -100,9 +101,9 @@ func GetDeployments(ctx context.Context) (*Deployments, error) {
 			}
 			dep.Containers = append(dep.Containers, cont)
 		}
-		depList.Deployments = append(depList.Deployments, dep)
+		depList = append(depList, dep)
 	}
-	return &depList, nil
+	return depList, nil
 }
 
 func GetPodsForDeployment(ctx context.Context, deployment string) (*Pods, error) {

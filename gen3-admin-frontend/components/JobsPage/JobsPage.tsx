@@ -121,7 +121,7 @@ const ResponsiveCards = ({ data }) => {
 
 async function fetchJobs() {
     try {
-        const response = await fetch('/admin-api/jobs/options'); // This endpoint will be redirected by your proxy
+        const response = await fetch('/admin-api-go/jobs/options'); // This endpoint will be redirected by your proxy
         if (!response.ok) {
             throw new Error(`Error: ${response.status}`);
         }

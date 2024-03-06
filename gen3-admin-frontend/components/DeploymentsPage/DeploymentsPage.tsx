@@ -24,11 +24,12 @@ const calculateAge = (dateString) => {
 
 async function fetchDeployments() {
     try {
-        const response = await fetch('/admin-api/deployments/'); // This endpoint will be redirected by your proxy
+        const response = await fetch('/admin-api-go/deployments'); // This endpoint will be redirected by your proxy
         if (!response.ok) {
             throw new Error(`Error: ${response.status}`);
         }
         const data = await response.json();
+        console.log(data)
         return data;
     } catch (error) {
         console.error('Failed to fetch jobs:', error);
@@ -43,6 +44,7 @@ export function DeploymentsPage() {
     useEffect(() => {
         setIsLoading(true);
         fetchDeployments().then((data) => {
+            console.log(data);
             setDeployments(data);
             setIsLoading(false);
         });
