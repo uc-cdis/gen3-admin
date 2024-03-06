@@ -14,7 +14,7 @@ const rewritesConfig = isDevelopment
       },
       {
         source: "/admin-api/:path*", // Matched parameters can be used in the destination
-        destination: "http://localhost:8000/:path*", // Destination URL can be configured by providing a "destination" property
+        destination: "http://localhost:8002/:path*", // Destination URL can be configured by providing a "destination" property
       },
     ]
   : [];

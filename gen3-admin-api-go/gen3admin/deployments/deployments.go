@@ -37,22 +37,23 @@ type Pods struct {
 }
 
 type Deployment struct {
-	Name        string            `json:"name"`
-	Namespace   string            `json:"namespace"`
-	Containers  []Container       `json:"containers"`
-	Replicas    int32             `json:"replicas"`
-	Available   int32             `json:"available"`
-	Unavailable int32             `json:"unavailable"`
-	Desired     int32             `json:"desired"`
-	Created     metav1.Time       `json:"created"`
-	Labels      map[string]string `json:"labels"`
-	Volumes     []v1.Volume       `json:"volumes"`
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Containers    []Container       `json:"containers"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	Ready         int32             `json:"ready"`
+	Available     int32             `json:"available"`
+	Unavailable   int32             `json:"unavailable"`
+	Desired       int32             `json:"desired"`
+	Created       metav1.Time       `json:"created"`
+	Labels        map[string]string `json:"labels"`
+	Volumes       []v1.Volume       `json:"volumes"`
 }
 
 // type Deployments struct {
 // 	Deployments []Deployment `json:"deployments"`
 // }
-
 
 func GetDeployments(ctx context.Context) ([]Deployment, error) {
 	// / Load kubeconfig
@@ -78,16 +79,18 @@ func GetDeployments(ctx context.Context) ([]Deployment, error) {
 	depList := []Deployment{}
 	for _, deployment := range deployments.Items {
 		dep := Deployment{
-			Name:        deployment.GetName(),
-			Namespace:   deployment.GetNamespace(),
-			Replicas:    *deployment.Spec.Replicas,
-			Available:   deployment.Status.AvailableReplicas,
-			Unavailable: deployment.Status.UnavailableReplicas,
-			Desired:     deployment.Status.Replicas,
-			Created:     deployment.CreationTimestamp,
-			Labels:      deployment.GetLabels(),
-			Containers:  []Container{},
-			Volumes:     deployment.Spec.Template.Spec.Volumes,
+			Name:          deployment.GetName(),
+			Namespace:     deployment.GetNamespace(),
+			Replicas:      *deployment.Spec.Replicas,
+			ReadyReplicas: deployment.Status.ReadyReplicas,
+			Ready:         0,
+			Available:     deployment.Status.AvailableReplicas,
+			Unavailable:   deployment.Status.UnavailableReplicas,
+			Desired:       deployment.Status.Replicas,
+			Created:       deployment.CreationTimestamp,
+			Labels:        deployment.GetLabels(),
+			Containers:    []Container{},
+			Volumes:       deployment.Spec.Template.Spec.Volumes,
 		}
 		for _, container := range deployment.Spec.Template.Spec.Containers {
 			cont := Container{
@@ -101,6 +104,11 @@ func GetDeployments(ctx context.Context) ([]Deployment, error) {
 			}
 			dep.Containers = append(dep.Containers, cont)
 		}
+
+		if dep.ReadyReplicas == dep.Replicas {
+			dep.Ready = 1
+		}
+
 		depList = append(depList, dep)
 	}
 	return depList, nil

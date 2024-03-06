@@ -1,6 +1,8 @@
 module github.com/uc-cdis/gen3-admin
 
-go 1.20
+go 1.21
+
+toolchain go1.21.3
 
 require (
 	github.com/gin-gonic/gin v1.9.1

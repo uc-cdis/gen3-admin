@@ -1,30 +1,19 @@
+
+
+import { useRouter } from 'next/router'
+
+
+
 import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { differenceInMinutes, differenceInHours, differenceInDays, format } from 'date-fns';
 
-
-const calculateAge = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-  
-    const minutes = differenceInMinutes(now, date);
-    if (minutes < 60) {
-      return `${minutes} minutes old`;
-    }
-  
-    const hours = differenceInHours(now, date);
-    if (hours < 24) {
-      return `${hours} hours old`;
-    }
-  
-    const days = differenceInDays(now, date);
-    return `${days} days old`;
-  };
   
 
-async function fetchDeployments() {
+async function fetchDeployment(name) {
+  console.log(name)
     try {
-        const response = await fetch('/admin-api-go/deployments'); // This endpoint will be redirected by your proxy
+        const response = await fetch("/admin-api-go/deployments/"+name); // This endpoint will be redirected by your proxy
         if (!response.ok) {
             throw new Error(`Error: ${response.status}`);
         }
@@ -37,15 +26,20 @@ async function fetchDeployments() {
     }
 }
 
-export function DeploymentsPage() {
+export function DeploymentDetails({name}) {
     const [deployments, setDeployments] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
 
+    console.log(name)
+
     useEffect(() => {
         setIsLoading(true);
-        fetchDeployments().then((data) => {
+        fetchDeployment(name).then((data) => {
             console.log(data);
-            setDeployments(data);
+            // check if data pods exists
+            if(data){
+              setDeployments(data?.pods);
+            }
             setIsLoading(false);
         });
     }, []);
@@ -53,7 +47,6 @@ export function DeploymentsPage() {
     const Body = deployments.map((deployment, index) => 
     
             {
-                const age = calculateAge(deployment.created);
                 return(
                 <Table.Tr key={index}>
                     <Table.Td>
@@ -84,7 +77,6 @@ export function DeploymentsPage() {
                     <Table.Td>1</Table.Td>
                     <Table.Td>1</Table.Td>
                     <Table.Td>21</Table.Td>
-                    <Table.Td><Tooltip label={format(new Date(deployment.created), "PPpp")}><Text>{age}</Text></Tooltip></Table.Td>
                     <Table.Td>
 
                         {deployment.ready ? <Progress color="green" value={100}> </Progress> : deployment.readyReplicas == 0 ? <Progress color="red" value={100}> </Progress>: <Progress color="yellow" value={deployment.ready/deployment.desired}> </Progress>}                       
@@ -115,7 +107,6 @@ export function DeploymentsPage() {
                             <Table.Th>Up To Date</Table.Th>
                             <Table.Th>Available</Table.Th>
                             <Table.Th>Restarts</Table.Th>
-                            <Table.Th>Age</Table.Th>
                             <Table.Th>Health</Table.Th>
                         </Table.Tr>
                     </Table.Thead>
