@@ -9,6 +9,7 @@ import (
 	"github.com/uc-cdis/gen3-admin/gen3admin/cluster"
 	"github.com/uc-cdis/gen3-admin/gen3admin/deployments"
 	dep "github.com/uc-cdis/gen3-admin/gen3admin/deployments"
+	"github.com/uc-cdis/gen3-admin/gen3admin/jobs"
 	"github.com/uc-cdis/gen3-admin/gen3admin/pods"
 	"github.com/uc-cdis/gen3-admin/gen3admin/psql"
 )
@@ -23,17 +24,22 @@ func Routes(route *gin.Engine) {
 	}
 	deployments := route.Group("/deployments")
 	{
-		deployments.GET("/", GetDeployments)
+		deployments.GET("", GetDeployments)
 		deployments.GET("/:name", PodsPerDeployment)
 	}
 	cluster := route.Group("/cluster")
 	{
 		cluster.GET("/", GetClusterVersion)
+		cluster.GET("/version", GetClusterVersionSimple)
 	}
 
 	psql := route.Group("/psql")
 	{
 		psql.GET("/", GetSecrets)
+	}
+	jobs := route.Group("/jobs")
+	{
+		jobs.GET("/options", GetJobs)
 	}
 }
 
@@ -42,6 +48,30 @@ func GetSecrets(c *gin.Context) {
 	secrets := psql.GetDBSecrets()
 
 	c.JSON(200, secrets)
+}
+
+func GetJobs(c *gin.Context) {
+
+	jobs, err := jobs.GetJobOptions(c)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"message": "error",
+		})
+	}
+
+	c.JSON(200, jobs)
+}
+
+func GetClusterVersionSimple(c *gin.Context) {
+	simpleVersion, err := cluster.GetClusterVersionSimple()
+	if err != nil {
+		c.JSON(500, gin.H{
+			"message": "error",
+		})
+		return
+	}
+
+	c.JSON(200, simpleVersion)
 }
 
 func GetClusterVersion(c *gin.Context) {

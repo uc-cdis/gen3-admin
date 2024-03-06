@@ -1,7 +1,36 @@
 import { Title, Text, Grid, Button, Progress, Paper, Badge, Divider, Table, HoverCard, Container, Skeleton } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+async function fetchK8sVersion() {
+    try {
+        const response = await fetch('/admin-api-go/cluster/version'); // This endpoint will be redirected by your proxy
+        if (!response.ok) {
+            throw new Error(`Error: ${response.status}`);
+        }
+        const data = await response.json();
+        let versionString: string = data.major + "." + data.minor
+        return versionString;
+    } catch (error) {
+        console.error('Failed to fetch cluster version:', error);
+        return null;
+    }
+}
+
 export default function Cluster() {
+    // const k8s_version = "1.26"
+    const [k8sversion, setK8sVersion] = useState("1.27");
+    useEffect(() => {
+        fetchK8sVersion().then(data => {
+            if (data) {
+                console.log(data)
+                setK8sVersion(data);
+            }
+            else {
+                setK8sVersion("error");
+            }
+        });
+    }, []);
     return (
         <>
             <Skeleton visible={false}>
@@ -25,7 +54,7 @@ export default function Cluster() {
                             </Paper>
                         </Grid.Col>
                         <Grid.Col span={4}>
-                            Kubernetes Version: 1.21
+                            Kubernetes Version: {k8sversion}
                         </Grid.Col>
                         <Grid.Col span={4}>
                             Created: 2021-08-01
