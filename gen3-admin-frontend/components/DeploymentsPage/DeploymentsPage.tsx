@@ -67,7 +67,7 @@ export function DeploymentsPage() {
                     <Table.Td>
                         {/* <HoverCard width={100}>
                             <HoverCard.Target> */}
-                                <Anchor>{deployment.name}</Anchor>
+                                <Anchor href={"deployments/"+deployment.name}>{deployment.name}</Anchor>
                             {/* </HoverCard.Target>
                             <HoverCard.Dropdown>
                                 {
