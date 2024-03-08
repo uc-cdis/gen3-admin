@@ -3,10 +3,12 @@
 import { useRouter } from 'next/router'
 
 
-
-import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip } from '@mantine/core';
+import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip, Accordion, Box, Group, Stack } from '@mantine/core';
 import { useEffect, useState } from 'react';
+import { DataTable } from 'mantine-datatable';
 import { differenceInMinutes, differenceInHours, differenceInDays, format } from 'date-fns';
+import '@mantine/core/styles.layer.css';
+import 'mantine-datatable/styles.layer.css';
 
 
 
@@ -38,83 +40,62 @@ export function DeploymentDetails({ name }) {
         setIsLoading(true);
         fetchDeployment(name).then((data) => {
             console.log(data);
-            setDeployments(data?.pods);
+            setDeployments(data);
             setIsLoading(false);
         });
     }, [name]);
+  
 
-    const Body = deployments.map((deployment, index) => {
-        return (
-            <Table.Tr key={index}>
-                <Table.Td>
-                    {deployment.ready ? <Badge
-                        variant="gradient"
-                        gradient={{ from: 'green', to: 'lime', deg: 90 }}>Active</Badge>
-                        : <Badge
-                            variant="gradient"
-                            gradient={{ from: 'red', to: 'orange', deg: 90 }}>Inactive</Badge>}
-                </Table.Td>
-                <Table.Td>
-                    {/* <HoverCard width={100}>
-                            <HoverCard.Target> */}
-                    <Anchor>{deployment.name}</Anchor>
-                    {/* </HoverCard.Target>
-                            <HoverCard.Dropdown>
-                                {
-                                    // Print labels as string
-                                    Object.keys(deployment.labels).map((key, index) => (
-                                        <p key={index}>{key}: {deployment.labels[key]}</p>
-                                    ))
-                                }
-                            </HoverCard.Dropdown>
-                        </HoverCard> */}
-                </Table.Td>
-                <Table.Td>{deployment.image}</Table.Td>
-                <Table.Td>{deployment.ready}/{deployment.desired}</Table.Td>
-                <Table.Td>1</Table.Td>
-                <Table.Td>1</Table.Td>
-                <Table.Td>21</Table.Td>
-                <Table.Td>
 
-                    {deployment.ready ? <Progress color="green" value={100}> </Progress> : deployment.readyReplicas == 0 ? <Progress color="red" value={100}> </Progress> : <Progress color="yellow" value={deployment.ready / deployment.desired}> </Progress>}
 
-                </Table.Td>
-                <Table.Td><Button>..</Button> </Table.Td>
-            </Table.Tr>
-        )
-    });
-
-    return (
-        <>
-            <Title ta="center" my={20}>
-                This is the {' '}
-                <Text inherit variant="gradient" component="span" gradient={{ from: 'blue', to: 'black' }}>
-                    Deployments
-                </Text>
-                {' '} Overview Page
-            </Title>
-
-            {deployments.length > 0 ? (
-                <Table>
-                    <Table.Thead>
-                        <Table.Tr>
-                            <Table.Th>Ready</Table.Th>
-                            <Table.Th>Deployment Name</Table.Th>
-                            <Table.Th>Image</Table.Th>
-                            <Table.Th>Ready</Table.Th>
-                            <Table.Th>Up To Date</Table.Th>
-                            <Table.Th>Available</Table.Th>
-                            <Table.Th>Restarts</Table.Th>
-                            <Table.Th>Health</Table.Th>
-                        </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                        {Body}
-                    </Table.Tbody>
-                </Table>
-            ) : (
-                isLoading ? <p>No deployments found.</p> : <p>Loading deployment...</p>
+  return (
+    <DataTable
+        withTableBorder
+        withColumnBorders
+        columns={[{ accessor: 'ready', title: "Ready", render: ({ready}) => ({ready} ? <Badge variant="gradient" gradient={{ from: 'green', to: 'lime', deg: 90 }}>Active</Badge> : <Badge variant="gradient" gradient={{ from: 'red', to: 'orange', deg: 90 }}>Inactive</Badge>),}, { accessor: 'name', title: "Pod Name" }]}
+        records={deployments}
+        idAccessor="name"
+        rowExpansion={{
+          content: ({ record }) => (
+            <Stack>
+            {record.containers.map((container, index) => 
+            <div>
+              <Group>
+                <div>Name: </div>
+                <div>
+                  {container.name}
+                </div>
+              </Group>
+              <Group>
+                <div>Status: </div>
+                <div>
+                  {container.status}
+                </div>
+              </Group>
+              <Group> 
+                <div>Image: </div>
+                <div>
+                  {container.image}
+                </div>
+              </Group>
+              <Group>
+                <div>Resources: </div>
+                <div>Limit: {container.resources.hasOwnProperty('limit') ? container.resources.limits.cpu || "Unset" : "Unset"} CPU / {container.resources.hasOwnProperty('limit') ? container.resources.limits.memory || "Unset" : "Unset"} Memory <br></br>
+                  Requests: {container.resources.hasOwnProperty('requests') ? container.resources.requests.cpu || "Unset" : "Unset"} CPU / {container.resources.hasOwnProperty('requests') ? container.resources.requests.memory || "Unset" : "Unset"} Memory            
+                </div>
+              </Group>  
+              <Group>  
+                <div>Name: </div>
+                <div>
+                  {container.image}
+                </div>                                                                
+              </Group>
+              </div>
             )}
-        </>
-    )
+            </Stack>
+          )
+        }} 
+      />
+  );
+
 }

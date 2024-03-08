@@ -1,4 +1,4 @@
-import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip } from '@mantine/core';
+import { Title, Text, Anchor, Badge, Progress, Button, Table, HoverCard, Tooltip, Accordion } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { differenceInMinutes, differenceInHours, differenceInDays, format } from 'date-fns';
 

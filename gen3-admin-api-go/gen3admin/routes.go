@@ -116,7 +116,11 @@ func GetClusterVersion(c *gin.Context) {
 }
 
 func GetDeployments(c *gin.Context) {
-	deployments, err := dep.GetDeployments(c)
+	namespace := c.Query("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	deployments, err := dep.GetDeployments(c, namespace)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"message": "error",
@@ -183,14 +187,19 @@ func GetServices(c *gin.Context) {
 
 func PodsPerDeployment(c *gin.Context) {
 	name := c.Param("name")
-	pods, err := deployments.GetPodsForDeployment(c, name)
+	//set namespace to default if not provided
+	namespace := c.Query("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	pods, err := deployments.GetPodsForDeployment(c, name, namespace)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"message": "error",
 		})
 		return
 	}
-	if len(pods.Pods) == 0 {
+	if len(pods) == 0 {
 		c.JSON(404, gin.H{
 			"message": "not found",
 		})
