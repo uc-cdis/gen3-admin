@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "cookies-next": "^4.1.1",
-    "jose": "^5.2.4",
-    "js-cookie": "^3.0.5"
-  }
-}

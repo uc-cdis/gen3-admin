@@ -2,5 +2,3 @@
 .next
 __pycache__/
 node_modules
-gen3-admin-frontend/package-lock.json
-gen3-admin-frontend/yarn.lock
