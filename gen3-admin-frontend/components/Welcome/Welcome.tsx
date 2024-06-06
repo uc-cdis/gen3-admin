@@ -10,7 +10,7 @@ export function Welcome() {
         </Text>
         {' '} Admin
       </Title>
-      {/* <Button
+      <Button
       onClick={() =>
         notifications.show({
           title: 'Default notification',
@@ -19,7 +19,7 @@ export function Welcome() {
       }
     >
       Show notification
-    </Button> */}
+    </Button>
 
       <Text color="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
         This starter Next.js project includes a minimal setup for server side rendering, if you want

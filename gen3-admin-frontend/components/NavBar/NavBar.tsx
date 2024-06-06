@@ -14,9 +14,9 @@ export function NavBar() {
                     onClick={() => router.push('/cluster')}
                 />
                 <NavLink
-                    label="Jobs"
-                    active={router.pathname === '/jobs'}
-                    onClick={() => router.push('/jobs/options')}
+                    label="CronJobs"
+                    active={router.pathname === '/cronjobs'}
+                    onClick={() => router.push('/cronjobs')}
                 />
                 <NavLink
                     label="Deployments"
