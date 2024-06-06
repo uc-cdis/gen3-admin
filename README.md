@@ -17,9 +17,9 @@ If you wanna add a new page add it under the `pages` folder.
 
 # Backend 
 
-FlaskAPI (For now, might move to Go. TBD)
+Go api using gin.
 
-Calls k8s api based on your current context. 
+Calls k8s api based on your current context.
 
 
 # Dev environment
@@ -31,11 +31,7 @@ Then run these commands:
 ## start api
 ```
 cd gen3-admin-api/
-
-python3 -m venv .env
-source .env/bin/activate
-pip3 install -r requirements.txt
-uvicorn main:app --reload
+export PORT=8002; nodemon --exec go run main.go --signal SIGTERM
 ```
 
 ## start frontend
