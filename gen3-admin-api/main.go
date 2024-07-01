@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 	routes "github.com/uc-cdis/gen3-admin/gen3admin"
 
 	"go.uber.org/zap"
@@ -61,11 +64,114 @@ func setUpGrafanRevproxy(grafanaURL *url.URL) (*httputil.ReverseProxy, error) {
 	return proxy, nil
 }
 
-func AuthMiddleWare(logger *zap.SugaredLogger) gin.HandlerFunc {
-	// Do some initialization logic here
-	// Foo()
+// func AuthMiddleWare(logger *zap.SugaredLogger) gin.HandlerFunc {
+// 	// Do some initialization logic here
+// 	// Foo()
+// 	return func(c *gin.Context) {
+// 		logger.Warn("Something is checking auth for path: ", c.FullPath())
+// 		logger.Warn(c.Request.Header)
+// 		c.Next()
+// 	}
+// }
+
+// func AuthMiddleware(logger *zap.SugaredLogger) gin.HandlerFunc {
+// 	return func(c *gin.Context) {
+// 		logger.Debug("Checking auth for path: ", c.FullPath())
+
+// 		authHeader := c.GetHeader("Authorization")
+// 		if authHeader == "" {
+// 			c.JSON(401, gin.H{"error": "Authorization header is required"})
+// 			c.Abort()
+// 			return
+// 		}
+
+// 		bearerToken := strings.Split(authHeader, " ")
+// 		fmt.Printf("Bearer token: %s", bearerToken)
+// 		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+// 			c.JSON(401, gin.H{"error": "Invalid Authorization header format"})
+// 			c.Abort()
+// 			return
+// 		}
+
+// 		tokenString := bearerToken[1]
+
+// 		// Basic JWT validation
+// 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+// 			// TODO: Implement proper key retrieval and validation
+// 			// This is a placeholder secret and should be replaced with proper key management
+// 			return []byte("your-secret-key"), nil
+// 		})
+
+// 		if err != nil {
+// 			logger.Error("Error parsing JWT: ", err)
+// 			c.JSON(401, gin.H{"error": "Invalid token"})
+// 			c.Abort()
+// 			return
+// 		}
+
+// 		if !token.Valid {
+// 			c.JSON(401, gin.H{"error": "Invalid token"})
+// 			c.Abort()
+// 			return
+// 		}
+
+// 		// TODO: Implement proper authentication and authorization checks
+// 		// This should include verifying the token with your authN/Z services
+// 		// and checking user permissions for the requested resource
+
+// 		logger.Debug("Token is valid")
+// 		c.Next()
+// 	}
+// }
+
+func AuthMiddleware(logger *zap.SugaredLogger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		logger.Warn("Something is checking auth for path: ", c.FullPath())
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+			c.Abort()
+			return
+		}
+
+		bearerToken := strings.Split(authHeader, " ")
+		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+			c.Abort()
+			return
+		}
+
+		// Extract claims for use in authz request
+		tokenString := bearerToken[1]
+		token, _ := jwt.Parse(tokenString, nil)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
+			c.Abort()
+			return
+		}
+
+		issuerURL, ok := claims["iss"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing issuer in token"})
+			c.Abort()
+			return
+		}
+
+		logger.Info(issuerURL)
+
+		// Call AuthZ Service
+		authzEndpoint := issuerURL + "/auth/mapping"
+		reqBody, _ := json.Marshal(claims)
+		authzResp, err := http.Post(authzEndpoint, "application/json", bytes.NewBuffer(reqBody))
+		if err != nil {
+			logger.Error("Error calling authZ service: ", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Authorization service error"})
+			c.Abort()
+			return
+		}
+		defer authzResp.Body.Close()
+
+		logger.Info("User is authorized")
 		c.Next()
 	}
 }
@@ -93,7 +199,7 @@ func main() {
 
 	// uncomment the following to run the gin server
 	r := gin.Default()
-	r.Use(AuthMiddleWare(sugar))
+	r.Use(AuthMiddleware(sugar))
 	r.Static("/static", "./static")
 
 	r.GET("/ping", func(c *gin.Context) {

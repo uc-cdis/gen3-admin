@@ -17,7 +17,7 @@ const rewritesConfig = isDevelopment
         destination: "http://localhost:8002/:path*", // Destination URL can be configured by providing a "destination" property
       },
       {
-        source: "/api/:path*", // Matched parameters can be used in the destination
+        source: "/api/go/:path*", // Matched parameters can be used in the destination
         destination: "http://localhost:8002/api/:path*", // Destination URL can be configured by providing a "destination" property
       },
 

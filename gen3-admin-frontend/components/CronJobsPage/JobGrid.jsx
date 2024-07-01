@@ -7,8 +7,8 @@ const JobGrid = ({ data, parent }) => {
     return (
         <>
             <Grid>
-                {data.length === 0 ? <div>No jobs</div> :
-                data.map((item, index) => {
+                {data?.length === 0 ? <div>No jobs</div> :
+                data?.map((item, index) => {
                     return (
                     <Grid.Col key={index} span={{ base: 12, md: 6, lg: 4, xl: 3 }}>
                         <JobStatusCard item={item} parent={parent} />

@@ -1,26 +1,51 @@
 import React, { createContext, useState, useContext, useEffect } from 'react'
 import { getCookie, deleteCookie, setCookie } from 'cookies-next';
-// import Router, { useRouter } from 'next/router'
-import { decodeJwt, JWTPayload } from 'jose';
 
 
-const GEN3_FENCE_API = process.env.GEN3_FENCE_API || "https://changeme.planx-pla.net"
-const AuthContext = createContext({});
+const AuthContext = createContext({
+    user: null,
+    login: () => { },
+    logout: () => { },
+    authorized: false,
+    url: null,
+    token: null,
+})
+
+
+function parseJwt(token) {
+    try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        return JSON.parse(jsonPayload);
+    } catch (error) {
+        console.error('Error parsing JWT:', error);
+        return null;
+    }
+}
+
+
+let jwtParsed;
+
+
 
 export const AuthProvider = ({ children }) => {
 
-    const [user, setUser] = useState(null)
+    const [user, setUser] = useState(jwtParsed)
+    const [url, setUrl] = useState(null)
+    const [accessToken, setAccessToken] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [authorized, setAuthorized ] = useState(false)
 
     useEffect(() => {
-        async function loadUserFromCookies() {
+        function loadUserFromCookies() {
             const token = getCookie('access_token')
+            setAccessToken(token)
             if (token) {
                 console.log("Got a token in the cookies, let's see if it is valid")
-                // api.defaults.headers.Authorization = `Bearer ${token}`
-                // const { data: user } = await api.get('users/me')
-                // if (user) setUser(user);
-                setUser("Jane Smith")
+                jwtParsed = parseJwt(token)
+                setUser(jwtParsed)
+                setUrl(new URL(jwtParsed?.iss))
                 setLoading(false)
             }
             setLoading(false)
@@ -28,62 +53,75 @@ export const AuthProvider = ({ children }) => {
         loadUserFromCookies()
     }, [])
 
-    const login = async (api_key, key_id) => {
+    const login = async (apiKeyData) => {
+        // Simulated error for dev
+        // throw new Error("Fake error");
 
-        const response = await fetch(`${GEN3_FENCE_API}/user/credentials/api/access_token`,
-            {
+        try {
+            if (!apiKeyData || !apiKeyData.api_key) {
+                throw new Error('Invalid API key data');
+            }
+
+            const parsedToken = parseJwt(apiKeyData.api_key);
+            if (!parsedToken || !parsedToken.iss) {
+                throw new Error('Unable to extract URL from API key');
+            }
+
+            const baseUrl = parsedToken.iss;
+            const fenceApiUrl = `${baseUrl}/credentials/api/access_token`;
+
+            const response = await fetch(fenceApiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    api_key: api_key,
-                    key_id: key_id,
+                    api_key: apiKeyData.api_key,
+                    key_id: apiKeyData.key_id,
                 }),
             });
 
-        if (response.status !== 200) {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const json = await response.json();
+            const { access_token } = json;
+
+            // Validate the token
+            const payload = parseJwt(access_token);
+
+            if (!payload) {
+                throw new Error('Invalid access token');
+            }
+
+            setCookie('access_token', access_token);
+            console.log(payload)
+            setUser(payload)
+            setUrl(new URL(payload?.iss))
+            // TODO: Talk to arborist or rely on a call to backend api? 
+            setAuthorized(true)
+            return payload; // Return the decoded payload for further use if needed
+        } catch (error) {
+            console.error('Login error:', error);
             deleteCookie('access_token');
-            setUser(null)
+            throw error; // Re-throw the error for the caller to handle
         }
-
-        const json = await response.json();
-        const {
-            access_token
-        } = json;
-
-        // TODO: validate the token
-        const payload = decodeJwt(access_token)
-
-        if (!payload) {
-            deleteCookie('access_token')
-        }
-        setCookie('access_token', access_token);
-    }
+    };
 
     const logout = () => {
-        deleteCookie('acces_token')
+        console.log("Logging out user")
+        deleteCookie('access_token')
         setUser(null)
     }
 
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated: !!user, user, login, loading, logout }}>
+        <AuthContext.Provider value={{ isAuthenticated: !!user, user, login, logout, loading, authorized, url, token: accessToken }}>
             {children}
         </AuthContext.Provider>
     )
 }
 
 
-
-export const useAuth = () => useContext(AuthContext)
-
-
-export const ProtectRoute = ({ children }) => {
-    const { isAuthenticated, isLoading } = useAuth();
-    if (isLoading || (!isAuthenticated && window.location.pathname !== '/login')){
-      return <> Loading </>; 
-    }
-    return children;
-  };
-  
+export default AuthContext

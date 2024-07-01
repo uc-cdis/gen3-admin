@@ -15,6 +15,10 @@ import {
 import classes from './DoubleNavbar.module.css';
 import { useRouter } from 'next/router';
 
+import {argocdIcon} from '@/public/images/icons/argocd.png'
+
+import Link from 'next/link';
+
 
 
 const navbarLinksData = [
@@ -24,13 +28,18 @@ const navbarLinksData = [
     initiallyOpened: true,
     links: [
       { label: 'Cluster Overview', link: '/cluster' },
-      { label: 'CronJobs', link: '/cronjobs' },
+      { label: 'Jobs', link: '/cronjobs' },
       { label: 'Deployments', link: '/deployments' },
       { label: 'Pods', link: '/pods' },
-      { label: 'Grafana', link: '/grafana' },
+      { label: 'Sheepdog', link: '/sheepdog' },
       { label: 'Databases', link: '/databases' },
-      { label: 'Other stuff', link: '/other-stuff' },
+      // { label: 'Other stuff', link: '/other-stuff' },
     ],
+  },
+  {
+    label: 'ArgoCD',
+    icon: argocdIcon,
+    link: '/argocd',
   },
   {
     label: 'Cloud',
@@ -146,6 +155,7 @@ export function DoubleNavbar() {
     .find((item) => item.label === active)
     ?.links?.map((link) => (
       <NavLink
+        component={Link}
         className={classes.link}
         data-active={activeLink === link.label || undefined}
         href={link.link}
