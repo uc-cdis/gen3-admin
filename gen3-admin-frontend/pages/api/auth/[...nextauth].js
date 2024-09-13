@@ -1,98 +1,83 @@
-import NextAuth from 'next-auth';
-import CredentialsProvider from 'next-auth/providers/credentials';
-import { getCookie, setCookie, deleteCookie } from 'cookies-next';
+import NextAuth from 'next-auth'
+import OktaProvider from "next-auth/providers/okta";
 
-// Function to parse JWT token
-function parseJwt(token) {
+async function refreshAccessToken(token) {
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-    return JSON.parse(jsonPayload);
+    const url = `${process.env.OKTA_ISSUER}/v1/token`;
+    const response = await fetch(url, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      body: new URLSearchParams({
+        client_id: process.env.OKTA_CLIENT_ID,
+        client_secret: process.env.OKTA_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken,
+      }),
+    });
+
+    const refreshedTokens = await response.json();
+
+    if (!response.ok) {
+      throw refreshedTokens;
+    }
+
+    return {
+      ...token,
+      accessToken: refreshedTokens.access_token,
+      accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
+      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken, // Fall back to old refresh token
+    };
   } catch (error) {
-    console.error('Error parsing JWT:', error);
-    return null;
+    console.log(error);
+    return {
+      ...token,
+      error: "RefreshAccessTokenError",
+    };
   }
 }
 
-// NextAuth configuration
-const authOptions = {
+const options = {
   providers: [
-    CredentialsProvider({
-      name: 'API Key',
-      credentials: {
-        apiKey: { label: 'API Key', type: 'text' },
-      },
-      async authorize(credentials, req) {
-        try {
-          const apiKeyData = credentials;
-          
-          if (!apiKeyData || !apiKeyData.apiKey) {
-            throw new Error('Invalid API key data');
-          }
-
-          const parsedToken = parseJwt(apiKeyData.apiKey);
-          if (!parsedToken || !parsedToken.iss) {
-            throw new Error('Unable to extract URL from API key');
-          }
-
-          const baseUrl = parsedToken.iss;
-          const fenceApiUrl = `${baseUrl}/credentials/api/access_token`;
-
-          const response = await fetch(fenceApiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              api_key: apiKeyData.apiKey,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const json = await response.json();
-          const { access_token } = json;
-
-          // Validate the token
-          const payload = parseJwt(access_token);
-
-          if (!payload) {
-            throw new Error('Invalid access token');
-          }
-
-          // Set cookie for access token
-          setCookie('access_token', access_token);
-
-          return { ...payload, accessToken: access_token };
-        } catch (error) {
-          console.error('Authorization error:', error);
-          deleteCookie('access_token');
-          return null;
-        }
-      },
+    OktaProvider({
+      clientId: process.env.OKTA_CLIENT_ID,
+      clientSecret: process.env.OKTA_CLIENT_SECRET,
+      issuer: process.env.OKTA_ISSUER
     }),
   ],
-  // Callbacks and other configurations
+  secret: process.env.NEXTAUTH_SECRET,
+  jwt: {
+    encryption: true,
+    secret: process.env.NEXTAUTH_JWT_SECRET
+  },
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.accessToken = user.accessToken;
-        token.user = user;
+    async jwt({ token, user, account }) {
+      // Initial sign in
+      if (account && user) {
+        return {
+          accessToken: account.access_token,
+          accessTokenExpires: Date.now() + account.expires_in * 1000,
+          refreshToken: account.refresh_token,
+          user,
+        };
       }
-      return token;
+
+      // Return previous token if the access token has not expired yet
+      if (Date.now() < token.accessTokenExpires) {
+        return token;
+      }
+
+      // Access token has expired, try to update it
+      return refreshAccessToken(token);
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken;
       session.user = token.user;
+      session.accessToken = token.accessToken;
+      session.error = token.error;
       return session;
     },
   },
-  pages: {
-    signIn: '/auth/signin',
-  },
-};
+}
 
-export default NextAuth(authOptions);
+export default (req, res) => NextAuth(req, res, options)

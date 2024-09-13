@@ -1,0 +1,20 @@
+FROM amazonlinux:2023 AS go-builder
+
+RUN yum update -y
+RUN yum install -y git golang make gcc glibc-devel openssl-devel sqlite-devel bzip2-devel libffi-devel
+
+ENV GO_VERSION 1.20.4
+ENV GOPATH /go
+ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
+
+WORKDIR /go
+
+COPY gen3-admin-api/ /app
+
+WORKDIR /app/gen3-agent
+
+RUN go build -o gen3-agent
+
+RUN chmod +x /app/gen3-agent
+
+CMD ["/app/gen3-agent"]

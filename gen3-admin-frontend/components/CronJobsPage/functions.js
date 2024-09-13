@@ -1,11 +1,11 @@
 import callK8sApi  from '@/lib/k8s';
 
 
-export  async function fetchCronJobs() {
+export  async function fetchCronJobs(clusterName, accessToken) {
     try {
         // TODO: Configurable namespace
         const namespace = "default"
-        const data = await callK8sApi(`/apis/batch/v1/namespaces/${namespace}/cronjobs`)
+        const data = await callK8sApi(`/apis/batch/v1/namespaces/${namespace}/cronjobs`, 'GET', null, null, clusterName, accessToken);
         return data.items; // Assuming the Kubernetes API response structure
     } catch (error) {
         console.error('Failed to fetch cronjobs:', error);
@@ -39,7 +39,6 @@ export async function triggerCronJob(cronJobName) {
             },
             spec: jobTemplate.spec // Using the spec from the cronjob's jobTemplate
         }
-        console.log(body)
         const jobResult = await callK8sApi('/apis/batch/v1/namespaces/default/jobs', "POST", body)
         return jobResult;
     } catch (error) {
@@ -66,9 +65,9 @@ export async function getJobInstances(cronJobName) {
     }
 }
 
-export async function getAllJobs() {
+export async function getAllJobs(clusterName, accessToken) {
     try {
-        const jobs = await callK8sApi('/apis/batch/v1/jobs')
+        const jobs = await callK8sApi('/apis/batch/v1/jobs', 'GET', null, null, clusterName, accessToken);
         return jobs;
     } catch (error) {
         console.error('API request failed:', error);
@@ -77,10 +76,10 @@ export async function getAllJobs() {
 }
 
 
-export async function getJobDetails(jobName) {
+export async function getJobDetails(jobName, clusterName, accessToken) {
     try {
         // TODO: Make namespace dynamic to support multiple namespaces
-        const job = await callK8sApi('/apis/batch/v1/namespaces/default/jobs/' + jobName)
+        const job = await callK8sApi('/apis/batch/v1/namespaces/default/jobs/' + jobName, 'GET', null, null, clusterName, accessToken);
         return job;
     } catch (error) {
         console.error('API request failed:', error);

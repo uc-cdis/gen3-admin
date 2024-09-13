@@ -2,6 +2,7 @@ import { useRouter } from 'next/router';
 
 import { Breadcrumbs, Anchor } from '@mantine/core';
 
+import Link from 'next/link';
 
 export default function NextBreadcrumbs() {
   // Gives us ability to load the current route details
@@ -37,7 +38,7 @@ export default function NextBreadcrumbs() {
   return (
     <Breadcrumbs aria-label="breadcrumb">
       {breadcrumbs.map((breadcrumb, index) => (
-        <Anchor key={index} href={breadcrumb.href}>
+        <Anchor key={index} href={breadcrumb.href} component={Link}>
           {breadcrumb.title}
         </Anchor>
       ))}

@@ -6,6 +6,9 @@ import { DataTable } from 'mantine-datatable';
 import callK8sApi from '@/lib/k8s';
 import parseCpu from '@/utils/parseCpu'
 
+import { format } from 'date-fns';
+
+import { IconChevronUp, IconSelector } from '@tabler/icons-react';
 
 function parseMemory(memory) {
     if (typeof memory === 'number') return memory;
@@ -61,10 +64,11 @@ export default function ClusterDashboard() {
 
     useEffect(() => {
         const filtered = events.filter(event =>
-            event.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            event.reason.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            event.involvedObject.kind.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            event.involvedObject.namespace.toLowerCase().includes(searchQuery.toLowerCase())
+            event?.message?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.metadata.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.involvedObject.kind.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.involvedObject.namespace.toLowerCase().includes(searchQuery.toLowerCase())
         );
         setFilteredEvents(filtered);
         setPage(1);
@@ -205,7 +209,10 @@ export default function ClusterDashboard() {
                 striped
                 highlightOnHover
                 columns={[
-                    { accessor: 'lastTimestamp', title: 'Timestamp', sortable: true },
+                    {
+                        accessor: 'lastTimestamp', title: 'Timestamp', sortable: true, render: ({ lastTimestamp }) => format(new Date(lastTimestamp), 'yyyy-MM-dd HH:mm:ss')
+                    },
+                    { accessor: 'involvedObject.name', title: 'Name', sortable: true },
                     { accessor: 'involvedObject.namespace', title: 'Namespace', sortable: true },
                     { accessor: 'involvedObject.kind', title: 'Kind', sortable: true },
                     { accessor: 'reason', title: 'Reason', sortable: true },
@@ -218,7 +225,11 @@ export default function ClusterDashboard() {
                 onPageChange={setPage}
                 recordsPerPageOptions={[10, 20, 30, 50]}
                 onRecordsPerPageChange={setPageSize}
-                noRecordsText="No events found"
+                sortIcons={{
+                    sorted: <IconChevronUp size={14} />,
+                    unsorted: <IconSelector size={14} />,
+                }}
+                // noRecordsText="No events found"
                 loadingText="Loading events..."
             />
 

@@ -6,6 +6,10 @@ import { useRouter } from 'next/router';
 import JobGrid from './JobGrid';
 import { fetchCronJobs, triggerCronJob, getAllJobs } from './functions';
 
+import { useSession } from 'next-auth/react';
+import { useParams } from 'next/navigation';
+
+
 const JobStatus = ({ status }) => {
   const colorMap = {
     'Running': 'blue',
@@ -31,9 +35,14 @@ const Page = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const router = useRouter();
 
+  const { data: sessionData } = useSession();
+  const accessToken = sessionData?.accessToken;
+
+  const clusterName = useParams()?.clustername;
+
   const updateJobs = () => {
     setIsLoading(true);
-    Promise.all([fetchCronJobs(), getAllJobs()])
+    Promise.all([fetchCronJobs(clusterName, accessToken), getAllJobs(clusterName, accessToken)])
       .then(([cronJobsData, jobInstancesData]) => {
         setJobs(cronJobsData || []);
         setAllJobInstances(jobInstancesData?.items || []);
@@ -50,8 +59,11 @@ const Page = () => {
   };
 
   useEffect(() => {
+    if (!sessionData) {
+      return;
+    }
     updateJobs();
-  }, []);
+  }, [sessionData]);
 
   const toggleRow = (index) => {
     const jobName = jobs[index].metadata.name;

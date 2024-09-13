@@ -5,8 +5,8 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 
-const isDevelopment = process.env.NODE_ENV !== "production";
-const rewritesConfig = isDevelopment
+const isDevelopment =   process.env.NODE_ENV !== "production";
+const rewritesConfig = true
   ? [
       {
         source: "/admin-api-go/:path*", // Matched parameters can be used in the destination
@@ -25,6 +25,7 @@ const rewritesConfig = isDevelopment
   : [];
 
 export default withBundleAnalyzer({
+  output: "standalone",
   reactStrictMode: false,
   rewrites: async () => rewritesConfig,
   eslint: {

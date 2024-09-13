@@ -1,65 +1,72 @@
-'use client'
-import { createContext } from "react"
-import Tracker from '@openreplay/tracker';
-import { v4 as uuidV4 } from 'uuid'
-import { useReducer } from "react"
+import { createContext, useReducer, useEffect } from "react";
+import { v4 as uuidV4 } from 'uuid';
 
-export const TrackerContext = createContext()
+export const TrackerContext = createContext();
+
+const log = typeof window !== 'undefined' ? console.log : () => {};
 
 function defaultGetUserId() {
-    return uuidV4()
+    return uuidV4();
 }
 
-function newTracker(config) {
-    if (typeof window !== 'undefined') { // checks that we are client-side
-
-        const getUserId = (config?.userIdEnabled && config?.getUserId) ? config.getUserId : defaultGetUserId
-        let userId = null;
-
-        const trackerConfig = {
-            projectKey: config?.projectKey || process.env.NEXT_PUBLIC_OPENREPLAY_PROJECT_KEY
-        }
-
-        console.log("Tracker configuration")
-        console.log(trackerConfig)
-        const tracker = new Tracker(trackerConfig);
-
-        if (config?.userIdEnabled) {
-            userId = getUserId()
-            tracker.setUserID(userId)
-        }
-        return tracker
+function newTracker(config, TrackerClass) { // Accept TrackerClass as an argument
+    if (typeof window === 'undefined') {
+        log("Tracker not created, not in browser");
+        return null;
     }
-    return null
+
+    const getUserId = (config?.userIdEnabled && config?.getUserId) ? config.getUserId : defaultGetUserId;
+
+    const trackerConfig = {
+        // ingestPoint: "https://ae11-2600-1700-56e2-d050-65d7-62a4-a6ac-6a35.ngrok-free.app/endpoint/1",
+        projectKey: "spgZeJSx3P96YdFR1T2u",
+        ingestPoint: "https://openreplay.planx-pla.net/ingest",      
+        __DISABLE_SECURE_MODE: true
+    };
+
+    log("Tracker configuration", trackerConfig);
+    const tracker = new TrackerClass(trackerConfig); // Use the passed TrackerClass
+
+    if (config?.userIdEnabled) {
+        const userId = getUserId();
+        tracker.setUserID(userId);
+    }
+    return tracker;
 }
 
 function reducer(state, action) {
     switch (action.type) {
         case 'init': {
-            if (!state.tracker) {
-                console.log("Instantiaing the tracker for the first time...")
-                return { ...state, tracker: newTracker(state.config) }
+            if (!state.tracker && action.Tracker) { 
+                log("Instantiating the tracker for the first time...");
+                return { ...state, tracker: newTracker(state.config, action.Tracker) }; 
             }
-            return state
+            return state;
         }
         case 'start': {
-            console.log("Starting tracker...")
-            console.log("Custom configuration received: ", state.config)
-            state.tracker.start()
-            return state
+            log("Starting tracker...");
+            log("Custom configuration received: ", state.config);
+            state.tracker.start();
+            return state;
         }
+        default:
+            return state; 
     }
 }
 
 export default function TrackerProvider({ children, config }) {
-    let [state, dispatch] = useReducer(reducer, { tracker: null, config })
+    const [state, dispatch] = useReducer(reducer, { tracker: null, config });
+    useEffect(() => {
+        import('@openreplay/tracker').then(({ default: Tracker }) => { 
+            dispatch({ type: 'init', Tracker });
+            dispatch({ type: 'start', Tracker });
+        });
+    }, []);
 
+    const value = {
+        startTracking: () => dispatch({ type: 'start', Tracker }),
+        initTracker: () => dispatch({ type: 'init', Tracker }) // You might not need this anymore
+    };
 
-    let value = {
-        startTracking: () => dispatch({ type: 'start' }),
-        initTracker: () => dispatch({ type: 'init' })
-    }
-
-
-    return <TrackerContext.Provider value={value}>{children}</TrackerContext.Provider>
+    return <TrackerContext.Provider value={value}>{children}</TrackerContext.Provider>;
 }

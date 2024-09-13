@@ -6,9 +6,14 @@ import { Table, Badge, Text, Progress, Group, Card, SimpleGrid, RingProgress, Ti
 import { IconServer, IconActivity, IconAlertTriangle, IconChevronDown, IconChevronRight, IconChevronUp, IconRefresh } from '@tabler/icons-react';
 
 
-async function fetchDeployments() {
+import { useSession } from 'next-auth/react';
+
+import { useParams } from 'next/navigation';
+
+async function fetchDeployments(accessToken, clusterName) {
     try {
-        const data = await callK8sApi('/apis/apps/v1/namespaces/default/deployments');
+        console.log('fetching deployments for cluster', clusterName, accessToken)
+        const data = await callK8sApi('/apis/apps/v1/namespaces/default/deployments', 'GET', null, null, clusterName, accessToken);
         return data.items;
     } catch (error) {
         console.error('Failed to fetch deployments:', error);
@@ -16,10 +21,10 @@ async function fetchDeployments() {
     }
 }
 
-async function fetchPodsForDeployment(deploymentName) {
+async function fetchPodsForDeployment(deploymentName, accessToken, clusterName) {
     try {
         // Step 1: Fetch ReplicaSets for the deployment
-        const rsData = await callK8sApi(`/apis/apps/v1/namespaces/default/replicasets`);
+        const rsData = await callK8sApi(`/apis/apps/v1/namespaces/default/replicasets`, 'GET', null, null, clusterName, accessToken);
         const replicaSets = rsData.items;
 
         // Step 2: Filter ReplicaSets owned by our deployment
@@ -36,7 +41,7 @@ async function fetchPodsForDeployment(deploymentName) {
         }
 
         // Step 3: Fetch all pods
-        const podsData = await callK8sApi('/api/v1/namespaces/default/pods');
+        const podsData = await callK8sApi('/api/v1/namespaces/default/pods', 'GET', null, null, clusterName, accessToken);
         const allPods = podsData.items;
 
         // Step 4: Filter pods owned by the ReplicaSets we found
@@ -54,7 +59,7 @@ async function fetchPodsForDeployment(deploymentName) {
     }
 }
 
-async function restartDeployment(deploymentName) {
+async function restartDeployment(deploymentName, accessToken, clusterName) {
     try {
         const patchBody = {
             spec: {
@@ -72,7 +77,7 @@ async function restartDeployment(deploymentName) {
             `/apis/apps/v1/namespaces/default/deployments/${deploymentName}`,
             'PATCH',
             patchBody,
-            { 'Content-Type': 'application/strategic-merge-patch+json' }
+            { 'Content-Type': 'application/strategic-merge-patch+json' }, null, accessToken
         );
         
         console.log(`Successfully triggered restart for deployment ${deploymentName}`);
@@ -105,26 +110,34 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
     const [isLoading, setIsLoading] = useState(false);
     const [isRestarting, setIsRestarting] = useState(false);
 
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
+
+    const clusterName = useParams()?.clustername;
+
     useEffect(() => {
-        if (isOpen && pods.length === 0) {
+        if (isOpen) {
             setIsLoading(true);
-            fetchPodsForDeployment(deployment.name).then((data) => {
+            fetchPodsForDeployment(deployment.name, accessToken, clusterName).then((data) => {
                 if (data) {
                     setPods(data);
                 }
                 setIsLoading(false);
             });
         }
-    }, [isOpen, deployment.name]);
+    }, [isOpen, deployment.name, sessionData]);
 
     const readyRatio = deployment.ready / deployment.desired;
     const age = calculateAge(deployment.created);
 
     const handleRestart = async () => {
+        if (!accessToken) {
+            return;
+        }
         setIsRestarting(true);
-        const success = await restartDeployment(deployment.name);
+        const success = await restartDeployment(deployment.name, accessToken, clusterName);
         if (success) {
-            onRestart(deployment.name);
+            onRestart(deployment.name, accessToken, clusterName);
         }
         setIsRestarting(false);
     };
@@ -132,7 +145,7 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
     return (
         <>
             <Table.Tr 
-                style={{ cursor: 'pointer', backgroundColor: isOpen ? '#f0f0f0' : 'transparent' }}
+                // style={{ cursor: 'pointer', backgroundColor: isOpen ? '#f0f0f0' : 'transparent' }}
             >
                 <Table.Td>
                     {deployment.ready === deployment.desired ? (
@@ -150,7 +163,7 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
                     </Group>
                 </Table.Td>
                 <Table.Td>{deployment.image}</Table.Td>
-                <Table.Td>{`${deployment.ready}/${deployment.desired}`}</Table.Td>
+                <Table.Td>{`${deployment.ready}/${deployment.total}`}</Table.Td>
                 <Table.Td>{age}</Table.Td>
                 <Table.Td>
                     <Progress
@@ -176,7 +189,7 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
             <Table.Tr>
                 <Table.Td colSpan={7} style={{ padding: 0 }}>
                     <Collapse in={isOpen}>
-                        <Box p="md" style={{ backgroundColor: '#f8f8f8' }}>
+                        <Box p="md">
                             {isLoading ? (
                                 <Loader />
                             ) : (
@@ -214,7 +227,8 @@ const DashboardCard = ({ title, value, icon, color, secondaryInfo, change }) => 
     const theme = useMantineTheme();
 
     return (
-        <Card shadow="sm" padding="lg" radius="md" style={{ background: `linear-gradient(45deg, ${color}22, ${color}11)` }}>
+        <Card shadow="sm" padding="lg" radius="md" >
+            {/* style={{ background: `linear-gradient(45deg, ${color}22, ${color}11)` }} */}
             <Group position="apart" style={{ marginBottom: 5, marginTop: theme.spacing.sm }}>
                 <Text size="lg" weight={500}>{title}</Text>
                 <ThemeIcon color={color} variant="light" size={38} radius="md">
@@ -239,7 +253,7 @@ const DashboardCard = ({ title, value, icon, color, secondaryInfo, change }) => 
                 )}
             </Group>
 
-            <Text size="xs" color="dimmed" mt={7}>
+            <Text size="xs" c="dimmed" mt={7}>
                 {secondaryInfo}
             </Text>
 
@@ -288,13 +302,19 @@ export function DeploymentsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [openDeployment, setOpenDeployment] = useState(null);
 
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
+
+    const clusterName = useParams()?.clustername;
+
     useEffect(() => {
-        fetchDeployments().then((data) => {
+        fetchDeployments(accessToken, clusterName).then((data) => {
             if (data) {
                 const formattedDeployments = data.map(deployment => ({
                     name: deployment.metadata.name,
                     ready: deployment.status.readyReplicas || 0,
                     desired: deployment.spec.replicas,
+                    total: deployment.status.replicas || 0,
                     image: deployment.spec.template.spec.containers[0].image,
                     created: deployment.metadata.creationTimestamp,
                 }));
@@ -302,7 +322,7 @@ export function DeploymentsPage() {
             }
             setIsLoading(false);
         });
-    }, []);
+    }, [sessionData]);
 
     const totalDeployments = deployments.length;
     const activeDeployments = deployments.filter(d => d.ready === d.desired).length;
@@ -316,8 +336,8 @@ export function DeploymentsPage() {
         return <Text>No deployments found.</Text>;
     }
 
-    const handleRestart = async (deploymentName) => {
-        await fetchDeployments();  // Refresh the deployment list after restart
+    const handleRestart = async (deploymentName, accessToken, clusterName) => {
+        await fetchDeployments(accessToken, clusterName);  // Refresh the deployment list after restart
     };
 
 

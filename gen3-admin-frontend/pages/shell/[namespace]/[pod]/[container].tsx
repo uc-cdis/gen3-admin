@@ -16,7 +16,7 @@ export default function ContainerShell() {
 
     return (
         <div>
-            <Terminal namespace={namespace} container={container} pod={pod}  />
+            <Terminal namespace={namespace} container={container} pod={pod}  cluster="test" />
         </div>
     )
 }

@@ -5,16 +5,17 @@ import 'xterm/css/xterm.css'
 
 
 
-function TerminalComponent({ namespace, pod, container }) {
+function TerminalComponent({ namespace, pod, container, cluster }) {
     useEffect(() => {
-        console.log(namespace, pod, container)
+        console.log(namespace, pod, container, cluster)
         const term = new Terminal()
         term.open(document.getElementById('terminal'));
         const basePath = window.location.host;
         // console.log(term)
         // // Update this URL with your WebSocket URL
         // var wsUrl = 'ws://localhost:8002/pods/ws';
-        var wsUrl = `ws://`+  basePath  + `/admin-api-go/pods/ws/${namespace}/${pod}/${container}`
+        // var wsUrl = `ws://`+  basePath  + `/admin-api-go/pods/ws/${namespace}/${pod}/${container}`
+        var wsUrl = `ws://`+  basePath  + `/api/go/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/pods/${pod}/exec?command=sh&stdin=true&stdout=true&tty=true`;
         // // var wsUrl = 'ws://localhost:8001/api/v1/namespaces/default/pods/sheepdog-deployment-d4dc7486d-vhklx/exec?command=sh&stdin=true&stdout=true&tty=true';
         var socket = new WebSocket(wsUrl);
     

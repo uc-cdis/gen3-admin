@@ -1,5 +1,5 @@
 // components/DefaultLayout.jsx
-export default function DefaultLayout({ children }) {
+// export default function DefaultLayout({ children }) {
     return (
         <AuthProvider>
         <MantineProvider theme={theme}>

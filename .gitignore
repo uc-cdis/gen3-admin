@@ -1,4 +1,7 @@
 .env
 .next
+.DS_Store
 __pycache__/
 node_modules
+_deprecated/
+certs/
