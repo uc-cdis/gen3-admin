@@ -1,397 +1,239 @@
-'use client';
+import React, { useState, useEffect } from 'react';
+import { Container, Title, Text, Grid, Paper, Button, RingProgress, Group, SimpleGrid, TextInput } from '@mantine/core';
+import { IconServer, IconRocket, IconSearch } from '@tabler/icons-react';
 
-import { Title, Text, Code, Grid, RingProgress, Progress, Paper, Badge, Divider, Table, HoverCard, Container, Skeleton } from '@mantine/core';
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { DataTable } from 'mantine-datatable';
+import callK8sApi from '@/lib/k8s';
+import parseCpu from '@/utils/parseCpu'
 
+import { format } from 'date-fns';
 
-import { FixedSizeList } from "react-window";
+import { IconChevronUp, IconSelector } from '@tabler/icons-react';
 
-async function fetchK8sVersion() {
-    try {
-        const response = await fetch('/api/k8s/proxy/version'); // This endpoint will be redirected by your proxy
-        if (!response.ok) {
-            throw new Error(`Error: ${response.status}`);
-        }
-        const data = await response.json();
-        let versionString = data.major + "." + data.minor
-        return versionString;
-    } catch (error) {
-        console.error('Failed to fetch cluster version:', error);
-
-        return null;
-    }
+function parseMemory(memory) {
+    if (typeof memory === 'number') return memory;
+    if (memory.endsWith('Ki')) return parseInt(memory) / 1024 / 1024;
+    if (memory.endsWith('Mi')) return parseInt(memory) / 1024;
+    if (memory.endsWith('Gi')) return parseInt(memory);
+    return parseInt(memory) / 1024 / 1024 / 1024;
 }
 
-export default function Cluster() {
-    // const k8s_version = "1.26"
-    const [k8sversion, setK8sVersion] = useState("");
+export default function ClusterDashboard() {
+    const [k8sVersion, setK8sVersion] = useState("");
+    const [nodes, setNodes] = useState([]);
+    const [deployments, setDeployments] = useState([]);
     const [events, setEvents] = useState([]);
-    const [pods, setPods] = useState([]);
+    const [capacity, setCapacity] = useState({ cpu: 0, memory: 0, pods: 0 });
+    const [usedCapacity, setUsedCapacity] = useState({ cpu: 0, memory: 0, pods: 0 });
 
-    const [nodeMetrics, setNodeMetrics] = useState({});
-    const [nodeDetails, setNodeDetails] = useState({});
-    const [capacity, setCapacity] = useState({ cpu: 0, memory: 0, pods: 0 })
-    const [usedCapacity, setUsedCapacity] = useState({ cpu: 0, memory: 0, pods: 0 })
-
-
-
-
-
-    function parseCpu(value) {
-        if (!value) return 0;
-
-        // Check if the last character is a digit
-        const isLastCharDigit = !isNaN(value.slice(-1));
-        const numberStr = isLastCharDigit ? value : value.slice(0, -1);  // Extract number part
-        const unit = isLastCharDigit ? '' : value.slice(-1);             // Extract unit
-
-        const number = parseFloat(numberStr);  // Convert number to float
-        console.log("ParseCPU:", numberStr, number, unit); // Debugging output
-
-        // Handle potential errors
-        if (isNaN(number)) {
-            console.warn("Invalid CPU value:", value);
-            return 0;
-        }
-
-        switch (unit) {
-            case 'n': return number / 1000000000;
-            case 'u': return number / 1000000;
-            case 'm': return number / 1000;
-            default: return number; // Assume cores
-        }
-    }
+    // Events state
+    const [filteredEvents, setFilteredEvents] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
 
 
     useEffect(() => {
-        const fetchNodeData = async () => {
+        const fetchClusterData = async () => {
             try {
-                // Reset capacity and usage before render. 
-                setCapacity({ cpu: 0, memory: 0, pods: 0 })
-                setUsedCapacity({ cpu: 0, memory: 0, pods: 0 })
-
-                const [metricsResponse, detailsResponse] = await Promise.all([
-                    fetch('/api/k8s/proxy/apis/metrics.k8s.io/v1beta1/nodes'),
-                    fetch('/api/k8s/proxy/api/v1/nodes')
+                const [versionData, nodesData, deploymentsData, eventsData, metricsData, podsData] = await Promise.all([
+                    callK8sApi('/version'),
+                    callK8sApi('/api/v1/nodes'),
+                    callK8sApi('/apis/apps/v1/deployments'),
+                    callK8sApi('/api/v1/events'),
+                    callK8sApi('/apis/metrics.k8s.io/v1beta1/nodes'),
+                    callK8sApi('/api/v1/pods')
                 ]);
 
-                if (!metricsResponse.ok || !detailsResponse.ok) {
-                    throw new Error(`Error fetching data: Metrics: ${metricsResponse.status}, Details: ${detailsResponse.status}`);
-                }
+                setK8sVersion(`${versionData.major}.${versionData.minor}`);
+                setNodes(nodesData.items);
+                setDeployments(deploymentsData.items);
+                setEvents(eventsData.items);
 
-                const metricsData = await metricsResponse.json();
-                const detailsData = await detailsResponse.json();
-
-                setNodeMetrics(metricsData);
-                setNodeDetails(detailsData);
-
-                // Calculate capacity AFTER both fetches have completed
-                calculateCapacity(detailsData);
-                calculateUsage(metricsData)
+                calculateCapacity(nodesData.items);
+                calculateUsage(metricsData.items, podsData.items);
             } catch (error) {
-                console.error('Failed to fetch node data:', error);
-                // Implement error handling (e.g., display error message to the user, redirect to error pages)
+                console.error('Failed to fetch cluster data:', error);
             }
         };
 
-        const calculateCapacity = (detailsData) => {
-            detailsData?.items?.forEach(node => {
-                setCapacity(prevCapacity => {
-                    const nodeCpu = parseInt(parseCpu(node.status.capacity.cpu)) || 0;
-                    const nodeMemory = parseInt(node.status.capacity['memory'].slice(0, -2)) || 0;
-                    const pods = parseFloat(node.status.capacity.pods || 0);
-                    return {
-                        ...prevCapacity,
-                        cpu: prevCapacity.cpu + nodeCpu,
-                        memory: prevCapacity.memory + nodeMemory,
-                        pods: prevCapacity.pods + pods,
-                    };
-                });
-            });
-        };
-
-        // New function to calculate used resources
-        const calculateUsage = (metricsData) => {
-            let totalCpuUsage = 0;
-            let totalMemoryUsage = 0;
-            let totalPodsUsage = 0;
-
-            metricsData?.items?.forEach(nodeMetric => {
-                const nodeUsage = nodeMetric.usage;
-                console.log("Parsed cpu usage: ", parseCpu(nodeUsage.cpu))
-                totalCpuUsage += parseCpu(nodeUsage.cpu) || 0;
-                totalMemoryUsage += parseInt(nodeUsage.memory.slice(0, -2)) || 0;
-                // You might need to adjust if pods are tracked differently in metrics
-                // totalPodsUsage += parseFloat(nodeUsage.pods) || 0; 
-            });
-            console.log(totalCpuUsage)
-            setUsedCapacity(prevUsedCapacity => ({
-                ...prevUsedCapacity,
-                cpu: totalCpuUsage,
-                memory: totalMemoryUsage,
-                // pods: totalPodsUsage,
-            }));
-        };
-
-
-        fetchNodeData(); // Call the async function to trigger the data fetching and calculation
-    }, []); // Empty dependency array ensures this runs only once after initial render
-
-
-    useEffect(() => {
-        fetchK8sVersion().then(data => {
-            if (data) {
-                setK8sVersion(data);
-            }
-            else {
-                setK8sVersion("error");
-            }
-        });
+        fetchClusterData();
     }, []);
 
-    useEffect(() => {
-        const fetchEvents = async () => {
-            try {
-                // const response = await fetch('/api/cluster/capacity'); // This endpoint will be redirected by your proxy
-                // const response = await fetch('/api/k8s/proxy/apis/metrics.k8s.io/v1beta1/nodes'); // This endpoint will be redirected by your proxy
-                const response = await fetch('/api/k8s/proxy/api/v1/events'); // This endpoint will be redirected by your proxy
-                if (!response.ok) {
-                    throw new Error(`Error: ${response.status}`);
-                }
-                const data = await response.json();
-                setEvents(data.items);
-            } catch (error) {
-                console.error('Failed to fetch events:', error);
-            }
-        };
-
-        fetchEvents();
-    }, [])
 
     useEffect(() => {
-        const fetchPods = async () => {
-            try {
-                const response = await fetch('/api/k8s/proxy/api/v1/pods'); // This endpoint will be redirected by your proxy
-                if (!response.ok) {
-                    throw new Error(`Error: ${response.status}`);
-                }
-                const data = await response.json();
-                setPods(data.items);
-            } catch (error) {
-                console.error('Failed to fetch pods:', error);
-            }
-        };
-        fetchPods();
-    }, [])
+        const filtered = events.filter(event =>
+            event?.message?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.metadata.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.involvedObject.kind.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event?.involvedObject.namespace.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        setFilteredEvents(filtered);
+        setPage(1);
+    }, [searchQuery, events]);
 
+    const paginatedEvents = filteredEvents.slice((page - 1) * pageSize, page * pageSize);
+
+
+    const calculateCapacity = (nodes) => {
+        let totalCpu = 0;
+        let totalMemory = 0;
+        let totalPods = 0;
+
+        nodes.forEach(node => {
+            totalCpu += parseCpu(node.status.capacity.cpu);
+            totalMemory += parseMemory(node.status.capacity.memory);
+            totalPods += parseInt(node.status.capacity.pods);
+        });
+
+        setCapacity({ cpu: totalCpu, memory: totalMemory, pods: totalPods });
+    };
+
+    const calculateUsage = (nodeMetrics, pods) => {
+        let usedCpu = 0;
+        let usedMemory = 0;
+
+        nodeMetrics.forEach(metric => {
+            usedCpu += parseCpu(metric.usage.cpu);
+            usedMemory += parseMemory(metric.usage.memory);
+        });
+
+        setUsedCapacity(prev => ({
+            ...prev,
+            cpu: usedCpu,
+            memory: usedMemory,
+            pods: pods.length
+        }));
+    };
+
+    const formatPercentage = (used, total) => {
+        const percentage = (used / total) * 100;
+        return percentage > 100 ? 100 : percentage.toFixed(1);
+    };
 
     return (
-        <>
-            <Skeleton visible={false}>
-                <Container fluid my={20}>
-                    <Title>Cluster Dashboard</Title>
-                </Container>
-                <Divider />
-                <Container fluid my={20}>
-                    <Text>
-                        This is the cluster dashboard. It will show the status of your kubernetes cluster, the number of nodes, and other useful information.
-                    </Text>
-                </Container>
-                <Divider />
+        <Container fluid>
+            <Title order={1} my="xl">Cluster Dashboard</Title>
+            <Text mb="xl">
+                This is the cluster dashboard. It will show the status of your kubernetes cluster, the number of nodes, and other useful information.
+            </Text>
 
-                <Container fluid my={20}>
-                    <Grid>
-                        {/* <Grid.Col span={4}>
-                            <Paper>
-                                Provider: AWS
-                            </Paper>
-                        </Grid.Col> */}
-                        <Grid.Col span={4}>
-                            Kubernetes Version: {k8sversion}
-                        </Grid.Col>
-                        {/* <Grid.Col span={4}>
-                            Created: 2021-08-01
-                        </Grid.Col> */}
-                    </Grid>
-                </Container>
-                <Divider />
-                <Container fluid my={20}>
-                    <Grid>
-                        {/* Total Resources */}
-                        {/* <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Grid>
-                                    <Grid.Col span={4}>
-                                        <Text>524</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Text>Total Resources</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Badge>1</Badge>
-                                    </Grid.Col>
-                                </Grid>
-                            </Paper>
-                        </Grid.Col> */}
-                        <Grid.Col span={4}>
-                            {/* Nodes */}
-                            {/* <Anchor component={Link} href="/nodes"> */}
-                            <Paper shadow="lg" withBorder p="xl" component={Link} href="/nodes">
-                                <Grid>
-                                    <Grid.Col span={4}>
-                                        <Text>{nodeMetrics?.items?.length}</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Text>Nodes</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Badge color="red">1 alerts</Badge>
-                                    </Grid.Col>
-                                </Grid>
-                            </Paper>
-                            {/* </Anchor> */}
-                        </Grid.Col>
-                        <Grid.Col span={4}>
-                            {/* Nodes */}
-                            <Paper shadow="lg" withBorder p="xl" component={Link} href="/deployments">
-                                <Grid>
-                                    <Grid.Col span={4}>
-                                        <Text>13</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Text>Deployments</Text>
-                                    </Grid.Col>
-                                    <Grid.Col span={4}>
-                                        <Badge>1</Badge>
-                                    </Grid.Col>
-                                </Grid>
-                            </Paper>
-                        </Grid.Col>
-                    </Grid>
-                </Container>
-                <Divider />
-                <Container fluid my={20}>
-                    <Title order={2}>
-                        Capacity
-                    </Title>
-                    <Text>
-                    </Text>
-                    <Grid>
-                        {/* <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Title order={4}>Pods</Title>
-                                <Text>Used  | {capacity?.used}/{capacity?.capacity} | {(capacity?.used / capacity?.capacity * 100).toFixed(1)}%</Text>
-                                <Progress value={(capacity?.used / capacity?.capacity * 100).toFixed(1)} />
-                            </Paper>
-                        </Grid.Col> */}
-                        <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Title order={4}>Cluster CPU Usage</Title>
-                                <RingProgress
-                                    sections={[{ value: ((usedCapacity.cpu / capacity.cpu) * 100), color: 'blue' }]}
-                                    label={
-                                        <Text c="blue" fw={700} ta="center" size="xl">
-                                            {((usedCapacity.cpu / capacity.cpu) * 100).toFixed(1)}%
-                                        </Text>
-                                    }
-                                />
-                                <Text> {usedCapacity.cpu.toFixed(2)} / {capacity.cpu} cores</Text>
-                            </Paper>
-                        </Grid.Col>
-                        <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Title order={4}>Cluster Memory Usage</Title>
-                                <RingProgress
-                                    sections={[{ value: ((usedCapacity.memory / capacity.memory) * 100), color: 'blue' }]}
-                                    label={
-                                        <Text c="blue" fw={700} ta="center" size="xl">
-                                            {((usedCapacity.memory / capacity.memory) * 100).toFixed(1)}%
-                                        </Text>
-                                    }
-                                />
-                                <Text> {(usedCapacity.memory / 1000000).toFixed(1)} / {(capacity.memory / 1000000).toFixed(1)} GB</Text>
-                            </Paper>
-                        </Grid.Col>
-                        <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Title order={4}>Pods</Title>
-                                {console.log(pods.length, capacity.pods)}
-                                <RingProgress
-                                    sections={[{ value: ((pods.length / capacity.pods) * 100), color: 'blue' }]}
-                                    label={
-                                        <Text c="blue" fw={700} ta="center" size="xl">
-                                            {((pods.length / capacity.pods) * 100).toFixed(1)}%
-                                        </Text>
-                                    }
-                                />
-                                <Text> {pods.length} / {capacity.pods} Pods</Text>
-                            </Paper>
-                        </Grid.Col>
-                        {/* <Grid.Col span={4}>
-                            <Paper shadow="lg" withBorder p="xl" >
-                                <Text>Memory</Text>
-                                <Text> Reserved 1.15 / 8 cores</Text>
-                                <Progress value={14.37} label="1.15 / 8 cores" />
-                                <Text>Used 0.69 / 8 cores</Text>
-                                <Progress value={7.11} color="yellow" label="0.57 / 8 cores" />
-                            </Paper>
-                        </Grid.Col> */}
-                    </Grid>
-                </Container>
-                <Divider />
-                <Container fluid my={20} height={500}>
-                    <Title order={2}>
-                        Events Table
-                    </Title>
-                    <DataTable
-                        height={300}
-                        columns={[
-                            { accessor: 'lastTimestamp', title: 'Timestamp', sortable: true },
-                            { accessor: 'involvedObject.namespace', title: 'Namespace', sortable: true },
-                            { accessor: 'kind', title: 'Kind', sortable: true },
-                            { accessor: 'reason', title: 'Reason', sortable: true },
-                            { accessor: 'message', title: 'Message', sortable: true },
-                        ]}
-                        records={events}
+            <Paper shadow="xs" p="md" mb="xl">
+                <Text>Kubernetes Version: {k8sVersion}</Text>
+            </Paper>
+
+            <SimpleGrid cols={2} spacing="lg" mb="xl">
+                <Paper shadow="xs" p="md">
+                    <Group position="apart">
+                        <Group>
+                            <IconServer size={24} color="blue" />
+                            <div>
+                                <Text size="xl" weight={700} color="blue">{nodes.length}</Text>
+                                <Text>Nodes</Text>
+                            </div>
+                        </Group>
+                        <Button variant="light" color="blue">1 ALERTS</Button>
+                    </Group>
+                </Paper>
+                <Paper shadow="xs" p="md">
+                    <Group position="apart">
+                        <Group>
+                            <IconRocket size={24} color="blue" />
+                            <div>
+                                <Text size="xl" weight={700} color="blue">{deployments.length}</Text>
+                                <Text>Deployments</Text>
+                            </div>
+                        </Group>
+                        <Button variant="light" color="blue">1</Button>
+                    </Group>
+                </Paper>
+            </SimpleGrid>
+
+            <Title order={2} mb="md">Capacity</Title>
+            <SimpleGrid cols={3} spacing="lg" mb="xl">
+                <Paper shadow="xs" p="md">
+                    <Text weight={500} mb="xs">Cluster CPU Usage</Text>
+                    <RingProgress
+                        sections={[{ value: parseFloat(formatPercentage(usedCapacity.cpu, capacity.cpu)), color: 'blue' }]}
+                        label={
+                            <Text color="blue" weight={700} align="center" size="xl">
+                                {formatPercentage(usedCapacity.cpu, capacity.cpu)}%
+                            </Text>
+                        }
                     />
-                </Container>
-                <Divider />
-                {/* <Container fluid my={20}>
-                    <Title order={2}>
-                        Events
-                    </Title>
-                    <FixedSizeList
-                        width="100%"
-                        height={500}
-                        itemCount={events.length}
-                        itemSize={22}
-                    // ref={listRef}
-                    >
-                        {({ index, style }) => {
-                            return (
+                    <Text align="center" mt="sm">{usedCapacity.cpu.toFixed(2)} / {capacity.cpu.toFixed(2)} cores</Text>
+                </Paper>
+                <Paper shadow="xs" p="md">
+                    <Text weight={500} mb="xs">Cluster Memory Usage</Text>
+                    <RingProgress
+                        sections={[{ value: parseFloat(formatPercentage(usedCapacity.memory, capacity.memory)), color: 'blue' }]}
+                        label={
+                            <Text color="blue" weight={700} align="center" size="xl">
+                                {formatPercentage(usedCapacity.memory, capacity.memory)}%
+                            </Text>
+                        }
+                    />
+                    <Text align="center" mt="sm">{usedCapacity.memory.toFixed(1)} / {capacity.memory.toFixed(1)} GB</Text>
+                </Paper>
+                <Paper shadow="xs" p="md">
+                    <Text weight={500} mb="xs">Pods</Text>
+                    <RingProgress
+                        sections={[{ value: parseFloat(formatPercentage(usedCapacity.pods, capacity.pods)), color: 'blue' }]}
+                        label={
+                            <Text color="blue" weight={700} align="center" size="xl">
+                                {formatPercentage(usedCapacity.pods, capacity.pods)}%
+                            </Text>
+                        }
+                    />
+                    <Text align="center" mt="sm">{usedCapacity.pods} / {capacity.pods} Pods</Text>
+                </Paper>
+            </SimpleGrid>
 
-                                <div style={style}>
-                                    <Code>
-                                        {events[index].lastTimestamp ? events[index].lastTimestamp : "no time"}  -
-                                    </Code>
-                                    <Code>
-                                        {events[index].involvedObject.namespace ? events[index].involvedObject.namespace : "no namespace"}  -
-                                    </Code>
-                                    <Code>
+            <Title order={2} mb="md">Events Table</Title>
+            <Group position="apart" mb="md">
+                <TextInput
+                    placeholder="Search events..."
+                    icon={<IconSearch size={14} />}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                    style={{ width: '300px' }}
+                />
+                <Text>Total Events: {filteredEvents.length}</Text>
+            </Group>
+            <DataTable
+                withBorder
+                borderRadius="sm"
+                withColumnBorders
+                striped
+                highlightOnHover
+                columns={[
+                    {
+                        accessor: 'lastTimestamp', title: 'Timestamp', sortable: true, render: ({ lastTimestamp }) => format(new Date(lastTimestamp), 'yyyy-MM-dd HH:mm:ss')
+                    },
+                    { accessor: 'involvedObject.name', title: 'Name', sortable: true },
+                    { accessor: 'involvedObject.namespace', title: 'Namespace', sortable: true },
+                    { accessor: 'involvedObject.kind', title: 'Kind', sortable: true },
+                    { accessor: 'reason', title: 'Reason', sortable: true },
+                    { accessor: 'message', title: 'Message', sortable: true, width: '40%' },
+                ]}
+                records={paginatedEvents}
+                totalRecords={filteredEvents.length}
+                recordsPerPage={pageSize}
+                page={page}
+                onPageChange={setPage}
+                recordsPerPageOptions={[10, 20, 30, 50]}
+                onRecordsPerPageChange={setPageSize}
+                sortIcons={{
+                    sorted: <IconChevronUp size={14} />,
+                    unsorted: <IconSelector size={14} />,
+                }}
+                // noRecordsText="No events found"
+                loadingText="Loading events..."
+            />
 
-                                    </Code>
-                                    <Code>
-                                        {events[index].message}
-                                    </Code>
-                                </div>
-                            );
-                        }}
-                    </FixedSizeList>
-                </Container> */}
-            </Skeleton>
-        </>
+
+        </Container>
     );
 }

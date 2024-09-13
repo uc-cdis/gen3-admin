@@ -1,0 +1,40 @@
+
+services:
+  agent:
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    volumes:
+      - ./gen3-admin-api/certs:/app/gen3-agent/certs
+      - /Users/qureshi/.kube/config:/root/.kube/config
+    command: 
+      - ./gen3-agent
+      - --name 
+      - local
+  api:
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8002:8002"
+      - "50051:50051"
+    volumes:
+      - ./gen3-admin-api/certs:/go/src/gen3-admin-api/certs
+      - ./gen3-admin-api/.env:/go/src/gen3-admin-api/.env
+      - /Users/qureshi/.kube/config:/root/.kube/config
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    command: 
+      - npm
+      - run
+      - start
+    network_mode: host
+    # volumes:
+      # - ./gen3-admin-frontend:/app/frontend
+  

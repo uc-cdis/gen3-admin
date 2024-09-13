@@ -1,4 +1,4 @@
-import { Title, Text, Anchor,Button } from '@mantine/core';
+import { Title, Text, Anchor, Button } from '@mantine/core';
 import classes from './Welcome.module.css';
 import { notifications } from '@mantine/notifications';
 export function Welcome() {
@@ -10,25 +10,14 @@ export function Welcome() {
         </Text>
         {' '} Admin
       </Title>
-      <Button
-      onClick={() =>
-        notifications.show({
-          title: 'Default notification',
-          message: 'Hey there, your code is awesome! 🤥',
-        })
-      }
-    >
-      Show notification
-    </Button>
 
-      <Text color="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
-        This starter Next.js project includes a minimal setup for server side rendering, if you want
-        to learn more on Mantine + Next.js integration follow{' '}
-        <Anchor href="https://mantine.dev/guides/next/" size="lg">
-          this guide
+      <Text c="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
+        This Gen3 Admin dashboard provides a comprehensive overview of your deployment's health. Here you can monitor system performance, investigate issues, and trigger maintenance tasks to ensure optimal operation of your Gen3 environment. For more information, please refer to the{' '}
+        <Anchor href="#" size="lg">
+          documentation
         </Anchor>
-        . To get started edit index.tsx file.
       </Text>
+
     </>
   );
 }

@@ -14,12 +14,12 @@ export function NavBar() {
                     onClick={() => router.push('/cluster')}
                 />
                 <NavLink
-                    label="CronJobs"
+                    label="Jobs"
                     active={router.pathname === '/cronjobs'}
                     onClick={() => router.push('/cronjobs')}
                 />
                 <NavLink
-                    label="Deployments"
+                    label="Services"
                     active={router.pathname === '/deployments'}
                     onClick={() => router.push('/deployments')}
                 />

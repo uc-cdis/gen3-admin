@@ -1,0 +1,31 @@
+FROM amazonlinux:2023 AS nextjs-builder
+
+ENV NODE_VERSION 20.17.0
+
+WORKDIR /frontend 
+
+COPY gen3-admin-frontend /frontend
+
+RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+RUN yum install -y nodejs
+
+RUN npm install
+RUN npm run build
+
+# FROM amazonlinux:2023 AS final
+
+# RUN yum update -y && yum install -y nodejs
+
+# WORKDIR /app
+
+# COPY --from=go-builder /go/src/gen3-admin-api/bin/gen3-admin-api /app/
+# COPY gen3-admin-api/.env /app/
+# COPY --from=nextjs-builder /frontend /app/frontend
+
+# COPY start.sh /app/
+
+# RUN chmod +x /app/start.sh
+
+EXPOSE 3000
+
+CMD ["node", ".next/standalone/server.js"]
