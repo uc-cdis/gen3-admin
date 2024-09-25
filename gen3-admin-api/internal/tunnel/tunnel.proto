@@ -16,6 +16,7 @@ message AgentMessage {
     RegistrationRequest registration = 1; // Initial registration
     StatusUpdate status = 2;              // Periodic status updates
     ProxyResponse proxy = 3;              // Proxy responses
+    HelmValuesResponse helmValues = 4;              // Helm values responses
   }
 }
 
@@ -26,6 +27,7 @@ message ServerMessage {
     StatusUpdate status = 2;               // Server status updates
     ProxyRequest proxy = 3;                // Proxy requests
     ProjectsRequest projects = 4;          // Projects request
+    HelmValuesRequest  helmValuesRequest = 5;          // Helm values request
   }
 }
 
@@ -87,6 +89,19 @@ message ProjectsResponse {
 
 message ProjectsRequest {
   string stream_id = 1;
+}
+
+message HelmValuesRequest {
+  string stream_id = 1;
+  string release = 2;
+  string namespace = 3;
+}
+
+
+
+
+message HelmValuesResponse {
+  repeated string values = 1;
 }
 
 message Project {
