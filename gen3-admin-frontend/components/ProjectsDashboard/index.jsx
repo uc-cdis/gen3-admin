@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip } from '@mantine/core';
+import { Card, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip, Drawer } from '@mantine/core';
 import { IconFilter, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 
 import { DataTable } from 'mantine-datatable';
 
-import {callGoApi} from '@/lib/k8s';
+import { useDisclosure } from '@mantine/hooks';
+
+import { callGoApi } from '@/lib/k8s';
 
 import { useSession } from 'next-auth/react';
+
+
+import NestedCollapses from '@/components/NestedCollapse';
 
 const ClusterDashboard = () => {
   const [clusters, setClusters] = useState([]);
@@ -15,9 +20,17 @@ const ClusterDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+  const [currentCluster, setCurrentCluster] = useState(null);
+
+  const [currentValues, setCurrentValues] = useState(null);
+  const [openValuesModal, setOpenValuesModal] = useState(false);
+
+  const [opened, { open, close }] = useDisclosure(false);
+
+
 
   const { data: sessionData } = useSession();
-  const accessToken = sessionData?.accessToken;
+  const accessToken = sessionData;
 
   const fetchClustersAndCharts = async () => {
     if (!accessToken) return;
@@ -80,71 +93,103 @@ const ClusterDashboard = () => {
     );
   };
 
+  const viewValues = async (name, namespace, clusterName) => {
+    console.log("viewing values for", name, namespace)
+    // call go api to get the values
+    // then open a modal with the values
+    const values = await callGoApi(`/agent/${clusterName}/helm/values/${name}/${namespace}`, 'GET', null, null, accessToken);
+    console.log("values", values)
+
+    setCurrentValues(values)
+    open()
+
+  }
+
   if (error) return <Text color="red">{error}</Text>;
 
   return (
-    <Box>
-      <Group position="apart" mb="md">
-        <Text size="xl" weight={700}>Helm Charts</Text>
-        <Tooltip label="Not yet implemented">
-          <Button variant="filled" color="blue" disabled>Deploy a new app</Button>
-        </Tooltip>
-      </Group>
+    <>
+      <Drawer offset={8} radius="md" position="right" size="80%" opened={opened} onClose={close} title="Helm Values">
+        <NestedCollapses data={currentValues} />
+      </Drawer>
 
-      <Group mb="md">
-        <TextInput
-          placeholder="Find clusters or charts"
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.currentTarget.value)}
-          style={{ flexGrow: 1 }}
-        />
-        <Tooltip label="Not yet implemented">
-          <Switch label="Show system apps" disabled />
-        </Tooltip>
-        <Tooltip label="Not yet implemented">
-          <Button leftSection={<IconFilter size={14} />} variant="light" disabled>Advanced filters</Button>
-        </Tooltip>
-        <Button onClick={fetchClustersAndCharts}>Refresh</Button>
-      </Group>
+      <Box>
+        <Group position="apart" mb="md">
+          <Text size="xl" weight={700}>Helm Charts</Text>
+          <Tooltip label="Not yet implemented">
+            <Button variant="filled" color="blue" disabled>Deploy a new app</Button>
+          </Tooltip>
+        </Group>
 
-      {/* <ScrollArea> */}
-      <DataTable
-        striped
-        highlightOnHover
-        records={paginatedCharts}
-        fetching={loading}
-        // filterable
-        // selectedRecords={selection}
-        // onSelectedRecordsChange={setSelection}
-        columns={[
-          { accessor: 'clusterName' },
-          { accessor: 'name' },
-          { accessor: 'namespace' },
-          { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
-          { accessor: 'chart' },
-          {
-            id: 'Development', header: 'Development', accessor: 'helm',
-            render: ({ helm }) => {
-              if (helm === 'true') {
-                return <img src="/images/icons/helm.svg" alt="Helm" width="20px" height="20px" />;
-              } else {
-                return <img src="/images/icons/argocd.png" alt="ArgoCD" width="20px" height="20px" />;
+        <Group mb="md">
+          <TextInput
+            placeholder="Find clusters or charts"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.currentTarget.value)}
+            style={{ flexGrow: 1 }}
+          />
+          <Tooltip label="Not yet implemented">
+            <Switch label="Show system apps" disabled />
+          </Tooltip>
+          <Tooltip label="Not yet implemented">
+            <Button leftSection={<IconFilter size={14} />} variant="light" disabled>Advanced filters</Button>
+          </Tooltip>
+          <Button onClick={fetchClustersAndCharts}>Refresh</Button>
+        </Group>
+
+        {/* <ScrollArea> */}
+        <DataTable
+          striped
+          highlightOnHover
+          records={paginatedCharts}
+          fetching={loading}
+          // filterable
+          // selectedRecords={selection}
+          // onSelectedRecordsChange={setSelection}
+          columns={[
+            { accessor: 'clusterName' },
+            { accessor: 'name' },
+            { accessor: 'namespace' },
+            { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
+            { accessor: 'chart' },
+            {
+              id: 'Development', header: 'Development', accessor: 'helm',
+              render: ({ helm }) => {
+                if (helm === 'true') {
+                  return <img src="/images/icons/helm.svg" alt="Helm" width="20px" height="20px" />;
+                } else {
+                  return <img src="/images/icons/argocd.png" alt="ArgoCD" width="20px" height="20px" />;
+                }
               }
+            },
+            {
+              "accessor": "Edit",
+              "id": "name",
+              // Add a button to edit / view the values of the deployment
+              render: ({ name, namespace, clusterName }) => (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  color="blue"
+                  onClick={() => viewValues(name, namespace, clusterName)}
+                >
+                  Edit
+                </Button>
+              )
             }
-          },
-        ]}
-        totalRecords={filteredCharts.length}
-        // recordsPerPage={pageSize}
-        // page={page}
-        // onPageChange={(p) => setPage(p)}
-        sortStatus={{ field: 'name', direction: 'asc' }}
-        onSortStatusChange={console.log}
-      // rowStyles={row => ({
-      //   backgroundColor: row.index % 2 === 0 ? '#f9f9f9' : 'white'
-      // })}
-      />
+          ]}
+          totalRecords={filteredCharts.length}
+          // recordsPerPage={pageSize}
+          // page={page}
+          // onPageChange={(p) => setPage(p)}
+          sortStatus={{ field: 'name', direction: 'asc' }}
+          onSortStatusChange={console.log}
+        // rowStyles={row => ({
+        //   backgroundColor: row.index % 2 === 0 ? '#f9f9f9' : 'white'
+        // })}
+        />
 
-      {/* <Table striped highlightOnHover>
+        {/* <Table striped highlightOnHover>
           <thead>
             <tr>
               <th>Cluster / Chart</th>
@@ -169,30 +214,31 @@ const ClusterDashboard = () => {
             ))}
           </tbody>
         </Table> */}
-      {/* </ScrollArea> */}
+        {/* </ScrollArea> */}
 
-      <Group position="apart" mt="md">
-        <Text>
-          {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCharts.length)} of {filteredCharts.length} Charts
-        </Text>
-        <Group spacing={8}>
-          <Button
-            variant="subtle"
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-          >
-            <IconChevronLeft size={18} />
-          </Button>
-          <Button
-            variant="subtle"
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-          >
-            <IconChevronRight size={18} />
-          </Button>
+        <Group position="apart" mt="md">
+          <Text>
+            {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCharts.length)} of {filteredCharts.length} Charts
+          </Text>
+          <Group spacing={8}>
+            <Button
+              variant="subtle"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <IconChevronLeft size={18} />
+            </Button>
+            <Button
+              variant="subtle"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <IconChevronRight size={18} />
+            </Button>
+          </Group>
         </Group>
-      </Group>
-    </Box>
+      </Box>
+    </>
   );
 };
 

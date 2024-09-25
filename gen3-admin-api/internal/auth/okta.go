@@ -154,7 +154,7 @@ func AuthMiddleware(jwksURL, issuer, clientID string) gin.HandlerFunc {
 		token, err := ValidateToken(tokenString, jwksURL, issuer, clientID)
 		if err != nil {
 			log.Error().Err(err).Msg("Token validation failed")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}

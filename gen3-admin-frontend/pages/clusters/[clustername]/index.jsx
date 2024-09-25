@@ -27,7 +27,10 @@ export default function ClusterDashboard() {
     // Get the cluster name from the URL
     const clusterName = useParams()?.clustername;
 
-    const { data: sessionData } = useSession();
+    const session = useSession();
+    const { data: sessionData } = session;
+
+    console.log("sessionData", sessionData)
 
     const [k8sVersion, setK8sVersion] = useState("");
     const [nodes, setNodes] = useState([]);
@@ -42,21 +45,23 @@ export default function ClusterDashboard() {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
-    const accessToken = sessionData?.accessToken;
+
 
     useEffect(() => {
-        if (!accessToken) {
+        if (!sessionData) {
+            console.log("returning because access token is null")
             return;
         }
         const fetchClusterData = async () => {
             try {
+                console.log("fetching cluster data")
                 const [versionData, nodesData, deploymentsData, eventsData, metricsData, podsData] = await Promise.all([
-                    callK8sApi('/version', 'GET', null, null, clusterName, accessToken),
-                    callK8sApi('/api/v1/nodes', 'GET', null, null, clusterName, accessToken),
-                    callK8sApi('/apis/apps/v1/deployments', 'GET', null, null, clusterName, accessToken),
-                    callK8sApi('/api/v1/events', 'GET', null, null, clusterName, accessToken),
-                    callK8sApi('/apis/metrics.k8s.io/v1beta1/nodes', 'GET', null, null, clusterName, accessToken),
-                    callK8sApi('/api/v1/pods', 'GET', null, null, clusterName, accessToken)
+                    callK8sApi('/version', 'GET', null, null, clusterName, sessionData.accessToken),
+                    callK8sApi('/api/v1/nodes', 'GET', null, null, clusterName, sessionData.accessToken),
+                    callK8sApi('/apis/apps/v1/deployments', 'GET', null, null, clusterName, sessionData.accessToken),
+                    callK8sApi('/api/v1/events', 'GET', null, null, clusterName, sessionData.accessToken),
+                    callK8sApi('/apis/metrics.k8s.io/v1beta1/nodes', 'GET', null, null, clusterName, sessionData.accessToken),
+                    callK8sApi('/api/v1/pods', 'GET', null, null, clusterName, sessionData.accessToken)
                 ]);
 
                 setK8sVersion(`${versionData.major}.${versionData.minor}`);
@@ -216,7 +221,7 @@ export default function ClusterDashboard() {
                 <Text>Total Events: {filteredEvents.length}</Text>
             </Group>
             <DataTable
-                withBorder
+                // withBorder
                 borderRadius="sm"
                 withColumnBorders
                 striped

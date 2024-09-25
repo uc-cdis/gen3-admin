@@ -404,7 +404,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	}
 
 	// Setup k8s auth
-	restConfig, err := getClientConfig()
+	restConfig, err := k8s.GetConfig()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to setup k8s auth")
 		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to setup k8s auth: %v", err))
@@ -428,11 +428,18 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	// Set content type if needed
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	// Execute request
-	client := &http.Client{
-		Transport: restConfig.Transport,
+	// Set up the transport using the REST configuration
+	transport, err := rest.TransportFor(restConfig)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get transport for REST config")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to get transport for REST config: %v", err))
+		return
 	}
 
+	// Execute request
+	client := &http.Client{
+		Transport: transport,
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		log.Error().Err(err).Msgf("Failed to execute request: %v", err)
@@ -541,6 +548,33 @@ func (a *Agent) handleProjectsRequest(req *pb.ProjectsRequest) {
 
 }
 
+func (a *Agent) handleHelmValuesRequest(req *pb.HelmValuesRequest) {
+
+	log.Debug().Msgf("Handling helm values request: %v", req)
+	if req.Release == "" {
+		log.Info().Msgf("Received helm values request for release: %s", req.Release)
+		// Implement cancellation logic here
+		return
+	}
+
+	helmValues, err := helm.ShowHelmValues(req.Release, req.Namespace)
+	if err != nil {
+		log.Error().Err(err).Msg("Error getting helm values")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error getting helm values: %v", err))
+		return
+	}
+
+	responseJson, err := json.Marshal(helmValues)
+	if err != nil {
+		log.Error().Err(err).Msg("Error marshaling helm values")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error marshaling helm values: %v", err))
+		return
+	}
+
+	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, responseJson)
+
+}
+
 func (a *Agent) Run(ctx context.Context) error {
 	go a.sendStatusUpdates(ctx)
 
@@ -555,6 +589,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 
 		switch content := msg.Message.(type) {
+		case *pb.ServerMessage_HelmValuesRequest:
+			log.Warn().Msg("Got a helm values request message")
+			go a.handleHelmValuesRequest(content.HelmValuesRequest)
 		case *pb.ServerMessage_Projects:
 			log.Debug().Msg("Got a projects request message")
 			go a.handleProjectsRequest(content.Projects)

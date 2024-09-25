@@ -1,83 +1,63 @@
-import NextAuth from 'next-auth'
-import OktaProvider from "next-auth/providers/okta";
+// pages/api/auth/[...nextauth].ts
+import NextAuth from "next-auth"
+import CredentialsProvider from "next-auth/providers/credentials"
 
-async function refreshAccessToken(token) {
-  try {
-    const url = `${process.env.OKTA_ISSUER}/v1/token`;
-    const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      method: "POST",
-      body: new URLSearchParams({
-        client_id: process.env.OKTA_CLIENT_ID,
-        client_secret: process.env.OKTA_CLIENT_SECRET,
-        grant_type: "refresh_token",
-        refresh_token: token.refreshToken,
-      }),
-    });
-
-    const refreshedTokens = await response.json();
-
-    if (!response.ok) {
-      throw refreshedTokens;
-    }
-
-    return {
-      ...token,
-      accessToken: refreshedTokens.access_token,
-      accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
-      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken, // Fall back to old refresh token
-    };
-  } catch (error) {
-    console.log(error);
-    return {
-      ...token,
-      error: "RefreshAccessTokenError",
-    };
-  }
-}
-
-const options = {
+export default NextAuth({
   providers: [
-    OktaProvider({
-      clientId: process.env.OKTA_CLIENT_ID,
-      clientSecret: process.env.OKTA_CLIENT_SECRET,
-      issuer: process.env.OKTA_ISSUER
-    }),
+    // Custom provider for mock authentication in development
+    CredentialsProvider({
+      id: "mock-provider",
+      name: "Mock Provider",
+      credentials: {
+        username: { label: "Username", type: "text", placeholder: "John Doe" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        // You can return any mock user object here
+        const user = {
+          id: "1",
+          name: "John Doe",
+          email: "johndoe@example.com",
+          image: "https://via.placeholder.com/150", // Fake profile image
+        }
+
+        // This is a mock authentication, so we ignore credentials and always return the mock user
+        if (user) {
+          return user
+        } else {
+          return null
+        }
+      }
+    })
   ],
-  secret: process.env.NEXTAUTH_SECRET,
-  jwt: {
-    encryption: true,
-    secret: process.env.NEXTAUTH_JWT_SECRET
-  },
+  
   callbacks: {
-    async jwt({ token, user, account }) {
-      // Initial sign in
-      if (account && user) {
-        return {
-          accessToken: account.access_token,
-          accessTokenExpires: Date.now() + account.expires_in * 1000,
-          refreshToken: account.refresh_token,
-          user,
-        };
-      }
-
-      // Return previous token if the access token has not expired yet
-      if (Date.now() < token.accessTokenExpires) {
-        return token;
-      }
-
-      // Access token has expired, try to update it
-      return refreshAccessToken(token);
-    },
     async session({ session, token }) {
-      session.user = token.user;
-      session.accessToken = token.accessToken;
-      session.error = token.error;
-      return session;
+      // Attach the mock user details to the session
+      session.user = {
+        ...session.user,
+        id: token.id,  // Static ID for the mock user
+        name: "John Doe",
+        email: "johndoe@example.com",
+        image: "https://via.placeholder.com/150",  // Provide a fake image
+      }
+      return session
     },
+    async jwt({ token, user }) {
+      // If user exists, set the token id to user id
+      if (user) {
+        token.id = user.id
+      }
+      return token
+    }
   },
-}
 
-export default (req, res) => NextAuth(req, res, options)
+  // Enable debug mode for easier development
+  debug: process.env.NODE_ENV === "development",
+  secret: process.env.NEXTAUTH_SECRET, // Secret for signing JWT
+
+  // Optional: Custom pages for authentication
+  // pages: {
+  //   signIn: '/auth/signin',  // You can customize the sign-in page if necessary
+  // },
+})
