@@ -92,12 +92,14 @@ function Clusters() {
   // Query for the api for active clusters/agents 
   const fetchClusters = async () => {
     if (!sessionData) {
+      console.log("returning")
       // Use this token for your API calls
       return;
     }
     setClusterLoading(true)
     try {
-      const data = await callGoApi('/agents', 'GET', null, null, sessionData.accessToken)
+      console.log("sessionData", sessionData)
+      const data = await callGoApi('/agents', 'GET', null, null,  sessionData.accessToken)
       setClusters(data);
       setError(false)
 
@@ -112,6 +114,7 @@ function Clusters() {
   useEffect(() => {
     fetchClusters();
   }, [sessionData]);
+  
 
 
   const deleteCluster = async () => {
@@ -291,7 +294,7 @@ function Clusters() {
               render: ({ k8sVersion, architecture }) => (
                 <>
                   <Text>{k8sVersion}</Text>
-                  <Text size="xs" color="dimmed">{architecture}</Text>
+                  <Text size="xs" c="dimmed">{architecture}</Text>
                 </>
               )
             },

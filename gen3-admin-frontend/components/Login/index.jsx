@@ -22,7 +22,7 @@ function parseJwt(token) {
 
 export default function Login() {
   // Attempt at next-auth
-  // const { data: session } = useSession()
+  const { data: session } = useSession()
 
   // if (session) {
   //   return (
@@ -161,7 +161,7 @@ export default function Login() {
         )}
 
         {extractedUrl && (
-          <Card shadow="sm" p="lg" radius="md" withBorder mb="md">
+          <Card shadow="sm" p="lg" radius="md" mb="md">
             <Card.Section withBorder inheritPadding py="xs">
               <Group justify="space-between">
                 <Text fw={700}>Extracted URL:</Text>

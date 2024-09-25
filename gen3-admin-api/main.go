@@ -32,7 +32,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/joho/godotenv"
-	"github.com/uc-cdis/gen3-admin/internal/auth"
 	"github.com/uc-cdis/gen3-admin/internal/ca"
 	"github.com/uc-cdis/gen3-admin/internal/helm"
 	"github.com/uc-cdis/gen3-admin/internal/k8s"
@@ -764,11 +763,11 @@ func setupHTTPServer() {
 	r.Use(gin.Recovery())                   // adds the default recovery middleware
 
 	// Get environment variables
-	jwksURL := os.Getenv("OKTA_JWKS_URL")
-	issuer := os.Getenv("OKTA_ISSUER")
-	clientID := os.Getenv("OKTA_CLIENT_ID")
+	// jwksURL := os.Getenv("OKTA_JWKS_URL")
+	// issuer := os.Getenv("OKTA_ISSUER")
+	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	r.Use(auth.AuthMiddleware(jwksURL, issuer, clientID))
+	// r.Use(auth.AuthMiddleware(jwksURL, issuer, clientID))
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -835,6 +834,66 @@ func setupHTTPServer() {
 
 		// Handle the response stream
 
+		select {
+		case resp := <-responseChan:
+			agent.mutex.Lock()
+			delete(agent.requestChannels, uuid.New().String())
+			delete(agent.cancelFuncs, uuid.New().String())
+			delete(agent.contexts, uuid.New().String())
+			agent.mutex.Unlock()
+
+			if resp.Status != pb.ProxyResponseType_DATA {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from agent"})
+				return
+			}
+			c.Data(http.StatusOK, "application/json", resp.Body)
+		case <-ctx.Done():
+			agent.mutex.Lock()
+			delete(agent.requestChannels, uuid.New().String())
+			delete(agent.cancelFuncs, uuid.New().String())
+			delete(agent.contexts, uuid.New().String())
+			agent.mutex.Unlock()
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+			return
+		}
+	})
+
+	r.GET("/api/agent/:agent/helm/values/:releasename/:namespace", func(c *gin.Context) {
+		agentID := c.Param("agent")
+		releaseName := c.Param("releasename")
+		namespace := c.Param("namespace")
+		agentsMutex.RLock()
+		agent, exists := agentConnections[agentID]
+		agentsMutex.RUnlock()
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+			return
+		}
+
+		// Create a response channel for the agent
+		responseChan := make(chan *pb.ProxyResponse, 100)
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		streamID := uuid.New().String()
+
+		agent.mutex.Lock()
+		agent.requestChannels[streamID] = responseChan
+		agent.cancelFuncs[streamID] = cancel
+		agent.contexts[streamID] = ctx
+		agent.mutex.Unlock()
+
+		agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_HelmValuesRequest{
+				HelmValuesRequest: &pb.HelmValuesRequest{
+					StreamId:  streamID,
+					Release:   releaseName,
+					Namespace: namespace,
+				},
+			},
+		})
+
+		// Handle the response stream
 		select {
 		case resp := <-responseChan:
 			agent.mutex.Lock()
@@ -961,39 +1020,14 @@ func initializeAgentsFromCerts() error {
 	return nil
 }
 
-func inner() error {
-	return errors.New("seems we have an error here")
-}
-
-func middle() error {
-	err := inner()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func outer() error {
-	err := middle()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func main() {
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Logger = log.With().Caller().Logger()
 
-	err := outer()
-	if err != nil {
-		log.Error().Stack().Err(err).Msg("test")
-	}
-
 	// Load the .env file
-	err = godotenv.Load()
+	err := godotenv.Load()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error loading .env file")
 	}

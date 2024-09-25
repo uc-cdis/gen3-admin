@@ -15,7 +15,7 @@ import Breadcrumbs from '@/components/BreadCrumbs'
 
 // Next-auth attempt
 import { SessionProvider } from "next-auth/react"
-import { useSession, signIn, signOut } from "next-auth/react"
+// import { useSession, signIn, signOut } from "next-auth/react"
 
 // import TrackerProvider from '@/contexts/openreplay'
 
@@ -27,7 +27,7 @@ import { GlobalStateProvider } from '@/contexts/global';
 
 // Self-rolled auth attempt below.
 
-import { AuthProvider } from '@/contexts/auth'
+// import { AuthProvider } from '@/contexts/auth'
 
 import AuthContext from '@/contexts/auth';
 import { useContext, useEffect, useState } from 'react';
@@ -123,8 +123,8 @@ export default function App({
 
 
   return (
-    <GlobalStateProvider>
-      <SessionProvider session={session}>
+    <GlobalStateProvider> 
+       <SessionProvider session={session}>
         <MantineProvider theme={theme}>
           <Head>
             <title>Gen3 - Admin</title>
@@ -138,6 +138,6 @@ export default function App({
           {/* <Component {...pageProps} /> */}
         </MantineProvider>
       </SessionProvider>
-    </GlobalStateProvider>
+     </GlobalStateProvider> 
   );
 }
