@@ -4,7 +4,7 @@ ENV NODE_VERSION 20.17.0
 
 WORKDIR /frontend 
 
-COPY gen3-admin-frontend /frontend
+COPY ./frontend /frontend
 
 RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
 RUN yum install -y nodejs
