@@ -13,7 +13,22 @@ export default function Detail() {
 
     return (
         <>
-            <ResourceDetails cluster={clusterName} namespace={namespace} resource={resource} type="configmap" tabs={["overview", "data", "logs"]} url={`/api/v1/namespaces/${namespace}/configmaps/${resource}`} />
+            <ResourceDetails 
+                cluster={clusterName} 
+                namespace={namespace} 
+                resource={resource} type="configmap" 
+                tabs={["overview", "yaml", "events"]}
+                url={`/api/v1/namespaces/${namespace}/configmaps/${resource}`} 
+                columnDefinitions={[
+                    { label: "Name", path: "metadata.name" },
+                    { label: "Namespace", path: "metadata.namespace" },
+                    { label: "Generate Name", path: "metadata.generateName" },
+                    { label: "Creation Timestamp", path: "metadata.creationTimestamp" },
+                    { label: "Resource Version", path: "metadata.resourceVersion" },
+                    { label: "Self Link", path: "metadata.selfLink" },
+                    { label: "UID", path: "metadata.uid" },
+                ]}
+            />
         </>
     )
 }

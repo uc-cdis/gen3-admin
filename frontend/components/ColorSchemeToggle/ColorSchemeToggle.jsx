@@ -1,4 +1,4 @@
-import { useMantineColorScheme, SegmentedControl, Group, Center, Box } from '@mantine/core';
+import { useMantineColorScheme, Display, SegmentedControl, Group, Center, Box } from '@mantine/core';
 import { IconSun, IconMoon } from '@tabler/icons-react';
 
 export function ColorSchemeToggle() {
@@ -6,7 +6,9 @@ export function ColorSchemeToggle() {
 
   return (
     <Group>
+      {/* Hide on mobile UI */}
       <SegmentedControl
+        hiddenFrom='md'
         value={colorScheme}
         onChange={setColorScheme}
         data={[

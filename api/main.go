@@ -610,6 +610,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		log.Warn().Msgf("Agent not found: %s", agentID)
 		return
 	}
 
@@ -794,7 +795,7 @@ func setupHTTPServer() {
 
 	r.Any("api/k8s/:agent/proxy/*path", func(c *gin.Context) {
 
-		log.Info().Msgf("Proxying request to: %s", c.Request.URL.String())
+		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
 		HandleK8sProxyRequest(c)
 	})
 

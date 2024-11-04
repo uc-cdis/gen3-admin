@@ -162,6 +162,13 @@ func (a *Agent) collectAgentStatus() *pb.StatusUpdate {
 	k8sInfo, err := k8s.GetInfo()
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting k8s info")
+		return &pb.StatusUpdate{
+			CpuUsage:     cpuPercent[0],
+			MemoryUsage:  vmStat.UsedPercent,
+			HealthStatus: "ERROR",
+			Provider:     "ERROR",
+			K8SVersion:   "ERROR",
+		}
 	}
 
 	log.Debug().Msgf("Collected followin metrics: CPU: %v, Memory: %v, Provider: %s, K8s Version: %s", cpuPercent, vmStat.UsedPercent, k8sInfo.Provider, k8sInfo.Version)

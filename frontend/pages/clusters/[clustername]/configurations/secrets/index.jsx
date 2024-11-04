@@ -17,7 +17,7 @@ export default function Dep() {
                 agent={clusterName}
                 endpoint={`/api/v1/secrets`}
                 fields = {[
-                    { key: "metadata.namespace", label: "Namespace" },
+                    { key: "metadata.namespace", label: "Namespace", render: ({ Namespace}) => (<Anchor href={`/clusters/${clusterName}/configurations/secrets/${Namespace}/`}>{Namespace}</Anchor>) },
                     { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor href={`/clusters/${clusterName}/configurations/secrets/${Namespace}/${Name}`}>{Name}</Anchor>) },
                     { key: "type", label: "Type" },
                     { key: "data", label: "Keys", render: ({ Keys }) => { return Object.keys(Keys).map(key => <div>{key}</div>) } },

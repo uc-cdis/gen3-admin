@@ -45,10 +45,10 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
         fetchData();
     }, [agent, endpoint, accessToken]);
 
-    // If there is an error, display a message
-    if (error) {
-        return <Center>{error}</Center>;
-    }
+    // // If there is an error, display a message
+    // if (error) {
+    //     return <Center>{error}</Center>;
+    // }
 
 
 
@@ -95,6 +95,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
                     columns={columns}
                     records={rows}
                     fetching={loading}
+                    error={error}
                     loaderVariant="dots"
                 />
             </Container>

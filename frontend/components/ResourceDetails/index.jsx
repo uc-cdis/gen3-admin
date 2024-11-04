@@ -2,18 +2,22 @@ import { useState, useEffect } from 'react';
 import { Container, Tabs } from '@mantine/core';
 
 import callK8sApi from '@/lib/k8s';
+import { useViewportSize } from '@mantine/hooks';
 
-
-import  Overview from './Overview';
+import Overview from './Overview';
 import Logs from './Logs';
 
-export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url }) {
+import Editor from "@monaco-editor/react";
 
+import YAML from 'yaml';
+
+export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions }) {
+    const { height, width } = useViewportSize();
     const [activeTab, setActiveTab] = useState('overview');
     const [resourceData, setResourceData] = useState(null);
 
     console.log("type", type)
-    console.log("resource", resource)  
+    console.log("resource", resource)
     console.log("namespace", namespace)
     console.log("cluster", cluster)
 
@@ -56,7 +60,10 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                         </Tabs.tab> */}
                     </Tabs.List>
                     <Tabs.Panel value="overview">
-                        <Overview resource={resourceData} />
+                        <Overview
+                            resource={resourceData}
+                            columns={columnDefinitions}
+                        />
                     </Tabs.Panel>
                     <Tabs.Panel value="logs">
                         <Logs />
@@ -68,7 +75,19 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                         metrics
                     </Tabs.Panel>
                     <Tabs.Panel value="yaml">
-                        yaml
+                        <Editor
+                            dark={true}
+                            className='border rounded-lg h-screen'
+                            value={YAML.stringify(resourceData, null, 2)}
+                            defaultLanguage='yaml'
+                            height={height}
+                            // theme={getSystemTheme()}
+                            options={{
+                                minimap: {
+                                    enabled: false,
+                                },
+                            }}
+                        />
                     </Tabs.Panel>
                     <Tabs.Panel value="data">
                         data
