@@ -2,8 +2,27 @@
 import NextAuth from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 
+import KeycloakProvider from "next-auth/providers/keycloak";
+
+
 export default NextAuth({
   providers: [
+
+    // Keycloak provider
+    KeycloakProvider({
+      clientId: "csoc",
+      clientSecret: "EPDwJSCPCIPw1GO17txkqhYDOUFOIQYl",
+      issuer: "http://:8080/realms/master",
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        }
+      },
+    }),
+    
     // Custom provider for mock authentication in development
     CredentialsProvider({
       id: "mock-provider",
@@ -37,9 +56,12 @@ export default NextAuth({
       session.user = {
         ...session.user,
         id: token.id,  // Static ID for the mock user
-        name: "John Doe",
-        email: "johndoe@example.com",
-        image: "https://via.placeholder.com/150",  // Provide a fake image
+        // name: "John Doe",
+        // email: "johndoe@example.com",
+        // image: "https://via.placeholder.com/150",  // Provide a fake image
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image,
       }
       return session
     },

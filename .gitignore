@@ -5,3 +5,6 @@ __pycache__/
 node_modules
 _deprecated/
 certs/
+*.tgz
+TODO
+TARGETS

@@ -1,8 +1,8 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import cx from 'clsx';
 
 import Image from 'next/image'
-import { Group, Container, Menu, UnstyledButton, Text, rem, useMantineTheme } from '@mantine/core';
+import { Group, Button, Burger, Box, Loader, Menu, UnstyledButton, Text, rem, useMantineTheme, Select } from '@mantine/core';
 import AuthContext from '@/contexts/auth';
 
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
@@ -17,6 +17,7 @@ import {
     IconSettings,
     IconPlayerPause,
     IconTrash,
+    IconRefresh,
     IconSwitchHorizontal,
     IconChevronDown,
 } from '@tabler/icons-react';
@@ -24,29 +25,65 @@ import {
 
 import classes from './Header.module.css';
 
+import { callGoApi } from '@/lib/k8s';
 
 
 
-
-
-export function Header() {
+export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDesktop }) {
     const [userMenuOpened, setUserMenuOpened] = useState(false);
-    const theme = useMantineTheme();
 
     // const { user, logout } = useContext(AuthContext)
 
+    // const { cluster, setCluster } = useGlobalStore()
+
+    const [clusters, setClusters] = useState([])
+    const [loading, setLoading] = useState(false)
+    const [cluster, setCluster] = useState('')
+
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
+
+
     // next-auth stuff
     const { data, status } = useSession()
-    
+
     const handleLogout = () => {
         signOut();
         // Add any additional logout logic here (e.g., redirect to login page)
     };
 
 
+    const fetchClusters = async () => {
+        setLoading(true)
+        try {
+            const data = await callGoApi('/agents', 'GET', null, null, accessToken)
+            // Only show clusters that are active
+            // setClusters(data.filter(cluster => cluster.connected))
+            const connectedClusterNames = data
+                .filter(cluster => cluster.connected)
+                .map(cluster => cluster.name);
+
+            console.log(connectedClusterNames);
+            setClusters(connectedClusterNames)
+            setLoading(false)
+        } catch (error) {
+            console.error('Failed to fetch clusters:', error);
+            setLoading(false)
+        }
+    };
+
+    useEffect(() => {
+        fetchClusters(accessToken).then((data) => {
+            if (data) {
+                setClusters(data);
+            }
+        });
+    }, []);
+
+
     const menu = (
         <Menu
-            width={260}
+            width={200}
             position="bottom"
             transitionProps={{ transition: 'pop-top-left' }}
             onClose={() => setUserMenuOpened(false)}
@@ -149,18 +186,73 @@ export function Header() {
 
     return (
         <>
-            <Container size="xl">
-                <Container size="xl">
-                    <Group justify="right">
+            <Group
+                h="100%"
+                px="md"
+                justify="space-between"
+                align="center"
+                grow preventGrowOverflow={false} wrap="nowrap"
+            // bg="var(--mantine-color-red-light)"
+            >
+                {/* <Group
+                    justify="space-between" align="center" wrap="nowrap" preventGrowOverflow={false}
+                    bg="var(--mantine-color-yellow-light)"
+                    w={20}
+                  >
+                      
+                  </Group> */}
 
+                <Group
+                    // bg="var(--mantine-color-green-light)"
+                    wrap="nowrap"
+                    gap="xs"
+                    align="center"
+                >
+                    <Burger
+                        opened={mobileOpened}
+                        onClick={toggleMobile}
+                        hiddenFrom="sm"
+                        size="sm"
+                    />
+                    <Burger
+                        opened={desktopOpened}
+                        onClick={toggleDesktop}
+                        visibleFrom="sm"
+                        size="sm"
+                    />
+                    <Group
+                        wrap="wrap"
+                        gap="xs"
+                        style={{ flexGrow: 1 }}
+                    >
+                        {loading ? <Loader size="sm" /> : null}
+                        <Select
+                            placeholder="Select Cluster"
+                            data={clusters}
+                            value={cluster}
+                            onChange={setCluster}
+                            miw={120}
+                            flex={1}
+                        />
+                        <Button
+                            onClick={fetchClusters}
+                        >
+                            <IconRefresh />
+                        </Button>
+                    </Group>
+                </Group>
+                <Box visibleFrom='sm'>
+                    <Group
+                        justify="flex-end"
+                    >
                         <ColorSchemeToggle />
                         {/* <EnvSelector /> */}
 
                         {menu}
 
                     </Group>
-                </Container>
-            </Container>
+                </Box>
+            </Group>
         </>
     )
 }

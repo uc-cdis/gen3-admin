@@ -2,7 +2,7 @@ import '@mantine/core/styles.css';
 // import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import Link from 'next/link';
-import { AppShell, Anchor, Burger, MantineProvider, Container, Center, Text } from '@mantine/core';
+import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 // import { NavBar } from '../components/NavBar/NavBar';
 // import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
@@ -11,6 +11,7 @@ import { useDisclosure } from '@mantine/hooks';
 import SpotLight from '@/components/Spotlight/Spotlight';
 
 import { NavBar } from '@/components/NewNavbar/Navbar';
+// import { NavBar } from '@/components/NewNavbar/Navbar2';
 
 import { Header } from '../components/Header/Header';
 import { theme } from '../theme';
@@ -75,21 +76,37 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
   return (
     <AppShell
       header={{ height: 60 }}
-      layout='alt'
+      // layout='alt'
       withBorder={false}
       navbar={{
-        width: 320,
-        breakpoint: 'md',
+        width: 300,
+        breakpoint: 'sm',
         collapsed: { mobile: !mobileOpened, desktop: !desktopOpened },
       }}
       padding="md"
     >
-      <AppShell.Header withBorder={false}>
-        <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="md" />
-        <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="md" />
-        <Header />
+      {/* <AppShell.Header>
+        <Group grow preventGrowOverflow={false} wrap="nowrap" h="100%" px="md" bg="var(--mantine-color-blue-light)">
+          <Box w={10}>
+            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" width={100} />
+            <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
+          </Box>
+          
+        </Group> */}
+
+      <AppShell.Header>
+        <Group
+          h="100%"
+          px="md"
+          justify="space-between"
+          align="center"
+          grow preventGrowOverflow={false} wrap="nowrap"
+        >
+          <Header toggleDesktop={toggleDesktop} desktopOpened={desktopOpened} toggleMobile={toggleMobile} mobileOpened={mobileOpened} />
+        </Group>
 
       </AppShell.Header>
+
 
       <AppShell.Navbar p="md" withBorder={false}>
         <NavBar />
@@ -109,11 +126,11 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
       </AppShell.Main>
       <Container size="xl">
         <Center inline>
-          <AppShell.Footer>
+          {/* <AppShell.Footer>
             <Container size="xl" maw={600}>
               Made with <IconHeart color="var(--mantine-color-blue-filled)" /> by the <Anchor component={Link} href="https://gen3.org/"> Gen3</Anchor> team @ <Anchor component={Link} href="https://ctds.uchicago.edu">CTDS / UChicago.edu</Anchor> 
             </Container>
-          </AppShell.Footer>
+          </AppShell.Footer> */}
         </Center>
       </Container>
     </AppShell>

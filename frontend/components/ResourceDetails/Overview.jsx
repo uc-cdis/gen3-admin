@@ -5,13 +5,23 @@ import {
     Text,
     Stack,
     Group,
+    Code,
+    Pill,
+    Collapse,
+    Badge,
+    Accordion,
+    Divider,
 } from '@mantine/core';
+import { IconBox } from '@tabler/icons-react';
 
-const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {} }) => {
+const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type }) => {
     // Default to showing columns in single group if no config provided
     const defaultConfig = {
         leftColumns: columns,
-        rightColumns: []
+        rightColumns: [],
+        expandable: false,
+        transforms: {},
+        validations: {},
     };
 
     // Use provided column configuration or default
@@ -33,11 +43,24 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {} })
         return value;
     };
 
+    // Detail item component
     const DetailItem = ({ column }) => {
         const value = getNestedValue(resource, column.path);
         const displayValue = formatValue(value);
 
-        if (!displayValue) return null;
+        const context = { resource }; // Pass the entire resource for context
+
+        // If a render function is provided, use it
+        if (column.render) {
+            return (
+                <Group gap="sm" justify="space-between" w="100%">
+                    <Text size="sm" c="dimmed">{column.label}</Text>
+                    <Text size="sm" className="font-mono">
+                        {column.render({ value, ...context })}
+                    </Text>
+                </Group>
+            );
+        }
 
         return (
             <Group gap="sm" justify="space-between" w="100%">
@@ -47,42 +70,23 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {} })
                 </Text>
             </Group>
         );
+
     };
 
-    // If no columns defined, show nothing
-    if (!columns.length && !Object.keys(columnConfig).length) {
-        return null;
-    }
+    // Display resource summary
+    const renderResourceSummary = () => {
+        if (!columns.length && !Object.keys(columnConfig).length) {
+            return null;
+        }
 
-    const annotations = resource?.metadata?.annotations || {};
-    const filteredAnnotations = Object.entries(annotations)
-        .filter(([key]) => !key.includes('last-applied-configuration'))
-        .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
-
-
-    const labels = resource?.metadata?.labels || {};
-
-    return (
-        <Stack>
-
+        return (
             <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                <Text fw={500}>Metadata</Text>
+                <Text fw={500}>Resource Summary</Text>
                 <Grid gutter="xl" mt="md">
-                    <Grid.Col span={6}>
-                        <Stack gap="xs">
-                            {leftColumns.map((column) => (
-                                <DetailItem
-                                    key={column.path}
-                                    column={column}
-                                />
-                            ))}
-                        </Stack>
-                    </Grid.Col>
-
-                    {rightColumns.length > 0 && (
+                    <>
                         <Grid.Col span={6}>
                             <Stack gap="xs">
-                                {rightColumns.map((column) => (
+                                {leftColumns.map((column) => (
                                     <DetailItem
                                         key={column.path}
                                         column={column}
@@ -90,64 +94,174 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {} })
                                 ))}
                             </Stack>
                         </Grid.Col>
-                    )}
+
+                        {rightColumns.length > 0 && (
+                            <Grid.Col span={6}>
+                                <Stack gap="xs">
+                                    {rightColumns.map((column) => (
+                                        <DetailItem
+                                            key={column.path}
+                                            column={column}
+                                        />
+                                    ))}
+                                </Stack>
+                            </Grid.Col>
+                        )}
+                    </>
                 </Grid>
             </Card>
-            {/* Check if annotations without the last applied configuration exist */}
-            {(filteredAnnotations.length > 0) && (
-                <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                    <Text fw={500}>Annotations</Text>
-                    <Group gap="sm" justify="space-between" w="100%">
-                        <Text size="sm" className="font-mono">
-                            {/* Loop over annotations and format them as key-value pairs */}
-                            {/* But omit if it has "last-applied-configuration" as key */}
-                            {Object.entries(resource?.metadata?.annotations).map(([key, value]) => {
-                                if (key.includes('last-applied-configuration')) return null;
-                                return `${key}: ${value}`;
-                            }).join('\n')}
-                        </Text>
-                    </Group>
-                </Card>)}
+        );
+    };
 
-            {/* Check if labels exist */}
-            {(Object.keys(labels).length > 0) && (
-                <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                    <Text fw={500}>Labels</Text>
-                    <Group gap="sm" justify="space-between" w="100%">
-                        <Text size="sm" className="font-mono">
-                            {/* Loop over labels and format them as key-value pairs */}
-                            {Object.entries(labels).map(([key, value]) => {
-                                return `${key}: ${value}`;
-                            }).join('\n')}
-                        </Text>
-                    </Group>
-                </Card>)}
+    // Display resource metadata
+    const renderMetadata = () => {
+        const annotations = resource?.metadata?.annotations || {};
+        const labels = resource?.metadata?.labels || {};
 
+        return (
+            <Stack spacing={0}>
+                {(Object.keys(annotations).length > 0 || Object.keys(labels).length > 0) && (
+                    <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
+                        <Text fw={500}>Resource Metadata</Text>
+                        <Stack mt="md">
+                            {Object.keys(labels).length > 0 && (
+                                <Group gap="sm" justify="space-between" w="100%">
+                                    <Text fw={500}>Labels</Text>
+                                    <Group gap="sm" justify="space-between" w="100%">
+                                        {Object.entries(labels).map(([key, value]) => (
+                                            <Pill key={key}>
+                                                {key}: {value}
+                                            </Pill>
+                                        ))}
+                                    </Group>
+                                </Group>
+                            )}
+                            {Object.keys(annotations).length > 0 && (
+                                <Group gap="sm" justify="space-between" w="100%">
+                                    <Text fw={500}>Annotations</Text>
+                                    <Group gap="sm" justify="space-between" w="100%">
+                                        {Object.entries(annotations).map(([key, value]) => (
+                                            <Pill key={key}>
+                                                {key}: {value}
+                                            </Pill>
+                                        ))}
+                                    </Group>
+                                </Group>
+                            )}
+                        </Stack>
+                    </Card>
+                )}
+            </Stack>
+        );
+    };
+
+    // Display resource-specific data
+    const renderData = () => {
+        if (!resource?.data) return null;
+
+        return (
             <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                <Text fw={500}>Events</Text>
-                <Group gap="sm" justify="space-between" w="100%">
-                    <Text size="sm" className="font-mono">
-                        {/* Loop over events and format them as key-value pairs */}
-                        {resource?.status?.conditions?.map((event) => {
-                            return `${event.type}: ${event.message}`;
-                        }).join('\n')}
-                    </Text>
+                <Text fw={500}>Resource Data</Text>
+                <Group gap="sm" w="100%" mt="md">
+                    {Object.entries(resource?.data).map(([key, value]) => (
+                        <React.Fragment key={key}>
+                            <Group gap="sm" align="flex-start">
+                                <Text size="sm" c="dimmed">{key}</Text>
+                                <Text size="sm" className="font-mono">
+                                    <Code>{value}</Code>
+                                </Text>
+                            </Group>
+                            <Divider mx={-15} my="sm" />
+                        </React.Fragment>
+                    ))}
                 </Group>
             </Card>
+        );
+    };
 
-            {/* Data section */}
-            {resource?.data && (
-                <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                    <Text fw={500}>Data</Text>
-                    <Group gap="sm" justify="space-between" w="100%">
-                        <Text size="sm" className="font-mono">
-                            {/* Loop over data and format them as key-value pairs */}
-                            {Object.entries(resource?.data).map(([key, value]) => {
-                                return `${key}: ${value}`;
-                            }).join('\n')}
-                        </Text>
+    // Display containers (including init containers)
+    const renderContainers = (containers, title = 'Containers', type = 'containers') => {
+        if (!containers) return null;
+
+        const containerDetails = (container, index) => (
+            <Card key={`${container.name}-${index}`} p="lg" radius="md" withBorder shadow="lg">
+                <Card.Section inheritPadding py="md">
+                    <Group gap={5} align="center">
+                        <IconBox size={16} />
+                        <Text fw={500}>{container.name}</Text>
+                        <Text size="sm" c="dimmed">({type === 'init' ? 'Init' : 'Regular'})</Text>
                     </Group>
-                </Card>)}
+                </Card.Section>
+                <Card.Section inheritPadding py="md">
+                    <Stack spacing={0}>
+                        <Text size="sm" c="dimmed">Image</Text>
+                        <Text size="sm" className="font-mono">{container.image}</Text>
+                        <Divider my="sm" />
+                        <Text size="sm" c="dimmed">Command</Text>
+                        <Text size="sm" className="font-mono">{container.command || "—"}</Text>
+                        <Divider my="sm" />
+                        {container.args && (
+                            <>
+                                <Text size="sm" c="dimmed">Args</Text>
+                                <Text size="sm" className="font-mono">{container.args}</Text>
+                                <Divider my="sm" />
+                            </>
+                        )}
+                        <Text size="sm" c="dimmed">Ready</Text>
+                        <Text size="sm" className="font-mono">{container.ready ? "Yes" : "No"}</Text>
+                        <Divider my="sm" />
+                        <Text size="sm" c="dimmed">Restarts</Text>
+                        <Text size="sm" className="font-mono">{container.restarts || "—"}</Text>
+                        {container.restartReason && (
+                            <>
+                                <Divider my="sm" />
+                                <Text size="sm" c="dimmed">Restart Reason</Text>
+                                <Text size="sm" className="font-mono">{container.restartReason}</Text>
+                            </>
+                        )}
+                        {container.lastRestart && (
+                            <>
+                                <Divider my="sm" />
+                                <Text size="sm" c="dimmed">Last Restart</Text>
+                                <Text size="sm" className="font-mono">{container.lastRestart}</Text>
+                            </>
+                        )}
+                        <Divider my="sm" />
+                        <Text size="sm" c="dimmed">Termination Policy</Text>
+                        <Text size="sm" className="font-mono">{container.terminationMessagePolicy || "File"}</Text>
+                    </Stack>
+                </Card.Section>
+            </Card>
+        );
+
+        return (
+            <Accordion variant="contained" defaultValue={title.toLowerCase()}>
+                <Accordion.Item value={title.toLowerCase()}>
+                    <Accordion.Control>
+                        <Group gap={5}>
+                            <Text fw={500}>{title}</Text>
+                            <Badge size="sm" variant="filled" color="blue">
+                                {containers.length}
+                            </Badge>
+                        </Group>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                        {containers.map((container, index) =>
+                            containerDetails(container, index)
+                        )}
+                    </Accordion.Panel>
+                </Accordion.Item>
+            </Accordion>
+        );
+    };
+
+    return (
+        <Stack spacing={20}>
+            {renderResourceSummary()}
+            {renderMetadata()}
+            {renderData()}
+            {renderContainers(resource?.spec?.containers, 'Containers', 'regular')}
+            {renderContainers(resource?.spec?.initContainers, 'Init Containers', 'init')}
         </Stack>
     );
 };

@@ -1,10 +1,10 @@
 // components/DefaultLayout.jsx
-// export default function DefaultLayout({ children }) {
+export default function DefaultLayout({ children }) {
     return (
         <AuthProvider>
         <MantineProvider theme={theme}>
           <Head>
-            <title>Gen3 - Admin</title>
+            <title>Gen3 - CSOC</title>
             <meta
               name="viewport"
               content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
@@ -24,15 +24,16 @@
           >
   
             <AppShell.Header withBorder={false}>
-              <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="md" />
-              <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="md" />
+              <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
+              hello
+              <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
               <Header />
   
             </AppShell.Header>
   
             <AppShell.Navbar p="md" withBorder={false}>
               {/* <NavBar /> */}
-              <DoubleNavbar />
+              {/* <DoubleNavbar /> */}
             </AppShell.Navbar>
   
             <AppShell.Main>

@@ -79,7 +79,7 @@ export default function Repo() {
             <div>
                 <h1>Repo {repo}</h1>
 
-                <Title order={2}>Helm Charts for {repo} repository</Title>
+                <Title order={2} m="lg">Helm Charts for {repo} repository</Title>
                 {error && <Text c="red">{error.message}</Text>}
 
 

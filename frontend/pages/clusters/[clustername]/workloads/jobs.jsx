@@ -7,6 +7,9 @@ import { Anchor } from '@mantine/core';
 import calculateAge from '@/utils/calculateAge';
 
 
+import Link from 'next/link'
+
+
 export default function Dep() {
     const clusterName = useParams()?.clustername;
 
@@ -18,7 +21,7 @@ export default function Dep() {
                 endpoint={`/apis/batch/v1/jobs`}
                 fields = {[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
                     { key: "status.succeeded", label: "Succeeded" },
                     { key: "status.conditions[0].type", label: "Conditions" }, // Assuming you want the first condition
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },

@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
+import Link from 'next/link'
 
 export default function Dep() {
     const clusterName = useParams()?.clustername;
@@ -18,7 +19,7 @@ export default function Dep() {
                 endpoint={`/apis/policy/v1/poddisruptionbudgets`}
                 fields = {[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor href={`/clusters/${clusterName}/pods/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/pods/${Name}`}>{Name}</Anchor>) },
                     { key: "spec.minAvailable", label: "Min Available" },
                     { key: "spec.maxUnavailable", label: "Max Unavailable" },
                     { key: "status.currentHealthy", label: "Current" },

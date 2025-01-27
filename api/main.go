@@ -397,6 +397,7 @@ func generateAgentConfig(agentName string) (string, error) {
 
 	agentCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: agentCertBytes})
 	agentKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: agentKeyBytes})
+	caCertPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
 
 	// Write certificate and key to file
 	utils.MustWriteFile("certs/"+agentName+".crt", []byte(agentCertPEM), 0644)
@@ -425,43 +426,67 @@ func generateAgentConfig(agentName string) (string, error) {
 apiVersion: v1
 kind: Secret
 metadata:
-  name: %s-tls
-type: kubernetes.io/tls
+  name: csoc-tls
+type: opaque
 data:
-  tls.crt: %s
-  tls.key: %s
+  %s.crt: %s
+  %s.key: %s
+  ca.crt: %s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csoc
+  namespace: csoc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: csoc
+  namespace: csoc
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: %s
+  name: csoc-agent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: %s
+      app: csoc-agent
   template:
     metadata:
       labels:
-        app: %s
+        app: csoc-agent
     spec:
+	  serviceAccount: csoc
       containers:
       - name: agent
-        image: your-agent-image:latest
-        args: ["-name", "%s"]
+        image: quay.io/jawadqur/agent:latest
+        command: ["agent"]
+        args: ["--name", "%s"]
         volumeMounts:
         - name: tls-certs
-          mountPath: /etc/agent/tls
+          mountPath: /app/gen3-agent/certs/
           readOnly: true
       volumes:
       - name: tls-certs
         secret:
-          secretName: %s-tls
+          secretName: csoc-tls
 `,
 		agentName,
 		base64.StdEncoding.EncodeToString(agentCertPEM),
+		agentName,
 		base64.StdEncoding.EncodeToString(agentKeyPEM),
-		agentName, agentName, agentName, agentName, agentName,
+		base64.StdEncoding.EncodeToString(caCertPem),
+		agentName,
 	)
 
 	return strings.TrimSpace(config), nil
@@ -601,6 +626,7 @@ func DeleteAgentHandler(c *gin.Context) {
 func HandleK8sProxyRequest(c *gin.Context) {
 	agentID := c.Param("agent")
 	path := c.Param("path")
+	queryString := c.Request.URL.Query().Encode()
 
 	var wg sync.WaitGroup
 
@@ -646,7 +672,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	proxyReq := &pb.ProxyRequest{
 		StreamId:  streamID,
 		Method:    c.Request.Method,
-		Path:      path,
+		Path:      path + "?" + queryString,
 		Headers:   make(map[string]string),
 		Body:      nil,
 		ProxyType: "k8s",
@@ -746,7 +772,7 @@ func setupGRCPServer() {
 
 	pb.RegisterTunnelServiceServer(s, &agentServer{})
 
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", 50051))
+	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", 50051))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen on port")
 	}
@@ -984,31 +1010,136 @@ func setupHTTPServer() {
 		}
 	})
 
-	// r.POST("/api/helm/:agent/install/", func(c *gin.Context) {
-	// 	agentID := c.Param("agent")
-	// 	repoName := c.Request.Body.Get("repo")
-	// 	chartName := c.Request.Body.Get("chart")
-	// 	version := c.Request.Body.Get("version")
-	// 	log.Info().Msgf("Installing chart %s from repo %s version %s", chartName, repoName, version)
+	r.POST("/api/agent/:agent/helm/install", func(c *gin.Context) {
+		agentID := c.Param("agent")
+		if agentID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Agent name is required"})
+			return
+		}
+		agentsMutex.RLock()
+		agent, exists := agentConnections[agentID]
+		agentsMutex.RUnlock()
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+			return
+		}
 
-	// 	// Check if the agent is connected
-	// 	agentsMutex.RLock()
-	// 	agent, exists := agentConnections[agentID]
-	// 	agentsMutex.RUnlock()
-	// 	if !exists {
-	// 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
-	// 		return
-	// 	}
+		// Ready from json request body
+		var requestData struct {
+			Repo      string                 `json:"repo"`
+			RepoUrl   string                 `json:"repoUrl"`
+			Chart     string                 `json:"chart"`
+			Version   string                 `json:"version"`
+			Namespace string                 `json:"namespace"`
+			Release   string                 `json:"release"`
+			Values    map[string]interface{} `json:"values"`
+		}
+		err := json.NewDecoder(c.Request.Body).Decode(&requestData)
+		if err != nil {
+			log.Error().Err(err).Msg("Error decoding request data")
+			http.Error(c.Writer, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	// })
+		installOpts := &helm.InstallOptions{
+			ChartName:       requestData.Chart,
+			RepoName:        requestData.Repo,
+			RepoUrl:         requestData.RepoUrl,
+			Namespace:       requestData.Namespace,
+			ReleaseName:     requestData.Release,
+			Version:         requestData.Version,
+			Wait:            false,
+			Timeout:         time.Minute * 5,
+			CreateNamespace: true,
+			Values:          requestData.Values,
+		}
+
+		log.Debug().Msg(fmt.Sprint(installOpts))
+
+		err = installOpts.Validate()
+		if err != nil {
+			log.Error().Err(err).Msg("Error validating install options")
+			http.Error(c.Writer, fmt.Sprintf("Invalid request data: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		// Create a response channel for the agent
+		responseChan := make(chan *pb.ProxyResponse, 100)
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		streamID := uuid.New().String()
+
+		agent.mutex.Lock()
+		agent.requestChannels[streamID] = responseChan
+		agent.cancelFuncs[streamID] = cancel
+		agent.contexts[streamID] = ctx
+		agent.mutex.Unlock()
+
+		values, err := json.Marshal(requestData.Values)
+		if err != nil {
+			log.Error().Err(err).Msg("Error marshaling values")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error marshaling values"})
+			return
+		}
+
+		agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_HelmInstallRequest{
+				HelmInstallRequest: &pb.HelmInstallRequest{
+					StreamId:  streamID,
+					Repo:      requestData.Repo,
+					RepoUrl:   requestData.RepoUrl,
+					Chart:     requestData.Chart,
+					Version:   requestData.Version,
+					Namespace: requestData.Namespace,
+					Release:   requestData.Release,
+					Values:    values,
+				},
+			},
+		})
+
+		// Handle the response stream
+		select {
+		case resp := <-responseChan:
+			agent.mutex.Lock()
+			delete(agent.requestChannels, uuid.New().String())
+			delete(agent.cancelFuncs, uuid.New().String())
+			delete(agent.contexts, uuid.New().String())
+			agent.mutex.Unlock()
+
+			if resp.Status == pb.ProxyResponseType_ERROR {
+				log.Warn().Msg(string(resp.Body))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": string(resp.Body)})
+				return
+			}
+
+			if resp.Status != pb.ProxyResponseType_DATA {
+				log.Warn().Msg("Invalid response from agent")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from agent"})
+				return
+			}
+			c.Data(http.StatusOK, "application/json", resp.Body)
+		case <-ctx.Done():
+			agent.mutex.Lock()
+			delete(agent.requestChannels, uuid.New().String())
+			delete(agent.cancelFuncs, uuid.New().String())
+			delete(agent.contexts, uuid.New().String())
+			agent.mutex.Unlock()
+
+			log.Warn().Msg("Agent connection closed unexpectedly")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+			return
+		}
+	})
 
 	r.POST("/api/helm/install", func(c *gin.Context) {
 		// Ready from json request body
 		var requestData struct {
-			Repo      string `json:"repo"`
-			Chart     string `json:"chart"`
-			Version   string `json:"version"`
-			Namespace string `json:"namespace"`
+			Repo      string                 `json:"repo"`
+			Chart     string                 `json:"chart"`
+			Version   string                 `json:"version"`
+			Namespace string                 `json:"namespace"`
+			Release   string                 `json:"release"`
+			Values    map[string]interface{} `json:"values"`
 		}
 		err := json.NewDecoder(c.Request.Body).Decode(&requestData)
 		if err != nil {
@@ -1017,12 +1148,17 @@ func setupHTTPServer() {
 			return
 		}
 
-		repoName := requestData.Repo
-		chartName := requestData.Chart
-		version := requestData.Version
-		namespace := requestData.Namespace
-		log.Info().Msgf("Installing chart %s from repo %s version %s into namespace %s", chartName, repoName, version, namespace)
-		release, err := helm.InstallHelmChart(chartName, namespace, repoName, chartName, version)
+		release, err := helm.InstallHelmChart(helm.InstallOptions{
+			RepoName:        requestData.Repo,
+			ChartName:       requestData.Chart,
+			Version:         requestData.Version,
+			ReleaseName:     requestData.Release,
+			Namespace:       requestData.Namespace,
+			Values:          requestData.Values,
+			Wait:            false,
+			Timeout:         time.Minute * 5,
+			CreateNamespace: true,
+		})
 		if err != nil {
 			log.Error().Err(err).Msg("Error installing chart")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1158,9 +1294,12 @@ func main() {
 	log.Logger = log.With().Caller().Logger()
 
 	// Load the .env file
+	// Ignore if it's not there, use regular env vars instead
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Error loading .env file")
+		if err != nil && !os.IsNotExist(err) {
+			log.Fatal().Err(err).Msg("Error loading .env file")
+		}
 	}
 
 	// initialize agents from certs

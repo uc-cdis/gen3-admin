@@ -49,7 +49,7 @@ const JobStatusCard = ({ item, parent }) => {
             </Text>
             <Anchor 
                 variant="light"
-                color={status.color}
+                c={status.color}
                 fullWidth
                 style={{ marginTop: theme.spacing.md }}
                 href={href}

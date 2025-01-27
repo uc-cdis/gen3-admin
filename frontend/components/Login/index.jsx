@@ -131,7 +131,7 @@ export default function Login() {
   return (
     <Container size="sm">
       <Box sx={{ maxWidth: 400 }} mx="auto">
-        <Title order={2} align="center" mb="xl">Gen3 Admin Login</Title>
+        <Title order={2} align="center" mb="xl">Gen3 CSOC Login</Title>
 
         <FileInput
           label="Upload Gen3 API Key File"

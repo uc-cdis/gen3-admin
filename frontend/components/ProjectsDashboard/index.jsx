@@ -1,7 +1,8 @@
+
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Card, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip, Drawer, Container } from '@mantine/core';
+import { Card, Modal, Stack, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip, Drawer, Container } from '@mantine/core';
 import { IconFilter, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 
 import { DataTable } from 'mantine-datatable';
@@ -27,12 +28,26 @@ const ClusterDashboard = () => {
   const itemsPerPage = 20;
   const [currentCluster, setCurrentCluster] = useState(null);
 
+  const [filteredCharts, setFilteredCharts] = useState([])
+
+
   const [currentValues, setCurrentValues] = useState(null);
   const [openValuesModal, setOpenValuesModal] = useState(false);
 
   const [opened, { open, close }] = useDisclosure(false);
 
+  const [nonGen3, setNonGen3] = useState(true);
 
+  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
+  const [inputClusterName, setInputClusterName] = useState('');
+  const [inputReleaseName, setInputReleaseName] = useState('');
+  const [inputNamespace, setInputNamespace] = useState('');
+  
+  const [deleteCluster, setDeleteCluster] = useState('');
+  const [deleteRelease, setDeleteRelease] = useState('');
+  const [deleteNamespace, setDeleteNamespace] = useState('');
+
+  const deleteValidate = inputClusterName === deleteCluster && inputReleaseName === deleteRelease && inputNamespace === deleteNamespace;
 
   const { data: sessionData } = useSession();
   const accessToken = sessionData;
@@ -69,6 +84,7 @@ const ClusterDashboard = () => {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     console.log('sessionData', sessionData);
     if (sessionData) {
@@ -76,12 +92,26 @@ const ClusterDashboard = () => {
     }
   }, [sessionData]);
 
-  const filteredCharts = clusters.flatMap(cluster =>
-    cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
-  ).filter(chart =>
-    chart.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    chart.clusterName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    if (nonGen3) {
+      console.log(clusters[0])
+      setFilteredCharts(clusters.flatMap(cluster =>
+        cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
+      ).filter(chart =>
+        chart.name.toLowerCase().includes("gen3")
+        // || 
+      ));
+    } else {
+      const filteredChartsTmp = clusters.flatMap(cluster =>
+        cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
+      ).filter(chart =>
+        chart.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        chart.clusterName.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredCharts(filteredChartsTmp);
+    }
+  }, [nonGen3, sessionData, clusters]);
+
 
   const totalPages = Math.ceil(filteredCharts.length / itemsPerPage);
   const paginatedCharts = filteredCharts.slice(
@@ -113,6 +143,16 @@ const ClusterDashboard = () => {
 
   }
 
+  const openDeleteModal = async (name, namespace, clusterName) => {
+    console.log("open delete modal", name, namespace, clusterName)
+
+
+    setDeleteCluster(clusterName);
+    setDeleteRelease(name);
+    setDeleteNamespace(namespace);
+    setDeleteModalOpened(true);
+  }
+
   const uninstallHelm = async (name, namespace, clusterName) => {
     console.log("uninstalling helm", name, namespace)
     // call go api to get the values
@@ -123,6 +163,15 @@ const ClusterDashboard = () => {
     alert("Uninstalled")
 
   }
+
+  const handleDelete = (name, namespace, clusterName) => {
+    console.log("handle delete", name, namespace, clusterName)
+
+    uninstallHelm(name, namespace, clusterName);
+    setDeleteModalOpened(false);
+    setInputClusterName('');
+    setInputReleaseName('');
+  };
 
   if (error) return <Text color="red">{error}</Text>;
 
@@ -149,7 +198,7 @@ const ClusterDashboard = () => {
         <Group position="apart" mb="md">
           <Text size="xl" weight={700}>Helm Charts</Text>
           {/* <Tooltip label="Not yet implemented"> */}
-            <Button variant="filled" color="blue" component={Link} href="/helm/repo">Deploy a new app</Button>
+          <Button variant="filled" color="blue" component={Link} href="/helm/repo">Deploy a new app</Button>
           {/* </Tooltip> */}
         </Group>
 
@@ -161,7 +210,7 @@ const ClusterDashboard = () => {
             style={{ flexGrow: 1 }}
           />
           <Tooltip label="Not yet implemented">
-            <Switch label="Show system apps" disabled />
+            <Switch label="Gen3 only" checked={nonGen3} defaultChecked onChange={(event) => setNonGen3(event.currentTarget.checked)} />
           </Tooltip>
           <Tooltip label="Not yet implemented">
             <Button leftSection={<IconFilter size={14} />} variant="light" disabled>Advanced filters</Button>
@@ -190,7 +239,7 @@ const ClusterDashboard = () => {
                 if (helm === 'true') {
                   return <img src="/images/icons/helm.svg" alt="Helm" width="20px" height="20px" style={{ border: '1px white', filter: 'drop-shadow(0px 0px 5px white)' }} />;
                 } else {
-                  return <img src="/images/icons/argocd.png" alt="ArgoCD" width="20px" height="20px"  style={{ filter: 'drop-shadow(0px 0px 5px white)' }}/>;
+                  return <img src="/images/icons/argocd.png" alt="ArgoCD" width="20px" height="20px" style={{ filter: 'drop-shadow(0px 0px 5px white)' }} />;
                 }
               }
             },
@@ -213,14 +262,80 @@ const ClusterDashboard = () => {
               accessor: 'delete',
               id: 'delete',
               render: ({ name, namespace, clusterName }) => (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  color="red"
-                  onClick={() => uninstallHelm(name, namespace, clusterName)}
-                >
-                  Delete
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    m="md"
+                    size="sm"
+                    color="red"
+                    onClick={() => openDeleteModal(name, namespace, clusterName)}
+                  >
+                    Delete
+                  </Button>
+
+                  <Modal
+                    opened={deleteModalOpened}
+                    onClose={() => {
+                      setDeleteModalOpened(false);
+                      setInputClusterName('');
+                      setInputReleaseName('');
+                    }}
+                    title="Confirm Helm Release Deletion"
+                    centered
+                  >
+                    <Stack spacing="md">
+                      <Text size="sm">
+                        To confirm deletion, please enter both the cluster name and release name.
+                        Both must match exactly.
+                      </Text>
+
+                      <TextInput
+                        label="Cluster Name"
+                        placeholder={`Enter cluster name: ${deleteCluster}`}
+                        value={inputClusterName}
+                        onChange={(event) => setInputClusterName(event.currentTarget.value)}
+                      />
+
+                      <TextInput
+                        label="Release Name"
+                        placeholder={`Enter release name: ${deleteRelease}`}
+                        value={inputReleaseName}
+                        onChange={(event) => setInputReleaseName(event.currentTarget.value)}
+                      />
+
+
+                      <TextInput
+                        label="Namespace"
+                        placeholder={`Enter namespace: ${deleteNamespace}`}
+                        value={inputNamespace}
+                        onChange={(event) => setInputNamespace(event.currentTarget.value)}
+                      />
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="subtle"
+                          onClick={() => {
+                            setDeleteModalOpened(false);
+                            setInputClusterName('');
+                            setInputReleaseName('');
+                            setInputNamespace('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+
+                        <Button
+                          color="red"
+                          disabled={!deleteValidate}
+                          onClick={() => handleDelete(deleteRelease, deleteNamespace, deleteCluster)}
+                        >
+                          Delete Release
+                        </Button>
+                      </div>
+                    </Stack>
+                  </Modal>
+                </>
+
               )
             }
           ]}

@@ -46,9 +46,9 @@ func GetLogs(namespace, pod string, container string, ctx context.Context, ch ch
 			return nil
 		default:
 			text := scanner.Text()
-			parts := strings.SplitN(text, "Z", 2) // the date ends with a Z, so we will split it there!
+			parts := strings.SplitN(text, " ", 2) // the date ends with a Z, so we will split it there!
 
-			timestamp, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%sZ", parts[0]))
+			timestamp, err := time.Parse(time.RFC3339Nano, parts[0])
 			if err != nil {
 				log.Error().Err(err).Msg("Error parsing timestamp")
 				return fmt.Errorf("error parsing timestamp: %v", err)

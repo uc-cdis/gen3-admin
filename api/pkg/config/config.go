@@ -10,7 +10,7 @@ import (
 
 func K8sClient() (*kubernetes.Clientset, *string, error) {
 	// / Load kubeconfig
-	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
+	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "local.yaml")
 	// clientcmd.BuildConfigFromKubeconfigGetter()
 	// config, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG"))
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)

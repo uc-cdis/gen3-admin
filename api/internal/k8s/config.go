@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rs/zerolog/log"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -21,7 +20,7 @@ func GetConfig() (*rest.Config, error) {
 		if kubeconfig != "" {
 			// Split the KUBECONFIG env var into a list of files with ':' as the delimiter
 			kubeconfigPaths := strings.Split(kubeconfig, ":")
-			log.Debug().Msgf("Using KUBECONFIG files: %v", kubeconfigPaths)
+			// log.Debug().Msgf("Using KUBECONFIG files: %v", kubeconfigPaths)
 
 			// Set up the loading rules with the list of kubeconfig files
 			loadingRules := &clientcmd.ClientConfigLoadingRules{

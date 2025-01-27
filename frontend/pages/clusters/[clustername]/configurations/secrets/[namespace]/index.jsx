@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
+import Link from 'next/link'
 
 export default function Dep() {
     const clusterName = useParams()?.clustername;
@@ -19,7 +20,7 @@ export default function Dep() {
                 endpoint={`/api/v1/namespaces/${namespace}/secrets`}
                 fields = {[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor href={`/clusters/${clusterName}/configurations/secrets/${Namespace}/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/configurations/secrets/${Namespace}/${Name}`}>{Name}</Anchor>) },
                     { key: "type", label: "Type" },
                     { key: "data", label: "Keys", render: ({ Keys }) => { return Object.keys(Keys).map(key => <div>{key}</div>) } },
                     // Ready / Total containers (Ex 0/1 or 1/1)
