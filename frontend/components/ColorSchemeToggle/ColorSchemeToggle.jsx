@@ -5,10 +5,10 @@ export function ColorSchemeToggle() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
 
   return (
-    <Group>
+    <Group grow>
       {/* Hide on mobile UI */}
       <SegmentedControl
-        hiddenFrom='md'
+        visibleFrom='md'
         value={colorScheme}
         onChange={setColorScheme}
         data={[

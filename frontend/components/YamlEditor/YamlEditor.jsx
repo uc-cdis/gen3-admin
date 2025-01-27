@@ -11,7 +11,7 @@ import { useViewportSize } from '@mantine/hooks';
 import { Button, Container, Group, useMantineColorScheme } from '@mantine/core';
 
 
-export default function YamlEditor({ data, setData }) {
+export default function YamlEditor({ data, setData, button=true, readOnly=false }) {
     const { height, width } = useViewportSize();
     const { colorScheme, setColorScheme } = useMantineColorScheme();
 
@@ -20,9 +20,11 @@ export default function YamlEditor({ data, setData }) {
     return (
         <div>
             <Container fluid size="lg" p="md" radius="md" my="md">
+                { button ? 
                 <Container fluid size="sm" p="md" radius="md" my="md">
                     <Button disabled>Save</Button>
-                </Container>
+                </Container> 
+                : null }
                 <Editor
                     dark={true}
                     className='border rounded-lg h-screen'
@@ -30,9 +32,11 @@ export default function YamlEditor({ data, setData }) {
                     defaultLanguage='yaml'
                     onChange={setData}
                     height={height}
+                    readOnly={true}
                     theme={isDarkMode ? 'vs-dark' : 'light'} // Dynamically set theme based on color scheme
                     // theme={getSystemTheme()}
                     options={{
+                        readOnly: readOnly,
                         minimap: {
                             enabled: false,
                         },

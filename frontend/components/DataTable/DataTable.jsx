@@ -19,14 +19,20 @@ const getNestedValue = (obj, keyPath) => {
 };
 
 
-const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
+const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoint }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    const [metricsData, setMetricsData] = useState([]);
+
     const [searchTerm, setSearchTerm] = useState('');
 
+
     const fetchData = async () => {
+        if (!agent) {
+            return;
+        }
         try {
             setLoading(true);
             console.log("calling k8s api", endpoint)
@@ -40,10 +46,28 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
         }
     };
 
+    const fetchMetrics = async () => {
+        if (!metricsEndpoint) {
+            return;
+        }
+        try {
+            const response = await callK8sApi(metricsEndpoint, 'GET', null, null, agent, accessToken);
+            setMetricsData(response.items);
+        } catch (err) {
+            console.log("Error fetching metrics", err)
+        }
+    };
+
+
+
     useEffect(() => {
         console.log("fetching data")
         fetchData();
     }, [agent, endpoint, accessToken]);
+
+    useEffect(() => {
+        fetchMetrics();
+    }, [agent, metricsEndpoint, accessToken]);
 
     // // If there is an error, display a message
     // if (error) {
@@ -67,6 +91,18 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
         }, {})
     );
 
+    // Add metrics to rows 
+    const rowsWithMetrics = rows.map((row) => {
+        const metrics = metricsData.items?.find(metric => metric.metadata.name === row?.metadata?.name);
+        if (metrics) {
+            console.log("metrics", metrics)
+            return {
+                ...row,
+                ...metrics.usage,
+            };
+        }
+        return row;
+    });
 
     return (
         <>
@@ -93,7 +129,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken }) => {
                     highlightOnHover
                     striped
                     columns={columns}
-                    records={rows}
+                    records={metricsData.length > 0 ? rowsWithMetrics : rows}
                     fetching={loading}
                     error={error}
                     loaderVariant="dots"

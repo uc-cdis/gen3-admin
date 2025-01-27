@@ -1,13 +1,13 @@
 
 
 
-export default async function callK8sApi(endpoint, method = 'GET', body = null, headers = {}, cluster = null, accessToken = null) {
+export default async function callK8sApi(endpoint, method = 'GET', body = null, headers = {}, cluster = null, accessToken = null, responseType = 'json') {
   // console.log('calling k8s api', endpoint)
   
-  let baseUrl = '/api/go/k8s/proxy';
+  let baseUrl = '/api/k8s/proxy';
 
   if (cluster) {
-    baseUrl = `/api/go/k8s/${cluster}/proxy/`;
+    baseUrl = `/api/k8s/${cluster}/proxy`;
   }
 
   try {
@@ -33,7 +33,11 @@ export default async function callK8sApi(endpoint, method = 'GET', body = null, 
       throw new Error(`API call failed: ${response.status} ${response.statusText}`);
     }
 
-    return await response.json();
+    if (responseType === 'json') {
+      return await response.json();
+    } else if (responseType === 'text') {
+      return await response.text();
+    }
   } catch (error) {
     console.error(`Failed to call K8s API (${endpoint}):`, error);
     throw error;
@@ -43,7 +47,7 @@ export default async function callK8sApi(endpoint, method = 'GET', body = null, 
 
 export async function callGoApi(endpoint, method = 'GET', body = null, headers = {}, accessToken = null, responseType = 'json') {
   // console.log('calling go api', endpoint)
-  const baseUrl = '/api/go';
+  const baseUrl = '/api';
 
   try {
     // Base headers with authorization

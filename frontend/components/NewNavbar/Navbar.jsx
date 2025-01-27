@@ -4,12 +4,15 @@ import {
     IconNotes,
     IconCalendarStats,
     IconGauge,
+    IconSearch,
     IconAdjustments,
     IconLock,
     IconHome2,
     IconDeviceDesktopAnalytics,
     IconFingerprint,
+    IconDatabase,
     IconUser,
+    IconWheel,
     IconSettings,
     IconLogout,
     IconSwitchHorizontal,
@@ -24,6 +27,7 @@ import {
     IconChartBar,
     IconFile,
     IconStar,
+    IconEye,
 } from '@tabler/icons-react';
 // import { UserButton } from '../UserButton/UserButton';
 // import { LinksGroup } from '../NavbarLinksGroup/NavbarLinksGroup';
@@ -92,8 +96,8 @@ function LinksGroup({ label, links, icon: Icon }) {
     const currentPath = router.asPath;
 
     // Check if any of the nested links (or the parent link itself) is active
-    const isActive = links.some(link => link.link === currentPath || 
-      (link.links && link.links.some(subLink => subLink.link === currentPath)));
+    const isActive = links.some(link => link.link === currentPath ||
+        (link.links && link.links.some(subLink => subLink.link === currentPath)));
 
     return (
         <Accordion.Item value={label}>
@@ -116,7 +120,7 @@ function LinksGroup({ label, links, icon: Icon }) {
                                 label={link.label}
                                 component={Link}
                                 className={currentPath === link.link ? classes.activeLink : ''}
-                                // Apply active class if the current link matches the path
+                            // Apply active class if the current link matches the path
                             />
                         </Group>
                     );
@@ -176,15 +180,26 @@ export function NavBar() {
     );
 
     const nestedLinksData = [
+
         {
             label: 'Gen3',
             icon: IconPentagonNumber3,
             links: [
                 { label: 'Helm deployments', link: '/projects', icon: IconChartBar },
-                { label: 'Clusters', link: `/clusters/`, icon: IconChartBar },
+                { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
+                { label: 'Agents', link: `/clusters/`, icon: IconChartBar },
                 { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
                 { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
-                { label: 'Databases', link: '/', icon: IconChartBar },
+                // { label: 'Databases', link: '/', icon: IconChartBar },
+            ],
+        },
+        {
+            label: 'Helm',
+            icon: IconWheel,
+            links: [
+                { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
+                { label: 'App Store', link: '/helm/repo/bitnami', icon: IconChartBar },
+                { label: 'Deployments', link: '/projects', icon: IconChartBar },
             ],
         },
         {
@@ -249,22 +264,48 @@ export function NavBar() {
                     icon: IconServer,
                     links: [
                         { label: 'Persistent Volume Claims', link: `/clusters/${activeCluster}/storage/persistentvolumeclaims`, icon: IconFile },
-                        { label: 'Persistent Volumes', link: `/clusters/${activeCluster}/storage/persistentvolumes`, icon: IconFile },  
+                        { label: 'Persistent Volumes', link: `/clusters/${activeCluster}/storage/persistentvolumes`, icon: IconFile },
                         { label: 'Storage Classes', link: `/clusters/${activeCluster}/storage/storageclasses`, icon: IconFile },
                     ],
                 },
             ],
         },
+        {
+            label: 'Databases',
+            icon: IconSearch,
+            links: [
+                { label: 'Search Clusters', link: `/elasticsearch/`, icon: IconSearch },
+                { label: 'Search Indices', link: `/elasticsearch/`, icon: IconSearch },
+                { label: 'SQL Databases', link: `/databases/`, icon: IconDatabase },
+
+            ],
+        },
+        {
+            label: 'Observability',
+            icon: IconEye,
+            links: [
+                { label: 'Monitors', link: '/observability/monitors' },
+                { label: 'Dashboards', link: '/observability/dashboards' },
+            ]
+        },
+        {
+            label: 'Cloud',
+            icon: IconNetwork,
+            links: [
+                { label: 'Accounts', link: `/cloud/accounts`, icon: IconChartBar },
+                { label: 'Spend', link: `/cloud/spend`, icon: IconChartBar },
+            ],
+        }
     ];
 
     const nestedLinks = nestedLinksData.map((item) => <LinksGroup {...item} key={item.label} />);
 
     return (
-        <div className={classes.container}>
+        <>
+        <div className={classes.navbar}>
             {/* Left Side: Cluster Selection */}
             <nav className={classes.leftNavbar}>
                 <Center>
-                    {/* <MantineLogo type="mark" size={30} /> */}
                     <Stack justify="center" gap={0}>
                         {clusterLinks}
                     </Stack>
@@ -295,26 +336,24 @@ export function NavBar() {
 
             {/* Right Side: Nested Links */}
             {/* Don't display right navbar on `/` route, use Nextjs to determine the path */}
-            {
-                // router.pathname !== '/'
-                true && (
-                    <nav className={classes.rightNavbar}>
-                        <div className={classes.header}>
-                            <Group justify="space-between">
-                                {/* <Logo style={{ width: rem(120) }} /> */}
-                                <UserButton />
-                            </Group>
-                        </div>
+            <nav className={classes.rightNavbar}>
+                {/* <div className={classes.header}> */}
+                    <Group justify="space-between">
+                        {/* <Logo style={{ width: rem(120) }} /> */}
+                        {/* <UserButton /> */}
+                    </Group>
+                {/* </div> */}
 
-                        <ScrollArea className={classes.links}>
-                            <div className={classes.linksInner}>
-                                <Accordion multiple>
-                                    {nestedLinks}
-                                </Accordion>
-                            </div>
-                        </ScrollArea>
-                    </nav>
-                )}
+                <ScrollArea className={classes.links}>
+                    <div className={classes.linksInner}>
+                        <Accordion multiple>
+                            {nestedLinks}
+                        </Accordion>
+                    </div>
+                </ScrollArea>
+            </nav>
         </div>
+        
+        </>
     );
 }

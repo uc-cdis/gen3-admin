@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
+import Link from 'next/link';
 
 export default function Dep() {
     const clusterName = useParams()?.clustername;
@@ -17,7 +18,7 @@ export default function Dep() {
                 agent={clusterName}
                 endpoint={`/api/v1/persistentvolumes`}
                 fields = {[
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor href={`/clusters/${clusterName}/storage/persistentvolumes/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/storage/persistentvolumes/${Name}`}>{Name}</Anchor>) },
                     { key: "status.phase", label: "Status", render: ({ Status }) => (<Badge color={Status === 'Bound' ? 'green' : Status === 'Pending' ? 'orange' : Status === 'Succeeded' ? 'grey' : 'red'}>{Status}</Badge>) },
                     { key: "spec.capacity.storage", label: "Capacity" },
                     { key: "spec.accessModes", label: "Access Modes" },

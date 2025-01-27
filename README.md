@@ -1,4 +1,4 @@
-# Gen3 Admin
+# Gen3 CSOC
 
 This is a first attempt at creating an admin dashboard, very much WIP. 
 
@@ -54,7 +54,7 @@ The Gen3 CSOC/Admin Dashboard is a centralized platform designed to facilitate t
 
 ### Management of Gen3 Deployments
 
-The Gen3 Admin Dashboard provides an intuitive interface for managing one or multiple Gen3 deployments using Helm, a package manager for Kubernetes. Helm simplifies the deployment and configuration process by allowing administrators to define, install, and upgrade complex Kubernetes applications.
+The Gen3 CSOC Dashboard provides an intuitive interface for managing one or multiple Gen3 deployments using Helm, a package manager for Kubernetes. Helm simplifies the deployment and configuration process by allowing administrators to define, install, and upgrade complex Kubernetes applications.
 
 - Multi-Deployment Support:
   - Administrators can manage several Gen3 environments (production, development, and testing) from a single interface, providing centralized control over configuration and updates.
@@ -65,7 +65,7 @@ The Gen3 Admin Dashboard provides an intuitive interface for managing one or mul
 
 ### Build Generic Support for Managing Helm and ArgoCD
 
-In addition to supporting Helm, the Gen3 Admin Dashboard also integrates ArgoCD, a declarative GitOps continuous delivery tool for Kubernetes. This integration ensures that administrators have the flexibility to choose their preferred management tool while maintaining GitOps best practices.
+In addition to supporting Helm, the Gen3 CSOC Dashboard also integrates ArgoCD, a declarative GitOps continuous delivery tool for Kubernetes. This integration ensures that administrators have the flexibility to choose their preferred management tool while maintaining GitOps best practices.
 
 - Helm and ArgoCD Integration: The dashboard provides built-in support for both Helm and ArgoCD, giving administrators the ability to manage Kubernetes resources either through Helm's package manager or ArgoCD's GitOps approach.
 - GitOps Workflow: By leveraging ArgoCD, the dashboard enables administrators to implement a GitOps workflow, where all changes to Kubernetes clusters and applications are version-controlled, audited, and automatically synchronized with the cluster, promoting reliability and transparency.
@@ -81,9 +81,9 @@ In addition to managing Gen3 deployments, the Admin Dashboard includes a Kuberne
 
 ### Agent/Server Architecture
 
-The Gen3 Admin Dashboard follows an agent/server architecture, allowing distributed management of multiple Kubernetes clusters from a centralized control plane. This architecture enhances scalability and simplifies the management of multiple, geographically dispersed clusters.
+The Gen3 CSOC Dashboard follows an agent/server architecture, allowing distributed management of multiple Kubernetes clusters from a centralized control plane. This architecture enhances scalability and simplifies the management of multiple, geographically dispersed clusters.
 
-- Gen3 Agent Deployment: To manage multiple clusters, administrators deploy a Gen3 agent to each target Kubernetes cluster. The agent serves as the interface between the cluster and the central Gen3 Admin Dashboard.
+- Gen3 Agent Deployment: To manage multiple clusters, administrators deploy a Gen3 agent to each target Kubernetes cluster. The agent serves as the interface between the cluster and the central Gen3 CSOC Dashboard.
 - Agent-Based Management: Once the Gen3 agent is deployed, administrators can manage the associated cluster directly from the dashboard without needing direct access to the cluster’s control plane, allowing for secure, remote management of multiple environments.
 - Scalability: This architecture enables seamless management of clusters across different cloud providers or on-premises environments, making it easy to scale as new clusters are added or existing clusters grow in size.
 
@@ -91,7 +91,7 @@ The Gen3 Admin Dashboard follows an agent/server architecture, allowing distribu
 
 ### Centralized Control
 
-- The Gen3 Admin Dashboard provides a single, unified interface to manage multiple Gen3 deployments and Kubernetes clusters, simplifying operations and improving efficiency. With the ability to deploy, monitor, and manage resources from one platform, administrators can streamline their workflows and reduce the complexity of managing distributed environments.
+- The Gen3 CSOC Dashboard provides a single, unified interface to manage multiple Gen3 deployments and Kubernetes clusters, simplifying operations and improving efficiency. With the ability to deploy, monitor, and manage resources from one platform, administrators can streamline their workflows and reduce the complexity of managing distributed environments.
 
 - Flexibility
 With built-in support for both Helm and ArgoCD, the dashboard caters to various deployment and management preferences. Administrators have the flexibility to choose the toolset that best fits their operational needs while maintaining control through a single dashboard.

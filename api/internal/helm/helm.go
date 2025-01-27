@@ -2,17 +2,19 @@ package helm
 
 import (
 	"fmt"
-	"log"
 	"strings"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/helmpath"
+	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+
+	"github.com/rs/zerolog/log"
 )
 
 type Release struct {
@@ -24,6 +26,21 @@ type Release struct {
 	Icon       string `json:"icon"`
 	AppVersion string `json:"appVersion"`
 	Helm       string `json:"helm"`
+}
+
+// InstallOptions contains all the configuration options for installing a Helm chart
+type InstallOptions struct {
+	ReleaseName     string
+	Namespace       string
+	RepoName        string
+	RepoUrl         string
+	ChartName       string
+	Version         string
+	Values          map[string]interface{}
+	ValuesFiles     []string
+	Wait            bool
+	Timeout         time.Duration
+	CreateNamespace bool
 }
 
 type Repo struct {
@@ -86,6 +103,11 @@ func ShowHelmValues(releaseName string, namespace string) (map[string]interface{
 		return nil, err
 	}
 
+	// When actionConfig.Init is called it sets up the driver with the default namespace.
+	// We need to change the namespace to honor the release namespace.
+	// https://github.com/helm/helm/issues/9171
+	actionConfig.KubeClient.(*kube.Client).Namespace = namespace
+
 	// Create a new Get action
 	client := action.NewGet(actionConfig)
 
@@ -110,6 +132,10 @@ func DeleteHelmRelease(releaseName string, namespace string) (*string, error) {
 	}
 
 	// Set namespace
+	// When actionConfig.Init is called it sets up the driver with the default namespace.
+	// We need to change the namespace to honor the release namespace.
+	// https://github.com/helm/helm/issues/9171
+	actionConfig.KubeClient.(*kube.Client).Namespace = namespace
 
 	// Create a new Get action
 	client := action.NewUninstall(actionConfig)
@@ -160,7 +186,7 @@ func ListHelmCharts(repository string) ([]Chart, error) {
 
 	helmRepos, err := ListHelmRepos()
 	if err != nil {
-		log.Fatalf("Failed to list Helm repositories: %v", err)
+		log.Printf("Failed to list Helm repositories: %v", err)
 		return nil, fmt.Errorf("failed to list Helm repositories: %v", err)
 	}
 	var repoURL string
@@ -172,7 +198,7 @@ func ListHelmCharts(repository string) ([]Chart, error) {
 	}
 
 	if repoURL == "" {
-		log.Fatalf("Repository not found: %s", repository)
+		log.Printf("Repository not found: %s", repository)
 		return nil, fmt.Errorf("repository not found: %s", repository)
 	}
 
@@ -188,19 +214,22 @@ func ListHelmCharts(repository string) ([]Chart, error) {
 	// Initialize chart repository
 	chartRepo, err := repo.NewChartRepository(entry, getter.All(settings))
 	if err != nil {
-		log.Fatalf("Failed to create chart repository: %v", err)
+		log.Error().Msgf("Failed to create chart repository: %v", err)
+		return nil, fmt.Errorf("failed to create chart repository: %v", err)
 	}
 
 	// Download the index.yaml file from the repository
 	indexFile, err := chartRepo.DownloadIndexFile()
 	if err != nil {
-		log.Fatalf("Failed to download index file: %v", err)
+		log.Error().Msgf("Failed to download index file: %v", err)
+		return nil, fmt.Errorf("failed to download index file: %v", err)
 	}
 
 	// Load the index file to list charts
 	index, err := repo.LoadIndexFile(indexFile)
 	if err != nil {
-		log.Fatalf("Failed to load index file: %v", err)
+		log.Error().Msgf("Failed to load index file: %v", err)
+		return nil, fmt.Errorf("failed to load index file: %v", err)
 	}
 
 	var charts []Chart
@@ -222,114 +251,81 @@ func ListHelmCharts(repository string) ([]Chart, error) {
 }
 
 // InstallHelmChart installs or upgrades a Helm chart from a Helm repository.
-// Takes a repository name, chart name, and an optional version as input.
-func InstallHelmChart(releaseName, namespace, repoName, chartName, version string) (*release.Release, error) {
-
-	// Fetch the repository URL based on the repo name using ListHelmRepos
-	helmRepos, err := ListHelmRepos() // Assuming you have this function
-	if err != nil {
-		log.Fatalf("Failed to list Helm repositories: %v", err)
-		return nil, fmt.Errorf("failed to list Helm repositories: %v", err)
+// Takes repository details, chart information, and optional values as input.
+func InstallHelmChart(opts InstallOptions) (*release.Release, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
 	}
 
-	// Find the repository URL for the given repository name
-	var repoURL string
-	for _, repo := range helmRepos {
-		if repo.Name == repoName {
-			repoURL = repo.URL
-			break
-		}
-	}
+	log.Warn().Msgf("Installing chart with options: %T", opts)
 
-	if repoURL == "" {
-		log.Fatalf("Repository not found: %s", repoName)
-		return nil, fmt.Errorf("repository not found: %s", repoName)
-	}
-
-	// Ensure the repository URL is properly formatted
-	if !strings.HasPrefix(repoURL, "http") {
-		repoURL = "https://" + repoURL
-	}
-
-	// Prepare the Helm action configuration
 	settings := cli.New()
+	log.Debug().Msg(settings.Namespace())
+	log.Debug().Msg(opts.Namespace)
+	settings.Debug = true
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, "secrets", log.Printf); err != nil {
+	if err := actionConfig.Init(settings.RESTClientGetter(), opts.Namespace, "secrets", log.Printf); err != nil {
+		return nil, fmt.Errorf("failed to init action config: %w", err)
+	}
+
+	err := actionConfig.KubeClient.IsReachable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to kubernetes cluster: %w", err)
+	}
+
+	// When actionConfig.Init is called it sets up the driver with the default namespace.
+	// We need to change the namespace to honor the release namespace.
+	// https://github.com/helm/helm/issues/9171
+	actionConfig.KubeClient.(*kube.Client).Namespace = opts.Namespace
+
+	repoURL := opts.RepoUrl
+	if repoURL == "" {
+		// Get repository URL
+		repoURL, err := getRepositoryURL(opts.RepoName)
+		if err != nil {
+			return nil, err
+		}
+		opts.RepoUrl = repoURL
+	}
+
+	// Get chart version and URL
+	chartVersion, err := getChartVersion(settings, repoURL, opts.ChartName, opts.Version)
+	if err != nil {
 		return nil, err
 	}
 
-	// Set up the chart repository entry
-	entry := &repo.Entry{
-		URL: repoURL,
-	}
-
-	// Initialize the chart repository using the provided repoURL
-	chartRepo, err := repo.NewChartRepository(entry, getter.All(settings))
-	if err != nil {
-		log.Fatalf("Failed to create chart repository: %v", err)
-	}
-
-	// Download the index.yaml file from the repository to get chart information
-	indexFile, err := chartRepo.DownloadIndexFile()
-	if err != nil {
-		log.Fatalf("Failed to download index file: %v", err)
-	}
-
-	// Load the index file
-	index, err := repo.LoadIndexFile(indexFile)
-	if err != nil {
-		log.Fatalf("Failed to load index file: %v", err)
-	}
-
-	// Find the chart versions from the index
-	chartVersions, found := index.Entries[chartName]
-	if !found {
-		return nil, fmt.Errorf("chart %s not found in repository %s", chartName, repoURL)
-	}
-
-	// If no version is provided, use the latest version
-	if version == "" {
-		version = chartVersions[0].Version
-	}
-
-	// Find the specific version of the chart
-	var chartVersion *repo.ChartVersion
-	for _, cv := range chartVersions {
-		if cv.Version == version {
-			chartVersion = cv
-			break
-		}
-	}
-
-	if chartVersion == nil {
-		return nil, fmt.Errorf("chart %s version %s not found", chartName, version)
-	}
-
-	// Create a new Install action for installing the chart
+	// Prepare the installation
 	client := action.NewInstall(actionConfig)
-	client.ReleaseName = releaseName
-	client.Namespace = namespace
+	client.ReleaseName = opts.ReleaseName
+	client.Namespace = opts.Namespace
+	client.Wait = opts.Wait
+	client.Timeout = opts.Timeout
+	client.IsUpgrade = true
+	client.CreateNamespace = opts.CreateNamespace
 
-	// Download the chart from the repository
-	chartDownloader := downloader.ChartDownloader{
-		Out:     log.Writer(),
-		Getters: getter.All(settings),
-	}
-	chartPath, _, err := chartDownloader.DownloadTo(chartVersion.URLs[0], version, "")
+	log.Debug().Msgf("Installing chart %s", opts.ChartName)
+
+	// Download and load the chart
+	chartPath, err := downloadChart(settings, chartVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download chart: %v", err)
+		return nil, err
 	}
 
-	// Load the downloaded chart
 	loadedChart, err := loader.Load(chartPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load chart: %v", err)
+		return nil, fmt.Errorf("failed to load chart: %w", err)
 	}
 
-	// Install the chart
-	release, err := client.Run(loadedChart, nil)
+	// Merge values
+	values, err := mergeValues(opts.Values, opts.ValuesFiles)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install or upgrade release: %v", err)
+		return nil, fmt.Errorf("failed to merge values: %w", err)
+	}
+
+	// Install the chart with values
+	release, err := client.Run(loadedChart, values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to install release: %w", err)
 	}
 
 	return release, nil

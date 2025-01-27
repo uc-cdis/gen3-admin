@@ -1,15 +1,30 @@
-FROM amazonlinux:2023 AS nextjs-builder
+ARG AZLINUX_BASE_VERSION=master
 
-ENV NODE_VERSION 20.17.0
+# For local development
+FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION} 
 
+
+ENV NODE_VERSION=20.17.0
+
+# Install nodejs
+# RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+
+# Install packages via yum
+RUN yum install -y unzip nodejs
+    
 WORKDIR /frontend 
+
+COPY ./frontend/package.json ./frontend/package-lock.json /frontend/
+RUN npm install
+
+# RUN curl -fsSL https://bun.sh/install | bash
+
+# ENV PATH="/root/.bun/bin:$PATH"
+
+# RUN bun install
 
 COPY ./frontend /frontend
 
-RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-RUN yum install -y nodejs
-
-RUN npm install
 RUN npm run build
 
 # FROM amazonlinux:2023 AS final
@@ -28,4 +43,5 @@ RUN npm run build
 
 EXPOSE 3000
 
-CMD ["node", ".next/standalone/server.js"]
+# CMD ["node", ".next/standalone/server.js"] 
+CMD ["npm", "start"]

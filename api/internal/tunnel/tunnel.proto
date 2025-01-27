@@ -121,19 +121,26 @@ message HelmInstallRequest {
   string namespace = 4;
 
   // Values file
-  string values = 5;
+  bytes values = 5;
 
-  // Values file
-  string values_file = 6;
+  // Repo name
+  string repo = 6;
 
-  // Values file
-  string values_string = 7;
+  // Repo url
+  string repoUrl = 7;
 
-  // Values file
-  string values_string_file = 8;
+  // Chart version
+  string version = 8;
 
-  // Values file
-  string values_string_data = 9;
+  // Wait for the release to be ready
+  bool wait = 9;
+
+  // Timeout for the release to be ready
+  int64 timeout = 10;
+
+  // Create namespace if it doesn't exist
+  bool create_namespace = 11;
+
 }
 
 message HelmDeleteResponse {

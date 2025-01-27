@@ -5,18 +5,17 @@ import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
+import Link from 'next/link'
 
 export default function Dep() {
     const clusterName = useParams()?.clustername;
-
-    console.log("clustername", clusterName)
     return (
         <>
             <DataTable
                 agent={clusterName}
                 endpoint={`/api/v1/nodes`}
                 fields = {[
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
                     // Resourve version
                     { key: "metadata.resourceVersion", label: "Resource Version" },
                     { key: "status.nodeInfo.kubeletVersion", label: "Kubelet Version" },

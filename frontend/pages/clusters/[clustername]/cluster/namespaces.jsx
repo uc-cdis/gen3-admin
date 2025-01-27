@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
+import Link from 'next/link'
 
 export default function Dep() {
     const clusterName = useParams()?.clustername;
@@ -16,7 +17,7 @@ export default function Dep() {
                 agent={clusterName}
                 endpoint={`/api/v1/namespaces`}
                 fields = {[
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
                     { key: "status.phase", label: "Status" },
                     // UID

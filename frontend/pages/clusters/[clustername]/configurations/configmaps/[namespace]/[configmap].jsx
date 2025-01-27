@@ -15,14 +15,14 @@ export default function Detail() {
         <>
             <ResourceDetails 
                 cluster={clusterName} 
-                namespace={namespace} 
-                resource={resource} type="configmap" 
-                tabs={["overview", "yaml", "events"]}
+                namespace={namespace}
+                resource={resource}
+                type="configmap" 
+                tabs={["overview", "yaml"]}
                 url={`/api/v1/namespaces/${namespace}/configmaps/${resource}`} 
                 columnDefinitions={[
                     { label: "Name", path: "metadata.name" },
                     { label: "Namespace", path: "metadata.namespace" },
-                    { label: "Generate Name", path: "metadata.generateName" },
                     { label: "Creation Timestamp", path: "metadata.creationTimestamp" },
                     { label: "Resource Version", path: "metadata.resourceVersion" },
                     { label: "Self Link", path: "metadata.selfLink" },

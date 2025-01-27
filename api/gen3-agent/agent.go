@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -101,9 +102,9 @@ func NewAgent(name, version, serverAddress string, statusInterval time.Duration)
 		return nil, fmt.Errorf("failed to connect to server: %v", err)
 	}
 
-	stringCert := cert.Certificate[0]
-	certPEM := string(stringCert)
-	log.Debug().Msgf("Certificate: %s", certPEM)
+	// stringCert := cert.Certificate[0]
+	// certPEM := string(stringCert)
+	// log.Debug().Msgf("Certificate: %s", certPEM)
 
 	client := pb.NewTunnelServiceClient(conn)
 	return &Agent{
@@ -171,7 +172,7 @@ func (a *Agent) collectAgentStatus() *pb.StatusUpdate {
 		}
 	}
 
-	log.Debug().Msgf("Collected followin metrics: CPU: %v, Memory: %v, Provider: %s, K8s Version: %s", cpuPercent, vmStat.UsedPercent, k8sInfo.Provider, k8sInfo.Version)
+	// log.Debug().Msgf("Collected followin metrics: CPU: %v, Memory: %v, Provider: %s, K8s Version: %s", cpuPercent, vmStat.UsedPercent, k8sInfo.Provider, k8sInfo.Version)
 
 	return &pb.StatusUpdate{
 		CpuUsage:     cpuPercent[0],
@@ -238,7 +239,7 @@ func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
 	defer resp.Body.Close()
 
 	// Send headers
-	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
+	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
 
 	// Send status code and headers
 	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
@@ -400,6 +401,7 @@ func getClientConfig() (*rest.Config, error) {
 }
 
 func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
+	log.Debug().Msgf("Handling k8s proxy request: %v", req.Path)
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -419,7 +421,11 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	}
 
 	// Create HTTP request
-	url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
+	// Remove the last slash from the host
+	host := strings.TrimSuffix(restConfig.Host, "/")
+	url := fmt.Sprintf("%s%s", host, req.Path)
+	// url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
+	log.Debug().Msg("Creating request to url: " + url)
 	httpReq, err := http.NewRequest(req.Method, url, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create request")
@@ -428,9 +434,10 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	}
 
 	// Set headers
-	for k, v := range req.Headers {
-		httpReq.Header.Set(k, v)
-	}
+	// for k, v := range req.Headers {
+	// 	log.Debug().Msg(fmt.Sprintf("Setting header %s to %s", k, v))
+	// 	httpReq.Header.Set(k, v)
+	// }
 
 	// Set content type if needed
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -443,6 +450,14 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		return
 	}
 
+	// Type assert to get TLSClientConfig
+	if t, ok := transport.(*http.Transport); ok {
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = &tls.Config{}
+		}
+		t.TLSClientConfig.NextProtos = []string{"h2", "http/1.1"}
+	}
+
 	// Execute request
 	client := &http.Client{
 		Transport: transport,
@@ -453,7 +468,14 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to execute request: %v", err))
 		return
 	}
+
+	log.Debug().Msgf("Response Status: %s", resp.Status)
 	defer resp.Body.Close()
+
+	// Print all response headers to debug log
+	for k, v := range resp.Header {
+		log.Debug().Msgf("Response Header: %s: %s", k, v)
+	}
 
 	// // Send headers
 	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
@@ -474,6 +496,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
 		}
 		if err == io.EOF {
+			log.Debug().Msg("Request completed - EOF")
 			break
 		}
 		if err != nil {
@@ -611,6 +634,56 @@ func (a *Agent) handleHelmDeleteRequest(req *pb.HelmDeleteRequest) {
 
 }
 
+func (a *Agent) handleHelmInstallRequest(req *pb.HelmInstallRequest) {
+	log.Debug().Msgf("Handling helm install request: %v", req)
+
+	var values map[string]interface{}
+	err := json.Unmarshal(req.Values, &values)
+	if err != nil {
+		log.Error().Err(err).Msg("Error unmarshaling values")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error unmarshaling values: %v", err))
+		return
+	}
+
+	installOps := helm.InstallOptions{
+		RepoName:        req.Repo,
+		RepoUrl:         req.RepoUrl,
+		ChartName:       req.Chart,
+		Version:         req.Version,
+		ReleaseName:     req.Release,
+		Namespace:       req.Namespace,
+		Wait:            false,
+		Timeout:         time.Minute * 5,
+		CreateNamespace: true,
+		Values:          values,
+	}
+
+	err = installOps.Validate()
+	if err != nil {
+		log.Error().Err(err).Msg("Error validating install options")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error validating install options: %v", err))
+		return
+	}
+
+	log.Debug().Msgf("Install options: %v", installOps)
+
+	install, err := helm.InstallHelmChart(installOps)
+	if err != nil {
+		log.Error().Err(err).Msg("Error installing chart")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error installing chart: %v", err))
+		return
+	}
+
+	responseJson, err := json.Marshal(install)
+	if err != nil {
+		log.Error().Err(err).Msg("Error marshaling install response")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("error marshaling install response: %v", err))
+		return
+	}
+
+	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, responseJson)
+}
+
 func (a *Agent) Run(ctx context.Context) error {
 	go a.sendStatusUpdates(ctx)
 
@@ -630,7 +703,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			go a.handleHelmDeleteRequest(content.HelmDeleteRequest)
 		case *pb.ServerMessage_HelmInstallRequest:
 			log.Warn().Msg("Got a helm install request message")
-			// go a.handleHelmInstallRequest(content.HelmInstallRequest)
+			go a.handleHelmInstallRequest(content.HelmInstallRequest)
 		case *pb.ServerMessage_HelmValuesRequest:
 			log.Warn().Msg("Got a helm values request message")
 			go a.handleHelmValuesRequest(content.HelmValuesRequest)
@@ -640,8 +713,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		case *pb.ServerMessage_Proxy:
 			if content.Proxy.ProxyType == "k8s" {
 				log.Debug().Msg("Got a k8s proxy request message")
+				log.Debug().Msg(fmt.Sprintf("Content: %v", content.Proxy))
 				go a.handleK8sProxyRequest(content.Proxy)
 			} else {
+				log.Debug().Msg("Got a non k8s proxy request message")
 				go a.handleProxyRequest(content.Proxy)
 			}
 		case *pb.ServerMessage_Registration:
@@ -656,7 +731,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.With().Caller().Logger()
 
 	agent, err := NewAgent(agentName, "1.0.0", grpcServerURL, statusUpdateInterval)

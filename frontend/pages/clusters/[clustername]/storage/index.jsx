@@ -2,6 +2,9 @@ import { useParams } from 'next/navigation';
 
 import { Anchor } from '@mantine/core';
 
+
+import Link from 'next/link';
+
 export default function Storage() {
 
     const activeCluster = useParams()?.clustername;
@@ -19,7 +22,7 @@ export default function Storage() {
                 <ul>
                     {workloads.map((workload) => (
                         <li>
-                            <Anchor href={workload.link}>{workload.label}</Anchor>
+                            <Anchor component={Link} href={workload.link}>{workload.label}</Anchor>
                         </li>
                     ))}
                 </ul>
