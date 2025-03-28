@@ -8,3 +8,22 @@
     font-size: rem(50px);
   }
 }
+
+
+
+.element {
+  transition: border 0.1s ease;
+  border: 1px solid transparent;
+
+  &:hover {
+    /* Ensure there is initially no visible border */
+    border: 1px solid;
+  }
+}
+
+
+.shadow {
+  -webkit-filter: drop-shadow(2px 2px 5px);
+  filter: drop-shadow(2px 2px 5px);
+
+}

@@ -1,3 +1,5 @@
+'use client'
+
 import { useState, useContext, useEffect } from 'react';
 import cx from 'clsx';
 
@@ -8,6 +10,8 @@ import AuthContext from '@/contexts/auth';
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
 import { EnvSelector } from '@/components/EnvSelector';
 import { useSession, signOut } from "next-auth/react"
+
+import { useGlobalState } from '@/contexts/global';
 
 import {
     IconLogout,
@@ -20,6 +24,7 @@ import {
     IconRefresh,
     IconSwitchHorizontal,
     IconChevronDown,
+    IconPlus,
 } from '@tabler/icons-react';
 
 
@@ -27,6 +32,8 @@ import classes from './Header.module.css';
 
 import { callGoApi } from '@/lib/k8s';
 
+import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 
 
 export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDesktop }) {
@@ -35,10 +42,12 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
     // const { user, logout } = useContext(AuthContext)
 
     // const { cluster, setCluster } = useGlobalStore()
+    const router = useRouter();
+    const currentPath = usePathname()
 
     const [clusters, setClusters] = useState([])
     const [loading, setLoading] = useState(false)
-    const [cluster, setCluster] = useState('')
+    const { activeCluster, setActiveCluster } = useGlobalState();
 
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
@@ -50,6 +59,27 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
     const handleLogout = () => {
         signOut();
         // Add any additional logout logic here (e.g., redirect to login page)
+    };
+
+    const handleClusterChange = (newCluster) => {
+        setActiveCluster(newCluster);
+
+        // Check if the current path matches the pattern
+
+        console.log(currentPath)
+        // Split the path into segments
+        const pathSegments = currentPath.split('/');
+
+        // Assuming the cluster is the third segment in the path (e.g., `/cluster/old-cluster/something/else/here`)
+        const clusterIndex = 2;
+        const currentCluster = pathSegments[clusterIndex];
+
+
+        if (currentCluster !== newCluster && currentPath.includes('cluster')) {
+            // Construct the new path
+            const newPath = currentPath.replace(currentCluster, newCluster);
+            router.push(newPath);
+        }
     };
 
 
@@ -76,6 +106,8 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
         fetchClusters(accessToken).then((data) => {
             if (data) {
                 setClusters(data);
+            } else {
+                setActiveCluster(null);
             }
         });
     }, []);
@@ -229,8 +261,10 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                         <Select
                             placeholder="Select Cluster"
                             data={clusters}
-                            value={cluster}
-                            onChange={setCluster}
+                            value={activeCluster}
+                            allowDeselect={false}
+                            searchable
+                            onChange={handleClusterChange}
                             miw={120}
                             flex={1}
                         />
@@ -238,6 +272,11 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                             onClick={fetchClusters}
                         >
                             <IconRefresh />
+                        </Button>
+                        <Button
+                            component={Link}
+                            href="/clusters">
+                            <IconPlus />
                         </Button>
                     </Group>
                 </Group>
