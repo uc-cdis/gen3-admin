@@ -27,14 +27,20 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/uc-cdis/gen3-admin/internal/runner"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/joho/godotenv"
 	"github.com/uc-cdis/gen3-admin/internal/ca"
 	"github.com/uc-cdis/gen3-admin/internal/helm"
 	"github.com/uc-cdis/gen3-admin/internal/k8s"
+
+	"github.com/uc-cdis/gen3-admin/internal/aws"
+
 	"github.com/uc-cdis/gen3-admin/internal/logger"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
 	"github.com/uc-cdis/gen3-admin/internal/utils"
@@ -112,7 +118,13 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Extract claims for use in authz request
 		tokenString := bearerToken[1]
-		token, _ := jwt.Parse(tokenString, nil)
+		token, err := jwt.Parse(tokenString, nil)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
@@ -216,21 +228,49 @@ func ForbiddenMiddleware() gin.HandlerFunc {
 // }
 
 func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
-	// Receive the initial registration message
+	// Extract TLS Info for client authentication
+	p, ok := peer.FromContext(stream.Context())
+	if !ok {
+		return status.Errorf(codes.Unauthenticated, "failed to retrieve TLS info")
+	}
+
+	tlsInfo := p.AuthInfo.(credentials.TLSInfo)
+	if len(tlsInfo.State.PeerCertificates) == 0 {
+		return status.Errorf(codes.Unauthenticated, "no client certificates found")
+	}
+
+	tlsAuth, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "unexpected peer transport credentials")
+	}
+
+	if len(tlsAuth.State.VerifiedChains) == 0 || len(tlsAuth.State.VerifiedChains[0]) == 0 {
+		return status.Error(codes.Unauthenticated, "could not verify peer certificate")
+	}
+	clientCert := tlsInfo.State.PeerCertificates[0]
+	agentNameCert := clientCert.Subject.CommonName
+
 	agentMsg, err := stream.Recv()
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to receive registration message: %v", err)
 	}
 
-	// Extract the agent name from the registration message
 	registrationRequest, ok := agentMsg.Message.(*pb.AgentMessage_Registration)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "invalid registration message")
 	}
-	// TODO: Validate the agent name against the certificate
+
 	agentName := registrationRequest.Registration.AgentName
 
-	// TODO: Get the agent certificate from disk
+	// Check subject common name against configured username
+	if tlsAuth.State.VerifiedChains[0][0].Subject.CommonName != agentName {
+		return status.Error(codes.Unauthenticated, "invalid subject common name")
+	}
+	// Validate the agent name against the certificate
+	if agentName != agentNameCert {
+		return status.Errorf(codes.PermissionDenied, "agent name mismatch")
+	}
+
 	// Read agent cert file
 	certFile, err := os.ReadFile(filepath.Join("certs", agentName+".crt"))
 	if err != nil {
@@ -252,6 +292,31 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		return err
 	}
 
+	// Check if the agent is already connected
+	agentsMutex.Lock()
+	existingAgent, exists := agentConnections[agentName]
+	if exists && existingAgent.stream != nil {
+		// If there's an existing connection, disconnect the old one
+		log.Warn().Msgf("Agent %s is already connected. Replacing the connection.", agentName)
+		// Send a disconnect message to the old connection
+		existingAgent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_Registration{
+				Registration: &pb.RegistrationResponse{
+					Message: "Agent is already connected. Replacing the connection.",
+					Success: false,
+				},
+			},
+		})
+
+		// Cancel any pending requests or goroutines tied to the old connection
+		for _, cancel := range existingAgent.cancelFuncs {
+			cancel()
+
+			// Close old resources
+			delete(agentConnections, agentName)
+		}
+	}
+
 	agent := &AgentConnection{
 		stream:          stream,
 		requestChannels: make(map[string]chan *pb.ProxyResponse),
@@ -268,7 +333,6 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 	}
 
 	// Store the connection in the map
-	agentsMutex.Lock()
 	agentConnections[agentName] = agent
 	agentsMutex.Unlock()
 
@@ -794,7 +858,7 @@ func setupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	// r.Use(auth.AuthMiddleware(jwksURL, issuer, clientID))
+	// r.Use(AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -804,6 +868,7 @@ func setupHTTPServer() {
 
 	routes.Routes(r)
 
+	// Set up reverse proxy for k8s API
 	proxy, err := k8s.SetupReverseProxy()
 	if err != nil {
 		panic(err) // Handle error appropriately for your situation
@@ -1195,6 +1260,19 @@ func setupHTTPServer() {
 		}
 		c.JSON(http.StatusOK, charts)
 	})
+
+	store := runner.NewExecutionStore()
+
+	// runner example
+	r.POST("/api/runner/execute", runner.HandleExecute(store))
+	r.GET("/api/runner/executions/:id", runner.HandleGetExecution(store))
+	r.GET("/api/runner/executions/:id/stream", runner.HandleStreamExecution(store))
+	r.DELETE("/api/runner/executions/:id", runner.HandleTerminate(store))
+	r.GET("/api/runner/executions", runner.HandleListExecutions(store))
+
+	// AWS routes
+	r.GET("/api/aws/instances", aws.ListEC2Instances)
+	r.GET("api/aws/s3", aws.ListS3Buckets)
 
 	r.Static("/static", "./static")
 	r.Routes()

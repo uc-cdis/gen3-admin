@@ -11,8 +11,8 @@ export default NextAuth({
     // Keycloak provider
     KeycloakProvider({
       clientId: "csoc",
-      clientSecret: "EPDwJSCPCIPw1GO17txkqhYDOUFOIQYl",
-      issuer: "http://:8080/realms/master",
+      clientSecret: "6jU4ArZsuzBkB3k6w5ZXvfuQT8dXH3Rd",
+      issuer: "http://localhost:8080/realms/master",
       profile(profile) {
         return {
           id: profile.sub,

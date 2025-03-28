@@ -720,6 +720,10 @@ func (a *Agent) Run(ctx context.Context) error {
 				go a.handleProxyRequest(content.Proxy)
 			}
 		case *pb.ServerMessage_Registration:
+			if !content.Registration.Success {
+				// This is used as a way to signal that the server is ending the connection. Let's die.
+				log.Fatal().Msg("Connection killed by server, possibly a new agent connected. Exiting.")
+			}
 			log.Info().Msgf("Registration response: %v", content.Registration.Success)
 		case *pb.ServerMessage_Status:
 			log.Info().Msgf("Received server status: CPU: %v, Memory: %v", content.Status.CpuUsage, content.Status.MemoryUsage)

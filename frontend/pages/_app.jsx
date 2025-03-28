@@ -48,7 +48,7 @@ import Login from '../components/Login'; // You'll need to create this component
 import '@mantine/core/styles.layer.css';
 import '@mantine/notifications/styles.css';
 import 'mantine-datatable/styles.layer.css';
-
+// import '@mantine/dates/styles.css';
 
 
 function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
@@ -77,7 +77,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
     <AppShell
       header={{ height: 60 }}
       // layout='alt'
-      withBorder={false}
+      withBorder={true}
       navbar={{
         width: 300,
         breakpoint: 'sm',
@@ -114,7 +114,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 
       <AppShell.Main>
         <Notifications limit={10} position="bottom-right" />
-        <Container size="xl">
+        <Container size="xl" fluid>
           <Breadcrumbs />
           {/* <Alert mt="md" color="red" withCloseButton={false}>
             <b>You are currently connected to {url?.hostname}</b>

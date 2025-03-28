@@ -458,7 +458,7 @@ const StepperForm = () => {
                     </ActionIcon>
                   </Tooltip>
 
-                  <Select
+                  {/* <Select
                     label="Cloud Provider"
                     placeholder="e.g., aws"
                     data={[
@@ -469,7 +469,7 @@ const StepperForm = () => {
                       { value: 'do', label: 'Digital Ocean (Coming Soon)', disabled: true },
                     ]}
                   >
-                  </Select>
+                  </Select> */}
                 </Group>
 
 

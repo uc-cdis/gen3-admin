@@ -35,7 +35,7 @@ import {
 import classes from './Navbar.module.css'; // New styles
 // import { MantineLogo } from '@mantinex/mantine-logo'; // Placeholder logo
 
-
+import { useGlobalState } from '@/contexts/global';
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/router';
@@ -139,7 +139,8 @@ export function NavBar() {
     const router = useRouter()
 
 
-    const [activeCluster, setActiveCluster] = useState(0);
+    // const [activeCluster, setActiveCluster] = useState(0);
+    const { activeCluster, setActiveCluster } = useGlobalState("null");
 
 
     const [clusters, setClusters] = useState([]);
@@ -151,7 +152,7 @@ export function NavBar() {
             const data = await callGoApi('/agents', 'GET', null, null, accessToken)
             // Only show clusters that are active
             setClusters(data.filter(cluster => cluster.connected))
-            setActiveCluster(data.filter(cluster => cluster.connected)[0].name)
+            setActiveCluster(data.filter(cluster => cluster.connected)[0]?.name)
         } catch (error) {
             console.error('Failed to fetch clusters:', error);
         }
@@ -293,6 +294,10 @@ export function NavBar() {
             icon: IconNetwork,
             links: [
                 { label: 'Accounts', link: `/cloud/accounts`, icon: IconChartBar },
+                { label: 'Virtual Machines', link: `/cloud/virtualmachines`, icon: IconChartBar },
+                { label: 'Infrastructure heatmap', link: `/cloud/instancemap`, icon: IconChartBar },
+                { label: 'Data Buckets', link: `/cloud/buckets`, icon: IconChartBar },
+                { label: 'IAC Demo', link: `/cloud/provision`, icon: IconChartBar },
                 { label: 'Spend', link: `/cloud/spend`, icon: IconChartBar },
             ],
         }
@@ -300,60 +305,72 @@ export function NavBar() {
 
     const nestedLinks = nestedLinksData.map((item) => <LinksGroup {...item} key={item.label} />);
 
-    return (
-        <>
-        <div className={classes.navbar}>
-            {/* Left Side: Cluster Selection */}
-            <nav className={classes.leftNavbar}>
-                <Center>
-                    <Stack justify="center" gap={0}>
-                        {clusterLinks}
-                    </Stack>
-                </Center>
+    if (!activeCluster || activeCluster === '') {
+        return (
+            <>
+            Active Cluster: {activeCluster}
+            Please select a cluster
+            </>
+        )
+    } else {
+        return (
+            <>
+                Active Cluster: {activeCluster}
+                <div className={classes.container}>
+                    {/* Left Side: Cluster Selection */}
+                    {/* <nav className={classes.leftNavbar}>
+                    <Center>
+                        <Stack justify="center" gap={0}>
+                            {clusterLinks}
+                        </Stack>
+                    </Center>
+    
+                    <Center>
+    
+                        <Stack justify="center" gap={0}>
+                            <UnstyledButton component={Link} href="/clusters">
+                                <IconPlus size={30} stroke={1.5} />
+                            </UnstyledButton>
+                            <UnstyledButton onClick={() => fetchClusters()}>
+                                <IconRefresh size={30} stroke={1.5} />
+                            </UnstyledButton>
+                        </Stack>
+                    </Center>
+    
+                    <Center>
+    
+                        <Stack justify="center" gap={0}>
+                            <NavbarLink icon={IconSwitchHorizontal} label="Change account" />
+                            <NavbarLink icon={IconLogout} label="Logout" />
+                        </Stack>
+                    </Center>
+    
+    
+                </nav> */}
+    
+                    {/* Right Side: Nested Links */}
+                    {/* Don't display right navbar on `/` route, use Nextjs to determine the path */}
+                    <nav className={classes.rightNavbar}>
+                        {/* <div className={classes.header}> */}
+                        <Group justify="space-between">
+                            {/* <Logo style={{ width: rem(120) }} /> */}
+                            {/* <UserButton /> */}
+                        </Group>
+                        {/* </div> */}
+    
+                        <ScrollArea className={classes.links}>
+                            <div className={classes.linksInner}>
+                                <Accordion multiple>
+                                    {nestedLinks}
+                                </Accordion>
+                            </div>
+                        </ScrollArea>
+                    </nav>
+                </div>
+    
+            </>
+        );
 
-                <Center>
+    }
 
-                    <Stack justify="center" gap={0}>
-                        <UnstyledButton component={Link} href="/clusters">
-                            <IconPlus size={30} stroke={1.5} />
-                        </UnstyledButton>
-                        <UnstyledButton onClick={() => fetchClusters()}>
-                            <IconRefresh size={30} stroke={1.5} />
-                        </UnstyledButton>
-                    </Stack>
-                </Center>
-
-                <Center>
-
-                    <Stack justify="center" gap={0}>
-                        <NavbarLink icon={IconSwitchHorizontal} label="Change account" />
-                        <NavbarLink icon={IconLogout} label="Logout" />
-                    </Stack>
-                </Center>
-
-
-            </nav>
-
-            {/* Right Side: Nested Links */}
-            {/* Don't display right navbar on `/` route, use Nextjs to determine the path */}
-            <nav className={classes.rightNavbar}>
-                {/* <div className={classes.header}> */}
-                    <Group justify="space-between">
-                        {/* <Logo style={{ width: rem(120) }} /> */}
-                        {/* <UserButton /> */}
-                    </Group>
-                {/* </div> */}
-
-                <ScrollArea className={classes.links}>
-                    <div className={classes.linksInner}>
-                        <Accordion multiple>
-                            {nestedLinks}
-                        </Accordion>
-                    </div>
-                </ScrollArea>
-            </nav>
-        </div>
-        
-        </>
-    );
 }

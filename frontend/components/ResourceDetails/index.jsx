@@ -50,12 +50,16 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 <Button > Delete {type} </Button>
                 <Tabs value={activeTab} onChange={setActiveTab}>
                     <Tabs.List>
-                        {tabs.map(tab => (
-                            <Tabs.Tab value={tab} key={tab}>
-                                {tab[0].toUpperCase() + tab.slice(1)}
-                                {/* {tab === "overview" ? <Overview resource={resource} /> : null} */}
-                            </Tabs.Tab>
-                        ))}
+                        {tabs.map(tab => {
+                            const normalizedTab = tab.toLowerCase(); // Normalize all tab values to lowercase
+
+                            return (
+                                <Tabs.Tab value={normalizedTab} key={tab}>
+                                    {tab[0].toUpperCase() + tab.slice(1)}
+                                    {/* {tab === "overview" ? <Overview resource={resource} /> : null} */}
+                                </Tabs.Tab>
+                            )
+                        })}
                         {/* <Tabs.tab value="overviews">
                         overview
                         </Tabs.tab> */}
@@ -85,7 +89,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                     <Tabs.Panel value="metrics">
                         metrics
                     </Tabs.Panel>
-                    <Tabs.Panel value="YAML">
+                    <Tabs.Panel value="yaml">
                         <Container fluid mt={10} mb={10}>
                             <Editor
                                 dark={true}

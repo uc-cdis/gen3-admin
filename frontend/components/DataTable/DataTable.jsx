@@ -19,7 +19,7 @@ const getNestedValue = (obj, keyPath) => {
 };
 
 
-const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoint }) => {
+const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoint, buttonsConfig }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -28,6 +28,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
 
     const [searchTerm, setSearchTerm] = useState('');
 
+    const [selectedRecords, setSelectedRecords] = useState([]);
 
     const fetchData = async () => {
         if (!agent) {
@@ -48,6 +49,9 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
 
     const fetchMetrics = async () => {
         if (!metricsEndpoint) {
+            return;
+        }
+        if (!agent) {
             return;
         }
         try {
@@ -83,13 +87,16 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
         render: field.render,
     }));
 
+
     // Map the data into rows, extracting only the relevant fields
-    const rows = data.map((item) =>
-        fields.reduce((acc, field) => {
-            acc[field.label] = getNestedValue(item, field.key) || 0; // Use helper to get nested values
+    const rows = data.map((item, index) => ({
+        id: item.metadata?.uid || `temp-id-${index}`, // Use UID if available, fallback to index
+        ...fields.reduce((acc, field) => {
+            acc[field.label] = getNestedValue(item, field.key) || 0;
             return acc;
         }, {})
-    );
+    }));
+    
 
     // Add metrics to rows 
     const rowsWithMetrics = rows.map((row) => {
@@ -129,9 +136,14 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
                     highlightOnHover
                     striped
                     columns={columns}
-                    records={metricsData.length > 0 ? rowsWithMetrics : rows}
+                    // records={metricsData.length > 0 ? rowsWithMetrics : rows}
+                    records={rows}
                     fetching={loading}
                     error={error}
+                    selectedRecords={selectedRecords}
+                    onSelectedRecordsChange={setSelectedRecords}
+                    withColumnBorders
+                    withTableBorder
                     loaderVariant="dots"
                 />
             </Container>

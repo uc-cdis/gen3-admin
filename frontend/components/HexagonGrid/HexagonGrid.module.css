@@ -1,0 +1,47 @@
+#main {
+    display: flex;
+    --s: 65px;
+    --m: 4px;
+    --f: calc(1.732 * var(--s) + 4 * var(--m) - 1px);
+    clip-path: polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%);
+    width: calc(var(--s) * 5 + var(--m) * 12);
+    height: calc((var(--s) * 5 + var(--m) * 12) / 1.1547 + var(--m) * 4);
+    margin: 0 auto;
+    padding-left: calc(var(--m) * 2);
+    background: #223;
+  }
+  
+  #container {
+    font-size: 0; /* Disable white space between inline-block elements */
+  }
+  
+  #container div {
+    width: var(--s);
+    margin: var(--m);
+    height: calc(var(--s) * 1.1547);
+    display: inline-block;
+    font-size: initial;
+    clip-path: polygon(0% 25%, 0% 75%, 50% 100%, 100% 75%, 100% 25%, 50% 0%);
+    background: rgb(162, 6, 6);
+    margin-bottom: calc(var(--m) - var(--s) * 0.2885);
+  }
+  
+  #container div:nth-child(odd) {
+    background: rgb(165, 138, 3);
+  }
+  
+  #container::before {
+    content: "";
+    width: calc(var(--s) / 2 + var(--m));
+    float: left;
+    height: 120%;
+    shape-outside: repeating-linear-gradient(
+      #0000 0 calc(var(--f) - 3px),
+      #000 0 var(--f)
+    );
+  }
+  
+  /* Use a class for opacity instead of targeting specific children */
+  #container div.hidden {
+    opacity: 0;
+  }

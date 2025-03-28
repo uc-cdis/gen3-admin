@@ -3,6 +3,10 @@ import { Tabs } from '@mantine/core';
 import  Logwindow from '@/components/Logs/LogWindowAgent';
 // import LogWindow from '../Logs/LogWindow';
 
+// Dynamically import the LogViewer component
+// const LogViewer = dynamic(() => import('/components/LogViewer'), { ssr: false });
+
+
 // import LogMantine from '@/components/Logs/LogMantine';
 
 export default function Logs({pod, namespace, cluster, containers}) {
