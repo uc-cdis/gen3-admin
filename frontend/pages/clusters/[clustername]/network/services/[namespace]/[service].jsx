@@ -3,7 +3,6 @@ import { callGoApi } from '@/lib/k8s';
 import { useParams } from 'next/navigation';
 
 import ResourceDetails from '@/components/ResourceDetails';
-import { render } from '@testing-library/react';
 
 import { Stack, Text, Divider, Group, Table, ScrollArea, Button, Anchor, } from '@mantine/core'
 

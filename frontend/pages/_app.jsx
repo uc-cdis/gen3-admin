@@ -48,7 +48,7 @@ import Login from '../components/Login'; // You'll need to create this component
 import '@mantine/core/styles.layer.css';
 import '@mantine/notifications/styles.css';
 import 'mantine-datatable/styles.layer.css';
-// import '@mantine/dates/styles.css';
+import '@mantine/dates/styles.css';
 
 
 function AppContent({ Component, pageProps: { session, ...pageProps }, }) {

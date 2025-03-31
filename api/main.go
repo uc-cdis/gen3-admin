@@ -299,6 +299,9 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		// If there's an existing connection, disconnect the old one
 		log.Warn().Msgf("Agent %s is already connected. Replacing the connection.", agentName)
 		// Send a disconnect message to the old connection
+		// We unlock the mutex lock to let the agent properly disconnect.
+		agentsMutex.Unlock()
+
 		existingAgent.stream.Send(&pb.ServerMessage{
 			Message: &pb.ServerMessage_Registration{
 				Registration: &pb.RegistrationResponse{
@@ -308,12 +311,16 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			},
 		})
 
+		// Sleep here to avoid a race condition to let the previous agent disconnect properly from the message above.
+		time.Sleep(1 * time.Second)
+		agentsMutex.Lock()
+
+		// Remove from the map immediately to prevent new requests
+		delete(agentConnections, agentName)
+
 		// Cancel any pending requests or goroutines tied to the old connection
 		for _, cancel := range existingAgent.cancelFuncs {
 			cancel()
-
-			// Close old resources
-			delete(agentConnections, agentName)
 		}
 	}
 
@@ -348,9 +355,9 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				log.Error().Err(err).Msgf("Error receiving message from agent %s", agentName)
 			}
 
+			log.Warn().Msg("Deleting the agent connection from map.")
 			agentsMutex.Lock()
 			agentConnections[agentName] = &AgentConnection{
-				stream: nil,
 				agent: Agent{
 					Connected: false,
 				},
@@ -832,7 +839,9 @@ func setupGRCPServer() {
 	}
 
 	// Create and start gRPC server with TLS credentials
-	s := grpc.NewServer(grpc.Creds(*creds))
+	s := grpc.NewServer(
+		grpc.Creds(*creds),
+	)
 
 	pb.RegisterTunnelServiceServer(s, &agentServer{})
 
@@ -885,7 +894,6 @@ func setupHTTPServer() {
 	})
 
 	r.Any("api/k8s/:agent/proxy/*path", func(c *gin.Context) {
-
 		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
 		HandleK8sProxyRequest(c)
 	})

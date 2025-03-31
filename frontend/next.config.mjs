@@ -28,7 +28,10 @@ const rewritesConfig = isDevelopment
   : [];
 
 export default withBundleAnalyzer({
-  // output: "standalone",
+  // output: "export",
+  // images: {
+  //   unoptimized: true
+  // },
   reactStrictMode: false,
   transpilePackages: ["react-hexgrid"],
 
