@@ -11,13 +11,13 @@ import { callGoApi } from '@/lib/k8s';
 import { useSession } from "next-auth/react"
 
 import ImageComp from 'next/image'
-
+import { useGlobalState } from '@/contexts/global';
 
 export function Welcome() {
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
 
-  const [activeCluster, setActiveCluster] = useState(null)
+  const { activeCluster, setActiveCluster } = useGlobalState("null");
   const [clusters, setClusters] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -63,7 +63,7 @@ export function Welcome() {
       </Title>
 
 
-      {activeCluster === null ? (
+      {clusters.length == 0 ? (
         <>
           {/* <Text c="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
             This Gen3 CSOC (commons services operations center) provides a comprehensive overview of your deployment's health. Here you can monitor system performance, investigate issues, and trigger maintenance tasks to ensure optimal operation of your Gen3 environment. For more information, please refer to the{' '}
@@ -88,8 +88,8 @@ export function Welcome() {
                 <Card.Section pt="md" pb="md">
                   <Image
                     height={100}
-                    my="md" 
-                    mx="auto"              
+                    my="md"
+                    mx="auto"
                     fit="contain"
                     src="/images/logos/aws.png" className={`${classes.shadow} mx-auto my-4}`}
                   />
@@ -103,8 +103,8 @@ export function Welcome() {
                   <Image
                     height={100}
                     fit="contain"
-                    my="md" 
-                    mx="auto"              
+                    my="md"
+                    mx="auto"
                     src="/images/logos/azure.png" className={classes.shadow} />
                 </Card.Section>
                 <Text>
@@ -131,9 +131,29 @@ export function Welcome() {
           </Container>
         </>
       ) : (
-        <Text c="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
-          Welcome to the Gen3 CSOC dashboard for cluster <b>{activeCluster}</b>!
-        </Text>
+        <>
+          <Text c="dimmed" ta="center" size="lg" maw={580} mx="auto" mt="xl">
+            Welcome to the Gen3 CSOC dashboard for cluster <b>{activeCluster}</b>!
+
+            <br />
+            <br />
+            <Anchor component={Link} href="/projects">
+              Manage existing deployments
+            </Anchor>{' '}
+            or{' '}
+            <Anchor component={Link} href="/helm/gen3/deploy">
+              deploy a new Gen3 to this cluster
+            </Anchor>.
+            <br />
+            <br />
+            If you want to import new clusters{' '}
+            <Anchor component={Link} href="/clusters?import=true">
+              click here
+            </Anchor>.
+
+          </Text>
+
+        </>
       )}
 
     </>

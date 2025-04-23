@@ -16,10 +16,10 @@ export default function Dep() {
         <>
             <DataTable
                 agent={clusterName}
-                endpoint={`/apis/batch/v1/cronjobs`}
+                endpoint={`/apis/batch/v1/jobs`}
                 fields={[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },
+                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/jobs/${Namespace}/${Name}`}>{Name}</Anchor>) },
                     { key: "spec.schedule", label: "Schedule"},
                     { key: "spec.suspend", label: "Suspend", render: ({Suspend}) => {
                         return Suspend ? "true" : "false";

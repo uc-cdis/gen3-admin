@@ -25,7 +25,7 @@ export default function Detail() {
                 cluster={clusterName}
                 namespace={namespace}
                 resource={resource}
-                type="ingress"
+                type="Ingress"
                 tabs={["overview", "YAML", "events"]}
                 url={`/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses/${resource}`}
                 columnConfig={{

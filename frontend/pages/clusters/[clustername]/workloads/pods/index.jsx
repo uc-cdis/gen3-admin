@@ -21,7 +21,58 @@ export default function Dep() {
                 fields={[
                     { key: "metadata.namespace", label: "Namespace" },
                     { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },
-                    { key: "status.phase", label: "Status", render: ({ Status }) => (<Badge color={Status === 'Running' ? 'green' : Status === 'Pending' ? 'orange' : Status === 'Succeeded' ? 'grey' : 'red'}>{Status}</Badge>) },
+                    {
+                        key: "status.phase",
+                        label: "Status",
+                        render: ({ Status, Ready }) => {
+                            // Check if pod is in CrashLoopBackOff state
+                            const hasCrashLoopBackOff = Ready?.some(
+                                status => status?.state?.waiting?.reason === 'CrashLoopBackOff'
+                            );
+
+                            // Determine status text to display
+                            const statusText = hasCrashLoopBackOff
+                                ? 'CrashLoopBackOff'
+                                : Status || 'Unknown';
+
+                            // Determine badge color based on status
+                            let color;
+                            if (hasCrashLoopBackOff) {
+                                color = 'red';
+                            } else {
+                                switch (Status) {
+                                    case 'Running':
+                                        color = 'green';
+                                        break;
+                                    case 'Pending':
+                                        color = 'orange';
+                                        break;
+                                    case 'Succeeded':
+                                        color = 'gray';
+                                        break;
+                                    case 'Completed':
+                                        color = 'blue';
+                                        break;
+                                    case 'Failed':
+                                    case 'Error':
+                                        color = 'red';
+                                        break;
+                                    default:
+                                        color = 'gray';
+                                }
+                            }
+
+                            return (
+                                <Badge
+                                    color={color}
+                                    variant="filled"
+                                    radius="sm"
+                                >
+                                    {statusText}
+                                </Badge>
+                            );
+                        }
+                    },
                     { key: "status.podIP", label: "IP" },
                     { key: "spec.nodeName", label: "Node" },
                     { key: "", label: "CPU" },

@@ -56,7 +56,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 message: `${type} was successfully deleted.`,
                 color: 'green'
             });
-    
+
             return data
         } catch (error) {
             notifications.show({
@@ -64,11 +64,11 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 message: error.message || `Failed to delete ${type}.`,
                 color: 'red'
             });
-    
+
             console.error('Failed to delete resource:', error);
         }
 
-       
+
 
     };
 
@@ -134,7 +134,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                                 </Container>
                             </Tabs.Panel>
                             <Tabs.Panel value="logs">
-                                {type === "pod" && resourceData?.status.phase == "Running" ? <Logs
+                                {type === "Pod"  && resourceData?.status.phase == "Running" ? <Logs
                                     namespace={namespace}
                                     cluster={cluster}
                                     pod={resource}
@@ -143,7 +143,12 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                                 }
                             </Tabs.Panel>
                             <Tabs.Panel value="events">
-                                <Events resource={resource} namespace={namespace} cluster={cluster} />
+                                <Events 
+                                  resource={resource} 
+                                  type={type} 
+                                  namespace={namespace} 
+                                  cluster={cluster} 
+                                />
                             </Tabs.Panel>
                             <Tabs.Panel value="metrics">
                                 metrics

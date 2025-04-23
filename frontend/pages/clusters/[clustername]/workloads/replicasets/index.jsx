@@ -16,33 +16,15 @@ export default function Dep() {
         <>
             <DataTable
                 agent={clusterName}
-                endpoint={`/api/v1/pods`}
-                metricsEndpoint={`/apis/metrics.k8s.io/v1beta1/pods`}
+                endpoint={`/apis/apps/v1/replicasets`}
                 fields={[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },
-                    { key: "status.phase", label: "Status", render: ({ Status }) => (<Badge color={Status === 'Running' ? 'green' : Status === 'Pending' ? 'orange' : Status === 'Succeeded' ? 'grey' : 'red'}>{Status}</Badge>) },
-                    { key: "status.podIP", label: "IP" },
-                    { key: "spec.nodeName", label: "Node" },
-                    { key: "", label: "CPU" },
-
-                    // Ready / Total containers (Ex 0/1 or 1/1)
-                    {
-                        key: "status.containerStatuses", label: "Ready", render: ({ Ready }) => {
-                            // Handle cases where Ready might be undefined or not an array
-                            const containers = Array.isArray(Ready) ? Ready : [];
-                            let ready = 0;
-                            let total = 0;
-
-                            containers.forEach(container => {
-                                if (container.ready) ready++;
-                                total++;
-                            });
-
-                            return `${ready}/${total}`;
-
-                        }
-                    },
+                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
+                    { key: "status.readyReplicas", label: "Ready" },
+                    { key: "spec.replicas", label: "Desired" },
+                    { key: "status.updatedReplicas", label: "Updated" },
+                    { key: "status.availableReplicas", label: "Available" },
+                    { key: "status.conditions[0].type", label: "Conditions" }, // Assuming you want the first condition
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
                 ]}
             />
