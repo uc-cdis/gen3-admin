@@ -8,12 +8,7 @@ export default function Detail() {
 
     const clusterName = useParams()?.clustername;
     const namespace = useParams()?.namespace;
-    const resource = useParams()?.pod;
-
-
-    console.log("pod in detail page", resource)
-    console.log("namespace in detail page", namespace)
-    console.log("cluster in detail page", clusterName)
+    const resource = useParams()?.job;
 
     return (
         <>
@@ -21,9 +16,9 @@ export default function Detail() {
                 cluster={clusterName} 
                 namespace={namespace} 
                 resource={resource} 
-                type="Pod"
+                type="pod"
                 tabs={["overview", "yaml", "events", "logs"]}
-                url={`/api/v1/namespaces/${namespace}/pods/${resource}`} 
+                url={`/apis/batch/v1/namespaces/${namespace}/jobs/${resource}`} 
                 columnConfig={{
                     layout: {
                         leftColumns: [

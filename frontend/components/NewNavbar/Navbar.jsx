@@ -295,6 +295,7 @@ export function NavBar() {
             links: [
                 { label: 'Accounts', link: `/cloud/accounts`, icon: IconChartBar },
                 { label: 'Virtual Machines', link: `/cloud/virtualmachines`, icon: IconChartBar },
+                { label: 'Squid Proxies', link: `/cloud/squid`, icon: IconChartBar },
                 { label: 'Infrastructure heatmap', link: `/cloud/instancemap`, icon: IconChartBar },
                 { label: 'Data Buckets', link: `/cloud/buckets`, icon: IconChartBar },
                 { label: 'IAC Demo', link: `/cloud/provision`, icon: IconChartBar },

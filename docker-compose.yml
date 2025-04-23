@@ -5,15 +5,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agent
+    restart: always
+    environment:
+      KUBECONFIG: /root/.kube/config
     volumes:
-      - ./gen3-admin-api/certs:/app/gen3-agent/certs
-      - /Users/qureshi/.kube/config:/root/.kube/config
-    command: 
+      - ./api/certs:/app/gen3-agent/certs
+      - /Users/qureshi/.kube/local.yaml:/root/.kube/config
+    command:
       - ./gen3-agent
-      - --name 
-      - local
+      - --name
+      - kind
   api:
     network_mode: host
+    environment:
+      KUBECONFIG: /root/.kube/config
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -21,15 +26,15 @@ services:
       - "8002:8002"
       - "50051:50051"
     volumes:
-      - ./gen3-admin-api/certs:/go/src/gen3-admin-api/certs
-      - ./gen3-admin-api/.env:/go/src/gen3-admin-api/.env
-      - /Users/qureshi/.kube/config:/root/.kube/config
+      - ./api/certs:/go/src/gen3-admin-api/certs
+      - ./api/.env:/go/src/gen3-admin-api/.env
+      - /Users/qureshi/.kube/local.yaml:/root/.kube/config
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "3000:3000"
+      - "3002:3000"
     command: 
       - npm
       - run

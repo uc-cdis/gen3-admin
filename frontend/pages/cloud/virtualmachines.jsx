@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { DataTable } from 'mantine-datatable';
-import { TextInput, Loader, Alert, Collapse, Text, Box } from '@mantine/core';
+import { TextInput, Loader, Alert, Collapse, Text, Box, Anchor } from '@mantine/core';
 import { IconAlertCircle, IconSearch } from '@tabler/icons-react';
+import Link from 'next/link';
 
 function InstancesTable() {
     const [allInstances, setAllInstances] = useState([]);
@@ -189,7 +190,7 @@ function InstancesTable() {
 
 
     const columns = [
-        { accessor: 'InstanceId', title: 'Instance ID', sortable: true },
+        { accessor: 'InstanceId', title: 'Instance ID', sortable: true, render: (record) => <Anchor component={Link} href={"/cloud/ssm/"+record.InstanceId}>{record.InstanceId}</Anchor> },
         { accessor: 'Name', title: 'Name', sortable: true },
         { accessor: 'ImageId', title: 'Image ID / AMI', sortable: true },
         { accessor: 'InstanceType', title: 'Instance Type', sortable: true },

@@ -139,7 +139,7 @@ function Clusters() {
     setClusterLoading(true)
     try {
       console.log("sessionData", sessionData)
-      const data = await callGoApi('/agents', 'GET', null, null, sessionData.accessToken)
+      const data = await callGoApi('/agents', 'GET', null, null, sessionData?.accessToken)
       setClusters(data);
       setError(false)
     } catch (error) {
@@ -158,7 +158,7 @@ function Clusters() {
 
   const deleteCluster = async () => {
     try {
-      const response = await callGoApi('/agents/' + selection[0].name, 'DELETE', null, null, sessionData.accessToken);
+      const response = await callGoApi('/agents/' + selection[0].name, 'DELETE', null, null, sessionData?.accessToken);
       // check for error
       if (response.error) {
         showNotification({

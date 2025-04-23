@@ -1,6 +1,9 @@
 // pages/deploy.js
 import { Title, Container } from '@mantine/core';
 import StepperForm from '@/components/StepperForm';
+import Gen3ConfigForm from '@/components/StepperForm/Gen3Config';
+
+
 
 const DeployPage = () => {
   return (
@@ -9,6 +12,7 @@ const DeployPage = () => {
         Gen3 Deployment Configuration
       </Title>
       <StepperForm />
+      {/* <Gen3ConfigForm /> */}
     </Container>
   );
 };
