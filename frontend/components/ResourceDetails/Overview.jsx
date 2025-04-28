@@ -16,7 +16,7 @@ import {
     Accordion,
     Divider,
 } from '@mantine/core';
-import { IconBox, IconDisc, IconClipboardCheck, IconLock, IconSettings, IconDatabase, IconMapPin, IconFolderPlus, IconFolder, IconContainer, IconVariable, IconAlertCircle, IconPackage, IconCircleCheck } from '@tabler/icons-react';
+import { IconBox, IconDisc, IconServer, IconClipboardCheck, IconLock, IconSettings, IconDatabase, IconMapPin, IconFolderPlus, IconFolder, IconContainer, IconVariable, IconAlertCircle, IconPackage, IconCircleCheck } from '@tabler/icons-react';
 
 const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type }) => {
     // Default to showing columns in single group if no config provided
@@ -273,7 +273,7 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
                             <InfoItem label="Command" value={container.command?.join(' ')} />
                             <InfoItem label="Arguments" value={container.args?.join(' ')} />
                         </div>
-                        {type === 'Pod' ? 
+                        {type === 'Pod' ?
                         <div>
                             <Title order={5} mb="md">Status</Title>
                             <InfoItem label="Restarts" value={container.restartCount || "0"} />
@@ -315,7 +315,7 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
                         </Group>
                     </Accordion.Control>
                     <Accordion.Panel>
-                        {containers.map(container => <ContainerCard container={container} />)}
+                        {containers.map(container => <ContainerCard key={container.name} container={container} />)}
                     </Accordion.Panel>
                 </Accordion.Item>
             </Accordion>
@@ -601,7 +601,7 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
                                     </Badge>
                                 </td>
                                 <td>
-                                    <Group spacing={5} noWrap>
+                                    <Group spacing={5}>
                                         <Text size="sm">{getTimeSince(condition.lastTransitionTime)}</Text>
                                         <Badge
                                             size="xs"

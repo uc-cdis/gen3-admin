@@ -19,6 +19,7 @@ message AgentMessage {
     HelmValuesResponse helmValues = 4;              // Helm values responses
     HelmDeleteResponse helmDelete = 5;              // Helm delete responses
     HelmInstallResponse helmInstall = 6;              // Helm install responses
+    TerminalStream terminalStream = 7;
   }
 }
 
@@ -32,6 +33,7 @@ message ServerMessage {
     HelmValuesRequest  helmValuesRequest = 5;          // Helm values request
     HelmDeleteRequest helmDeleteRequest = 6;          // Helm delete request
     HelmInstallRequest helmInstallRequest = 7;          // Helm install request
+    TerminalStream terminalStream = 8;
   }
 }
 
@@ -161,4 +163,10 @@ message Project {
   string namespace = 3;
   string version = 4;
   string created_at = 5;
+}
+
+
+message TerminalStream {
+  bytes data = 1;
+  string session_id = 2; // optional
 }

@@ -179,7 +179,7 @@ const AuthStep = ({ form }) => {
 
       {/* <Divider my="md" ></Divider> */}
       <Paper p="md" radius="md" withBorder>
-        <Title order={3} c="gray.0">User Sync Configuration</Title>
+        <Title order={3}>User Sync Configuration</Title>
 
 
         <Stack spacing="lg">
@@ -192,7 +192,7 @@ const AuthStep = ({ form }) => {
             label="User Sync Mode"
             description="Toggle between loading users from an S3 YAML file or defining them manually below."
             withAsterisk
-          >
+          >t
           </Switch.Group>
 
           <Switch
@@ -201,7 +201,7 @@ const AuthStep = ({ form }) => {
             offLabel="User yaml"
             {...form.getInputProps('values.fence.usersync.usersync')}
           />
-          
+
           */}
 
 

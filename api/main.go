@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/uc-cdis/gen3-admin/internal/runner"
 	"google.golang.org/grpc"
@@ -89,6 +90,7 @@ type AgentConnection struct {
 	contexts        map[string]context.Context
 	mutex           sync.Mutex
 	agent           Agent
+	terminalStreams map[string]*websocket.Conn
 }
 
 var (
@@ -164,68 +166,6 @@ func ForbiddenMiddleware() gin.HandlerFunc {
 		c.AbortWithStatus(http.StatusForbidden) // Immediately abort and return 403
 	}
 }
-
-// func initializeDatabase() (*sql.DB, error) {
-// 	const databaseFile = "agents.db"
-
-// 	db, err := sql.Open("sqlite3", databaseFile)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error opening database: %v", err)
-// 	}
-
-// 	_, err = db.Exec(`
-//         CREATE TABLE IF NOT EXISTS agents (
-//             id INTEGER PRIMARY KEY AUTOINCREMENT,
-//             name TEXT UNIQUE NOT NULL,
-//             certificate BLOB,
-//             private_key BLOB,
-//             connected INTEGER DEFAULT 0,
-//             last_seen TEXT
-//         );
-//     `)
-// 	if err != nil {
-// 		db.Close()
-// 		return nil, fmt.Errorf("error creating agents table: %v", err)
-// 	}
-
-// 	rows, err := db.Query("SELECT name, connected, certificate, private_key, last_seen FROM agents")
-// 	if err != nil {
-// 		log.Fatal().Err(err).Msg("Error querying agents from database")
-// 		db.Close()
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		var agent Agent
-// 		var connected int
-// 		var certificate, privateKey string
-// 		var lastSeenStr sql.NullString
-// 		err = rows.Scan(&agent.Name, &connected, &certificate, &privateKey, &lastSeenStr)
-// 		if err != nil {
-// 			log.Error().Err(err).Msg("Error scanning agents from database")
-// 			continue
-// 		}
-
-// 		agent.Connected = connected != 0
-// 		if lastSeenStr.Valid { // Check if the value is not NULL
-// 			agent.LastSeen, err = time.Parse(time.RFC3339, lastSeenStr.String)
-// 			if err != nil {
-// 				log.Warn().Err(err).Str("last_seen", lastSeenStr.String).Msg("Error parsing last_seen time, using current time")
-// 			}
-// 		} else {
-// 			agent.LastSeen = time.Time{} // Default to empty time if NULL
-// 		}
-
-// 		agent.Certificate = string(certificate)
-// 		// log certificate
-// 		log.Info().Msgf("agent %v", agent)
-// 		// agent.PrivateKey = privateKey
-// 		agentConnections[agent.Name] = agent
-// 	}
-
-// 	return db, nil
-// }
 
 func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 	// Extract TLS Info for client authentication
@@ -329,6 +269,7 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		requestChannels: make(map[string]chan *pb.ProxyResponse),
 		contexts:        make(map[string]context.Context),
 		cancelFuncs:     make(map[string]context.CancelFunc),
+		terminalStreams: make(map[string]*websocket.Conn),
 		agent: Agent{
 			Id:        cert.Subject.SerialNumber,
 			Name:      agentName,
@@ -418,6 +359,33 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				log.Warn().Msgf("Received response for unknown stream ID: %s", proxyResp.StreamId)
 			}
 			agent.mutex.Unlock()
+		case *pb.AgentMessage_TerminalStream:
+			termResp := msg.TerminalStream
+			log.Debug().Msgf("Received terminal stream from agent %s: %v", agentName, termResp.Data)
+			agent.mutex.Lock()
+			webSocket, exists := agent.terminalStreams[termResp.SessionId]
+			agent.mutex.Unlock()
+
+			if exists {
+				err := webSocket.WriteMessage(websocket.TextMessage, termResp.Data)
+				if err != nil {
+					log.Warn().Err(err).Msgf("Failed to write TerminalStream to WebSocket for session ID: %s", termResp.SessionId)
+
+					// optional: cleanup if writing failed
+					agent.mutex.Lock()
+					if cancel, ok := agent.cancelFuncs[termResp.SessionId]; ok {
+						cancel()
+						delete(agent.terminalStreams, termResp.SessionId)
+						delete(agent.cancelFuncs, termResp.SessionId)
+						delete(agent.contexts, termResp.SessionId)
+					}
+					agent.mutex.Unlock()
+				} else {
+					log.Trace().Msgf("TerminalStream sent to WebSocket for session ID: %s", termResp.SessionId)
+				}
+			} else {
+				log.Warn().Msgf("No WebSocket found for session ID: %s", termResp.SessionId)
+			}
 
 		default:
 			log.Warn().Msgf("Unknown message type from agent %s: %T", agentName, msg)
@@ -1281,6 +1249,90 @@ func setupHTTPServer() {
 	// AWS routes
 	r.GET("/api/aws/instances", aws.ListEC2Instances)
 	r.GET("api/aws/s3", aws.ListS3Buckets)
+
+	r.GET("/api/agents/:agent/terminal/test", func(c *gin.Context) {
+		log.Info().Msg("Hello world from terminal")
+		agentID := c.Param("agent")
+		agentsMutex.RLock()
+		agent, exists := agentConnections[agentID]
+		agentsMutex.RUnlock()
+
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to upgrade to WebSocket")
+			return
+		}
+
+		streamID := uuid.New().String()
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		// Prepare streaming
+		agent.mutex.Lock()
+		agent.terminalStreams[streamID] = ws
+		agent.cancelFuncs[streamID] = cancel
+		agent.contexts[streamID] = ctx
+		agent.mutex.Unlock()
+
+		// Send an init message to agent (optional)
+		err = agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_TerminalStream{
+				TerminalStream: &pb.TerminalStream{
+					Data:      []byte(fmt.Sprintf("INIT:%s", streamID)),
+					SessionId: streamID,
+				},
+			},
+		})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to send terminal init message to agent")
+			return
+		}
+
+		// WS -> Agent stream
+		go func() {
+			for {
+				_, msg, err := ws.ReadMessage()
+				if err != nil {
+					log.Warn().Err(err).Msg("WebSocket read failed, closing")
+					cancel()
+					ws.Close()
+					return
+				}
+				err = agent.stream.Send(&pb.ServerMessage{
+					Message: &pb.ServerMessage_TerminalStream{
+						TerminalStream: &pb.TerminalStream{
+							Data: msg,
+						},
+					},
+				})
+				if err != nil {
+					log.Warn().Err(err).Msg("gRPC send failed, closing")
+					cancel()
+					return
+				}
+			}
+		}()
+
+		// Agent stream -> WS (handled elsewhere, maybe in your agent’s read loop)
+
+		// Block until context done
+		<-ctx.Done()
+		log.Info().Msg("Done. doing cleanup now")
+		ws.Close()
+		// Cleanup
+		agent.mutex.Lock()
+		delete(agent.terminalStreams, streamID)
+		delete(agent.cancelFuncs, streamID)
+		delete(agent.contexts, streamID)
+		agent.mutex.Unlock()
+	})
 
 	r.Static("/static", "./static")
 	r.Routes()

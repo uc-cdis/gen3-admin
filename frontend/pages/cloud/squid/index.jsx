@@ -191,7 +191,7 @@ const ProxyDashboard = () => {
                                             <td>
                                                 <Group spacing="xs">
                                                     <IconServer size={16} />
-                                                    <Anchor component={Link} href={"/cloud/ssm/"+instance.instance_id}>{instance.instance_id}</Anchor>
+                                                    <Anchor component={Link} href={"squid/"+instance.instance_id}>{instance.instance_id}</Anchor>
                                                 </Group>
                                             </td>
                                             <td>

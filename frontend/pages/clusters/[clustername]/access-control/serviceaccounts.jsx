@@ -20,7 +20,7 @@ export default function Dep() {
                 fields = {[
                     { key: "metadata.namespace", label: "Namespace" },
                     { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/access-control/serviceaccounts/${Namespace}/${Name}`}>{Name}</Anchor>) },
-                    { key: "secrets", label: "Secrets" },
+                    // { key: "secrets", label: "Secrets" },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
                   ]}
             />

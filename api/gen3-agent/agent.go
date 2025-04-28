@@ -10,16 +10,20 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/uc-cdis/gen3-admin/internal/argocd"
 	"github.com/uc-cdis/gen3-admin/internal/helm"
 	"github.com/uc-cdis/gen3-admin/internal/k8s"
+	"github.com/uc-cdis/gen3-admin/internal/tunnel"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -54,6 +58,8 @@ type Agent struct {
 	stream               pb.TunnelService_ConnectClient
 	statusUpdateInterval time.Duration
 }
+
+var activeShells sync.Map
 
 func init() {
 	homeDir, err := os.UserHomeDir()
@@ -521,7 +527,7 @@ func (a *Agent) handleProjectsRequest(req *pb.ProjectsRequest) {
 	}
 
 	// Get all ArgoCD applications
-	argoCDApps, err := k8s.ListArgoCDApplications(context.TODO())
+	argoCDApps, err := argocd.ListArgoCDApplications(context.TODO())
 	if err != nil {
 		log.Error().Err(err).Msg("Error listing ArgoCD applications")
 		a.sendErrorResponse(req.StreamId, fmt.Errorf("error listing ArgoCD applications: %v", err))
@@ -727,10 +733,87 @@ func (a *Agent) Run(ctx context.Context) error {
 			log.Info().Msgf("Registration response: %v", content.Registration.Success)
 		case *pb.ServerMessage_Status:
 			log.Info().Msgf("Received server status: CPU: %v, Memory: %v", content.Status.CpuUsage, content.Status.MemoryUsage)
+		// Terminal stream
+		case *pb.ServerMessage_TerminalStream:
+			log.Info().Msgf("Received terminal request from server.")
+			go a.HandleTerminal(content.TerminalStream)
 		default:
 			log.Warn().Msgf("Unknown message type: %T", content)
 		}
 	}
+}
+
+func startShell(ctx context.Context, streamID string, stream pb.TunnelService_ConnectClient) {
+	cmd := exec.CommandContext(ctx, "/bin/sh") // or "/bin/bash"
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to get stdin")
+		return
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to get stdout")
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to get stderr")
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Fatal().Err(err).Msg("failed to start shell")
+		return
+	}
+
+	// Read output (stdout + stderr)
+	go func() {
+		reader := io.MultiReader(stdout, stderr)
+		buf := make([]byte, 1024)
+		for {
+			n, err := reader.Read(buf)
+			if err != nil {
+				log.Info().Msg("shell closed output")
+				return
+			}
+			stream.Send(&pb.AgentMessage{
+				Message: &pb.AgentMessage_TerminalStream{
+					TerminalStream: &pb.TerminalStream{
+						SessionId: streamID,
+						Data:      buf[:n],
+					},
+				},
+			})
+		}
+	}()
+
+	// Store stdin writer somewhere (e.g. in a map[streamID]io.WriteCloser) so you can write to it later
+	activeShells.Store(streamID, stdin)
+
+	// Wait until shell exits
+	cmd.Wait()
+	log.Info().Msg("Shell exited")
+	activeShells.Delete(streamID)
+}
+
+func (a *Agent) HandleTerminal(ts *tunnel.TerminalStream) error {
+	log.Info().Msgf("Starting shell for session: %s", ts.SessionId)
+	ctx, _ := context.WithCancel(context.Background())
+
+	// Start the shell in background
+	go startShell(ctx, ts.SessionId, a.stream)
+
+	a.stream.Send(&pb.AgentMessage{
+		Message: &pb.AgentMessage_TerminalStream{
+			TerminalStream: &pb.TerminalStream{
+				Data:      []byte("Connected to"),
+				SessionId: ts.SessionId,
+			},
+		},
+	})
+
+	log.Info().Msgf("Terminal stream message sent %s", ts.SessionId)
+	return nil
 }
 
 func main() {

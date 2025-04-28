@@ -26,6 +26,7 @@ type Release struct {
 	Icon       string `json:"icon"`
 	AppVersion string `json:"appVersion"`
 	Helm       string `json:"helm"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 // InstallOptions contains all the configuration options for installing a Helm chart
@@ -87,6 +88,7 @@ func ListAllHelmReleases() ([]Release, error) {
 			AppVersion: rel.Chart.Metadata.AppVersion,
 			Icon:       rel.Chart.Metadata.Icon,
 			Helm:       "true",
+			CreatedAt:  rel.Info.LastDeployed.Format(time.RFC3339),
 		}
 	}
 
@@ -260,7 +262,7 @@ func InstallHelmChart(opts InstallOptions) (*release.Release, error) {
 	log.Warn().Msgf("Installing chart with options: %T", opts)
 
 	settings := cli.New()
-	settings.Debug = true
+	settings.Debug = false
 
 	actionConfig := new(action.Configuration)
 	if err := actionConfig.Init(settings.RESTClientGetter(), opts.Namespace, "secrets", log.Printf); err != nil {

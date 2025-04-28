@@ -42,7 +42,7 @@ const ClusterDashboard = () => {
   const [inputClusterName, setInputClusterName] = useState('');
   const [inputReleaseName, setInputReleaseName] = useState('');
   const [inputNamespace, setInputNamespace] = useState('');
-  
+
   const [deleteCluster, setDeleteCluster] = useState('');
   const [deleteRelease, setDeleteRelease] = useState('');
   const [deleteNamespace, setDeleteNamespace] = useState('');
@@ -99,7 +99,7 @@ const ClusterDashboard = () => {
         cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
       ).filter(chart =>
         chart.name.toLowerCase().includes("gen3")
-        // || 
+        // ||
       ));
     } else {
       const filteredChartsTmp = clusters.flatMap(cluster =>
@@ -231,7 +231,7 @@ const ClusterDashboard = () => {
             { accessor: 'clusterName' },
             { accessor: 'name' },
             { accessor: 'namespace' },
-            { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
+            { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
             { accessor: 'chart' },
             {
               id: 'Development', header: 'Development', accessor: 'helm',
@@ -336,6 +336,20 @@ const ClusterDashboard = () => {
                   </Modal>
                 </>
 
+              )
+            },
+            {
+              "accessor": "Sync",
+              "id": "tests",
+              render: ({ helm }) => (
+                helm ? null :
+                <Button
+                  variant="outline"
+                  size="sm"
+                  color="green"
+                >
+                  Sync app
+                </Button>
               )
             }
           ]}
