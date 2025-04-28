@@ -7,6 +7,7 @@ const Terminal = dynamic(() => import('@/components/Shell/Terminal'), {
 })
 
 import callK8sApi from '@/lib/k8s';
+import { get } from "lodash";
 
 
 export default function Databases() {
@@ -19,14 +20,14 @@ export default function Databases() {
     useEffect(() => {
         // fetch database secrets
         // TODO: make namespace dynamic
-        callK8sApi('/api/v1/namespaces/default/secrets')
+        callK8sApi('/api/v1/namespaces/gen3-test/secrets', 'GET', null, null, "kind", "accessToken")
             // .then(response => response.json())
             .then(data => {
                 // filter out secrets that don't have the correct labels
                 const filteredSecrets = data.items.filter(secret => {
                     // filter by name *-dbcreds
                     return secret.metadata.name.endsWith('-dbcreds');
-                    
+
                 });
                 setDatabaseSecrets(filteredSecrets);
                 setSelectData(filteredSecrets.map(secret => {
@@ -60,7 +61,7 @@ export default function Databases() {
                     value={selectedDatabase}
                     onChange={(value) => setSelectedDatabase(value)}
                     searchable
-                /> 
+                />
                 </Container>
                 : <Container fluid my={20}>
                     <Skeleton height={100} width={300} />

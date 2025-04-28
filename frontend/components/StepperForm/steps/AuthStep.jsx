@@ -1,8 +1,10 @@
-import { TextInput, Stack, Paper, Divider, Group, Switch, Collapse, Text, SimpleGrid, Tooltip, PasswordInput, Radio, Textarea, Alert, List, Anchor, Checkbox } from '@mantine/core';
+import { TextInput, Stack, Paper, Divider, Card, Group, Title, Switch, Collapse, Text, SimpleGrid, Tooltip, PasswordInput, Radio, Textarea, Alert, List, Anchor, Checkbox, SegmentedControl } from '@mantine/core';
 import { IconHelp, IconWorld, IconId, IconKey, IconLink, IconInfoCircle, IconAlertTriangle, IconBrandGoogle, IconBroadcast } from '@tabler/icons-react';
 
 
 const AuthStep = ({ form }) => {
+  const isUsersyncEnabled = form.values.values.fence.usersync.usersync;
+
   return (
     <Stack spacing="lg">
       <Paper p="md" radius="md" withBorder>
@@ -65,12 +67,12 @@ const AuthStep = ({ form }) => {
               {...form.getInputProps('values.fence.FENCE_CONFIG.MOCK_GOOGLE_AUTH')}
             />
             {
-             form.values.values.fence.FENCE_CONFIG.MOCK_GOOGLE_AUTH ? 
-            <TextInput
-              label="Mock Default User"
-              placeholder="test@example.com"
-              {...form.getInputProps('values.fence.FENCE_CONFIG.OPENID_CONNECT.google.mock_default_user')}
-            /> : null
+              form.values.values.fence.FENCE_CONFIG.MOCK_GOOGLE_AUTH ?
+                <TextInput
+                  label="Mock Default User"
+                  placeholder="test@example.com"
+                  {...form.getInputProps('values.fence.FENCE_CONFIG.OPENID_CONNECT.google.mock_default_user')}
+                /> : null
             }
           </Stack>
         </Collapse>
@@ -175,41 +177,87 @@ const AuthStep = ({ form }) => {
         </Collapse>
       </Paper> */}
 
-      <Divider my="md" ></Divider>
-      <Text fw={500} mt="sm">Authorization Options</Text>
-      <Anchor href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md" target="_blank">
-        User yaml guide</Anchor>
+      {/* <Divider my="md" ></Divider> */}
       <Paper p="md" radius="md" withBorder>
-        <Radio.Group label="Authorization Source" {...form.getInputProps('authz.yamlSource')}>
-          <Stack>
-            <Radio value="external" label="External user.yaml" />
-            <Radio value="customUserYaml" label="Custom user.yaml" />
+        <Title order={3}>User Sync Configuration</Title>
+
+
+        <Stack spacing="lg">
+
+          <Anchor href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md" target="_blank">
+            User yaml guide</Anchor>
+          <Divider label="Choose User Sync Mode" labelPosition="center" />
+
+          {/* <Switch.Group
+            label="User Sync Mode"
+            description="Toggle between loading users from an S3 YAML file or defining them manually below."
+            withAsterisk
+          >t
+          </Switch.Group>
+
+          <Switch
+            size="lg"
+            onLabel="Usersync"
+            offLabel="User yaml"
+            {...form.getInputProps('values.fence.usersync.usersync')}
+          />
+
+          */}
+
+
+          <Stack spacing="xs">
+            <Text fw={500} size="sm">
+              Authorization Source <Text span c="red">*</Text>
+            </Text>
+            <Text size="xs" c="dimmed">
+              Choose whether to sync users from an external S3 YAML file or define them manually.
+            </Text>
+
+            <SegmentedControl
+              fullWidth
+              data={[
+                { label: 'External user.yaml (S3)', value: 'true' },
+                { label: 'Custom user.yaml (inline)', value: 'false' },
+              ]}
+              value={String(form.values.values.fence.usersync.usersync)}
+              onChange={(val) =>
+                form.setFieldValue('values.fence.usersync.usersync', val === 'true')
+              }
+            />
           </Stack>
-        </Radio.Group>
 
-        <Collapse in={form.values.authz.yamlSource === 'external'}>
-          <TextInput
-            label="Url to user.yaml"
-            placeholder="https://raw.github.com/org/repo/main/user.yaml"
-            {...form.getInputProps('authz.yamlPath')}
-            withAsterisk
-          />
-        </Collapse>
+          <Collapse in={isUsersyncEnabled}>
+            <TextInput
+              label="S3 URL to user.yaml"
+              placeholder="s3://cdis-gen3-users/helm-test/user.yaml"
+              {...form.getInputProps('values.fence.usersync.userYamlS3Path')}
+              withAsterisk
+            />
+          </Collapse>
 
-        <Collapse in={form.values.authz.yamlSource === 'customUserYaml'}>
-          <Textarea
-            label="Custom Role Definitions"
-            placeholder={`users:\n  admin:\n    policies:\n      - all_programs\n      - services`}
-            autosize
-            minRows={10}
-            {...form.getInputProps('authz.yaml')}
-            withAsterisk
-          />
-          <Alert icon={<IconInfoCircle size={16} />} color="blue">
-            Define your roles and permissions carefully using YAML syntax. For more information follow the <Anchor href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md" target="_blank">
-              User yaml guide</Anchor>
-          </Alert>
-        </Collapse>
+          <Collapse in={!isUsersyncEnabled}>
+            <Textarea
+              label="Custom Role Definitions (YAML format)"
+              placeholder={`users:\n  admin:\n    policies:\n      - all_programs\n      - services`}
+              autosize
+              minRows={10}
+              {...form.getInputProps('values.fence.USER_YAML')}
+              withAsterisk
+            />
+            <Alert icon={<IconInfoCircle size={16} />} color="blue" mt="md">
+              Define your roles and permissions carefully using YAML syntax.
+              For more information, see the{' '}
+              <Anchor
+                href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md"
+                target="_blank"
+              >
+                user.yaml guide
+              </Anchor>.
+            </Alert>
+          </Collapse>
+        </Stack>
+
+
       </Paper>
     </Stack>
   );

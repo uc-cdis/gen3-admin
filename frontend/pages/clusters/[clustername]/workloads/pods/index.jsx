@@ -26,7 +26,7 @@ export default function Dep() {
                         label: "Status",
                         render: ({ Status, Ready }) => {
                             // Check if pod is in CrashLoopBackOff state
-                            const hasCrashLoopBackOff = Ready?.some(
+                            const hasCrashLoopBackOff = Array.isArray(Ready) && Ready.some(
                                 status => status?.state?.waiting?.reason === 'CrashLoopBackOff'
                             );
 

@@ -36,6 +36,9 @@ export default withBundleAnalyzer({
   transpilePackages: ["react-hexgrid"],
 
   rewrites: async () => rewritesConfig,
+  experimental: {
+    proxyTimeout: 100000000,
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

@@ -11,7 +11,7 @@ const DestinationStep = ({ form, clusters, fetchClusters }) => {
             description="Select your Kubernetes cluster"
             placeholder="e.g., my-cluster"
             data={clusters}
-            {...form.getInputProps('cluster')}
+            {...form.getInputProps('destination.cluster')}
             sx={{ flexGrow: 1 }}
           />
           <Tooltip label="Refresh clusters list">
@@ -31,7 +31,7 @@ const DestinationStep = ({ form, clusters, fetchClusters }) => {
         <Group grow align="flex-start">
           <TextInput
             label="Release Name"
-            {...form.getInputProps('releaseName')}
+            {...form.getInputProps('destination.releaseName')}
             placeholder="e.g., my-release"
             rightSection={<IconPencil size={16} />}
           />
@@ -40,17 +40,17 @@ const DestinationStep = ({ form, clusters, fetchClusters }) => {
         <Divider label="Namespace Configuration" labelPosition="center" />
 
         <Group grow align="flex-start">
-          {form.values.useCustomNs ? (
+          {form.values.destination.useCustomNs ? (
             <TextInput
               label="Custom Namespace"
-              {...form.getInputProps('namespace')}
+              {...form.getInputProps('destination.namespace')}
               placeholder="e.g., default"
               rightSection={<IconPencil size={16} />}
             />
           ) : (
             <Select
               label="Namespace"
-              placeholder={form.values.releaseName}
+              placeholder={form.values.destination.releaseName}
               disabled
             />
           )}
@@ -58,7 +58,7 @@ const DestinationStep = ({ form, clusters, fetchClusters }) => {
           <Switch
             label="Use custom namespace"
             description="Toggle to input a custom namespace"
-            {...form.getInputProps('useCustomNs', { type: 'checkbox' })}
+            {...form.getInputProps('destination.useCustomNs', { type: 'checkbox' })}
             size="md"
             pt={20}
           />

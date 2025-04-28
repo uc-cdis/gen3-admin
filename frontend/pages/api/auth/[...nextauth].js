@@ -8,8 +8,8 @@ export default NextAuth({
   providers: [
     // Keycloak provider
     KeycloakProvider({
-      clientId: "csoc",
-      clientSecret: "3v0RA9G9cn4zoO6NYrCMOJUaT5EYxSrb",
+      clientId: process.env.KEYCLOAK_CLIENT_ID     ?? "",
+      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET    ?? "",
       issuer: "http://localhost:8080/realms/master",
       profile(profile) {
         return {
@@ -110,7 +110,7 @@ async function refreshAccessToken(token) {
   try {
     // Get the refresh URL from your Keycloak server
     const url = `http://localhost:8080/realms/master/protocol/openid-connect/token`;
-    
+
     // Make refresh token request
     const response = await fetch(url, {
       headers: {
@@ -118,8 +118,8 @@ async function refreshAccessToken(token) {
       },
       method: "POST",
       body: new URLSearchParams({
-        client_id: "csoc",
-        client_secret: "3v0RA9G9cn4zoO6NYrCMOJUaT5EYxSrb",
+        client_id:     process.env.KEYCLOAK_CLIENT_ID     ?? "",
+        client_secret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
         refresh_token: token.refreshToken,
       }),
@@ -139,7 +139,7 @@ async function refreshAccessToken(token) {
     };
   } catch (error) {
     console.error("Error refreshing access token", error);
-    
+
     // Return the token with an error flag
     return {
       ...token,

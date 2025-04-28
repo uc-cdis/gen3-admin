@@ -26,6 +26,7 @@ type Release struct {
 	Icon       string `json:"icon"`
 	AppVersion string `json:"appVersion"`
 	Helm       string `json:"helm"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 // InstallOptions contains all the configuration options for installing a Helm chart
@@ -87,6 +88,7 @@ func ListAllHelmReleases() ([]Release, error) {
 			AppVersion: rel.Chart.Metadata.AppVersion,
 			Icon:       rel.Chart.Metadata.Icon,
 			Helm:       "true",
+			CreatedAt:  rel.Info.LastDeployed.Format(time.RFC3339),
 		}
 	}
 
@@ -260,27 +262,21 @@ func InstallHelmChart(opts InstallOptions) (*release.Release, error) {
 	log.Warn().Msgf("Installing chart with options: %T", opts)
 
 	settings := cli.New()
-	log.Debug().Msg(settings.Namespace())
-	log.Debug().Msg(opts.Namespace)
-	settings.Debug = true
+	settings.Debug = false
+
 	actionConfig := new(action.Configuration)
 	if err := actionConfig.Init(settings.RESTClientGetter(), opts.Namespace, "secrets", log.Printf); err != nil {
 		return nil, fmt.Errorf("failed to init action config: %w", err)
 	}
 
-	err := actionConfig.KubeClient.IsReachable()
-	if err != nil {
+	if err := actionConfig.KubeClient.IsReachable(); err != nil {
 		return nil, fmt.Errorf("failed to connect to kubernetes cluster: %w", err)
 	}
 
-	// When actionConfig.Init is called it sets up the driver with the default namespace.
-	// We need to change the namespace to honor the release namespace.
-	// https://github.com/helm/helm/issues/9171
+	// Respect the release namespace properly
 	actionConfig.KubeClient.(*kube.Client).Namespace = opts.Namespace
 
-	repoURL := opts.RepoUrl
-	if repoURL == "" {
-		// Get repository URL
+	if opts.RepoUrl == "" {
 		repoURL, err := getRepositoryURL(opts.RepoName)
 		if err != nil {
 			return nil, err
@@ -288,24 +284,12 @@ func InstallHelmChart(opts InstallOptions) (*release.Release, error) {
 		opts.RepoUrl = repoURL
 	}
 
-	// Get chart version and URL
-	chartVersion, err := getChartVersion(settings, repoURL, opts.ChartName, opts.Version)
+	// Resolve chart version and download
+	chartVersion, err := getChartVersion(settings, opts.RepoUrl, opts.ChartName, opts.Version)
 	if err != nil {
 		return nil, err
 	}
 
-	// Prepare the installation
-	client := action.NewInstall(actionConfig)
-	client.ReleaseName = opts.ReleaseName
-	client.Namespace = opts.Namespace
-	client.Wait = opts.Wait
-	client.Timeout = opts.Timeout
-	client.IsUpgrade = true
-	client.CreateNamespace = opts.CreateNamespace
-
-	log.Debug().Msgf("Installing chart %s", opts.ChartName)
-
-	// Download and load the chart
 	chartPath, err := downloadChart(settings, chartVersion)
 	if err != nil {
 		return nil, err
@@ -322,11 +306,31 @@ func InstallHelmChart(opts InstallOptions) (*release.Release, error) {
 		return nil, fmt.Errorf("failed to merge values: %w", err)
 	}
 
-	// Install the chart with values
-	release, err := client.Run(loadedChart, values)
-	if err != nil {
-		return nil, fmt.Errorf("failed to install release: %w", err)
+	// Check if the release already exists
+	history := action.NewHistory(actionConfig)
+	history.Max = 1
+	_, err = history.Run(opts.ReleaseName)
+	releaseExists := err == nil
+
+	if releaseExists {
+		// Upgrade
+		upgrade := action.NewUpgrade(actionConfig)
+		upgrade.Namespace = opts.Namespace
+		upgrade.Wait = opts.Wait
+		upgrade.Timeout = opts.Timeout
+
+		log.Debug().Msgf("Upgrading chart %s", opts.ChartName)
+		return upgrade.Run(opts.ReleaseName, loadedChart, values)
 	}
 
-	return release, nil
+	// Install
+	install := action.NewInstall(actionConfig)
+	install.ReleaseName = opts.ReleaseName
+	install.Namespace = opts.Namespace
+	install.Wait = opts.Wait
+	install.Timeout = opts.Timeout
+	install.CreateNamespace = opts.CreateNamespace
+
+	log.Debug().Msgf("Installing chart %s", opts.ChartName)
+	return install.Run(loadedChart, values)
 }
