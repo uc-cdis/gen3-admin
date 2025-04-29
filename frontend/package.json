@@ -39,7 +39,7 @@
     "monaco-editor": "^0.52.0",
     "next": "^15.2.4",
     "next-auth": "^4.24.7",
-    "posthog-js": "^1.140.1",
+    "posthog-js": "^1.235.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hexagon": "^1.1.3",
