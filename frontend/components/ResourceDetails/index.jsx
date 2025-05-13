@@ -86,7 +86,8 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
 
     return (
         <>
-            <h1>{namespace}/{resource}</h1>
+            <h1>{resource}</h1>
+            <h3>namespace: {namespace} </h3>
             <Container fluid mt={-10} mb={10}>
                 <Group position="left" spacing="md">
                     <Button onClick={deleteResource}> Delete {type} </Button>
@@ -134,20 +135,25 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                                 </Container>
                             </Tabs.Panel>
                             <Tabs.Panel value="logs">
-                                {type === "Pod"  && resourceData?.status.phase == "Running" ? <Logs
+                                {/* && resourceData?.status.phase == "Running" */}
+                                {type === "Pod"  ? <Logs
                                     namespace={namespace}
                                     cluster={cluster}
                                     pod={resource}
-                                    containers={resourceData?.spec.containers.map(container => container.name)}
+                                    // containers={resourceData?.spec.containers.map(container => container.name) }
+                                    containers={[
+                                        ...(resourceData?.spec?.containers || []).map(container => container.name),
+                                        ...(resourceData?.spec?.initContainers || []).map(container => container.name),
+                                      ]}
                                 /> : null
                                 }
                             </Tabs.Panel>
                             <Tabs.Panel value="events">
-                                <Events 
-                                  resource={resource} 
-                                  type={type} 
-                                  namespace={namespace} 
-                                  cluster={cluster} 
+                                <Events
+                                  resource={resource}
+                                  type={type}
+                                  namespace={namespace}
+                                  cluster={cluster}
                                 />
                             </Tabs.Panel>
                             <Tabs.Panel value="metrics">

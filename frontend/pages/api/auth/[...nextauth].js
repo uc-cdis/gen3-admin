@@ -8,8 +8,8 @@ export default NextAuth({
   providers: [
     // Keycloak provider
     KeycloakProvider({
-      clientId: process.env.KEYCLOAK_CLIENT_ID     ?? "",
-      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET    ?? "",
+      clientId: process.env.KEYCLOAK_CLIENT_ID ?? "",
+      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: "http://localhost:8080/realms/master",
       profile(profile) {
         return {
@@ -21,7 +21,6 @@ export default NextAuth({
       },
     }),
 
-    // Custom provider for mock authentication in development
     CredentialsProvider({
       id: "mock-provider",
       name: "Mock Provider",
@@ -118,7 +117,7 @@ async function refreshAccessToken(token) {
       },
       method: "POST",
       body: new URLSearchParams({
-        client_id:     process.env.KEYCLOAK_CLIENT_ID     ?? "",
+        client_id: process.env.KEYCLOAK_CLIENT_ID ?? "",
         client_secret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
         refresh_token: token.refreshToken,

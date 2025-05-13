@@ -26,6 +26,7 @@ type ArgoCDApplication struct {
 	TargetRevision string `json:"targetRevision"`
 	Environment    string `json:"environment"`
 	CreatedAt      string `json:"createdAt"`
+	Resources      string `json:"resources"`
 }
 
 // ListArgoCDApplications retrieves all ArgoCD applications with detailed information

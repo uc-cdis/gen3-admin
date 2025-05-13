@@ -1,88 +1,112 @@
-import callK8sApi  from '@/lib/k8s';
+import callK8sApi from '@/lib/k8s';
 
+export async function fetchCronJobs(clusterName, namespace, accessToken) {
+  try {
+    const endpoint = namespace && namespace !== ''
+      ? `/apis/batch/v1/namespaces/${namespace}/cronjobs`
+      : `/apis/batch/v1/cronjobs`;
 
-export  async function fetchCronJobs(clusterName, accessToken) {
-    try {
-        // TODO: Configurable namespace
-        const namespace = "gen3"
-        const data = await callK8sApi(`/apis/batch/v1/namespaces/${namespace}/cronjobs`, 'GET', null, null, clusterName, accessToken);
-        return data.items; // Assuming the Kubernetes API response structure
-    } catch (error) {
-        console.error('Failed to fetch cronjobs:', error);
-        return [];
-    }
+    const data = await callK8sApi(endpoint, 'GET', null, {}, clusterName, accessToken);
+    return data.items;
+  } catch (error) {
+    console.error('Failed to fetch cronjobs:', error);
+    return [];
+  }
 }
 
+export async function triggerCronJob(cronJobName, namespace, clusterName, accessToken) {
+  if (!namespace) {
+    throw new Error('Namespace must be specified to trigger a job.');
+  }
 
-export async function triggerCronJob(cronJobName) {
-    try {
-        // Fetch the cronjob to get the jobTemplate
-        const cronJobData = await callK8sApi(`/apis/batch/v1/namespaces/gen3/cronjobs/${cronJobName}`)
-        const jobTemplate = cronJobData.spec.jobTemplate;
+  try {
+    const cronJobData = await callK8sApi(
+      `/apis/batch/v1/namespaces/${namespace}/cronjobs/${cronJobName}`,
+      'GET',
+      null,
+      {},
+      clusterName,
+      accessToken
+    );
 
-        const body = {
-            apiVersion: "batch/v1",
-            kind: "Job",
-            metadata: {
-                // Ensure that generateName is used to avoid naming conflicts
-                generateName: `${cronJobName}-job-`,
-                ownerReferences: [
-                    {
-                        apiVersion: "batch/v1",  // Make sure this matches the API version of the cronjob
-                        kind: "CronJob",
-                        name: cronJobName,
-                        uid: cronJobData.metadata.uid,  // This assumes you have the uid from the fetched cronjob data
-                        controller: true,
-                        blockOwnerDeletion: true
-                    }
-                ]        
-            },
-            spec: jobTemplate.spec // Using the spec from the cronjob's jobTemplate
-        }
-        const jobResult = await callK8sApi('/apis/batch/v1/namespaces/gen3/jobs', "POST", body)
-        return jobResult;
-    } catch (error) {
-        console.error('Failed to trigger job:', error);
-        throw error
-    }
+    const jobTemplate = cronJobData.spec.jobTemplate;
+
+    const body = {
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: {
+        generateName: `${cronJobName}-job-`,
+        ownerReferences: [{
+          apiVersion: 'batch/v1',
+          kind: 'CronJob',
+          name: cronJobName,
+          uid: cronJobData.metadata.uid,
+          controller: true,
+          blockOwnerDeletion: true
+        }]
+      },
+      spec: jobTemplate.spec
+    };
+
+    return await callK8sApi(
+      `/apis/batch/v1/namespaces/${namespace}/jobs`,
+      'POST',
+      body,
+      {},
+      clusterName,
+      accessToken
+    );
+  } catch (error) {
+    console.error('Failed to trigger job:', error);
+    throw error;
+  }
 }
 
+export async function getJobInstances(cronJobName, namespace, clusterName, accessToken) {
+  try {
+    const endpoint = namespace && namespace !== ''
+      ? `/apis/batch/v1/namespaces/${namespace}/jobs`
+      : `/apis/batch/v1/jobs`;
 
+    const allJobsData = await callK8sApi(endpoint, 'GET', null, {}, clusterName, accessToken);
 
+    const jobs = allJobsData.items.filter(job =>
+      job.metadata.ownerReferences &&
+      job.metadata.ownerReferences.some(ref => ref.name === cronJobName)
+    );
 
-export async function getJobInstances(cronJobName) {
-    try {
-        const allJobsData = await callK8sApi('/apis/batch/v1/jobs')
-
-        const jobs = allJobsData.items.filter(job => 
-            job.metadata.ownerReferences && 
-            job.metadata.ownerReferences.some(ref => ref.name === cronJobName)
-        );
-        return jobs;
-    } catch (error) {
-        console.error('API request failed:', error);
-        return [];
-    }
+    return jobs;
+  } catch (error) {
+    console.error('Failed to fetch job instances:', error);
+    return [];
+  }
 }
 
-export async function getAllJobs(clusterName, accessToken) {
-    try {
-        const jobs = await callK8sApi('/apis/batch/v1/jobs', 'GET', null, null, clusterName, accessToken);
-        return jobs;
-    } catch (error) {
-        console.error('API request failed:', error);
-        return [];
-    }
+export async function getAllJobs(clusterName, namespace, accessToken) {
+  try {
+    const endpoint = namespace && namespace !== ''
+      ? `/apis/batch/v1/namespaces/${namespace}/jobs`
+      : `/apis/batch/v1/jobs`;
+
+    const jobs = await callK8sApi(endpoint, 'GET', null, {}, clusterName, accessToken);
+    return jobs;
+  } catch (error) {
+    console.error('Failed to fetch jobs:', error);
+    return [];
+  }
 }
 
-
-export async function getJobDetails(jobName, clusterName, accessToken) {
-    try {
-        // TODO: Make namespace dynamic to support multiple namespaces
-        const job = await callK8sApi('/apis/batch/v1/namespaces/default/jobs/' + jobName, 'GET', null, null, clusterName, accessToken);
-        return job;
-    } catch (error) {
-        console.error('API request failed:', error);
-        return null;
+export async function getJobDetails(jobName, namespace, clusterName, accessToken) {
+  try {
+    if (!namespace) {
+      throw new Error('Namespace is required to get job details.');
     }
+
+    const endpoint = `/apis/batch/v1/namespaces/${namespace}/jobs/${jobName}`;
+    const job = await callK8sApi(endpoint, 'GET', null, {}, clusterName, accessToken);
+    return job;
+  } catch (error) {
+    console.error('Failed to fetch job details:', error);
+    return null;
+  }
 }

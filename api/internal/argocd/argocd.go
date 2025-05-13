@@ -2,7 +2,6 @@ package argocd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
@@ -110,14 +109,22 @@ func extractApplicationInfo(item *unstructured.Unstructured) (ArgoCDApplication,
 
 	app.Project, _, _ = unstructured.NestedString(spec, "project")
 	app.RepoURL, _, _ = unstructured.NestedString(spec, "source", "repoURL")
-	sources, found, err := unstructured.NestedSlice(spec, "sources")
-	if err != nil || !found || len(sources) == 0 {
-		// handle error: source array not found or empty
-	}
 
-	firstSource, ok := sources[0].(map[string]interface{})
-	if !ok {
-		// handle error: first element is not a map
+	sources, found, err := unstructured.NestedSlice(spec, "sources")
+	var firstSource map[string]interface{}
+
+	if err != nil || !found || len(sources) == 0 {
+		log.Warn().Interface("sources", sources).Msg("Sources not found or empty")
+		// Default to an empty map if needed, or return if this is critical
+		firstSource = map[string]interface{}{}
+	} else {
+		firstSourceRaw := sources[0]
+		var ok bool
+		firstSource, ok = firstSourceRaw.(map[string]interface{})
+		if !ok {
+			log.Warn().Interface("firstSourceRaw", firstSourceRaw).Msg("First source is not a map")
+			firstSource = map[string]interface{}{}
+		}
 	}
 
 	app.TargetRevision, _, _ = unstructured.NestedString(firstSource, "targetRevision")
@@ -145,14 +152,14 @@ func extractApplicationInfo(item *unstructured.Unstructured) (ArgoCDApplication,
 		app.OperationPhase, _ = operationState["phase"].(string)
 	}
 
-	// chart, _, err := unstructured.NestedString()
-	// inside your function
-	jsonBytes, err := json.Marshal(item.Object)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to marshal item.Object")
-	} else {
-		log.Info().Msg(string(jsonBytes))
-	}
+	// // chart, _, err := unstructured.NestedString()
+	// // inside your function
+	// jsonBytes, err := json.Marshal(item.Object)
+	// if err != nil {
+	// 	log.Error().Err(err).Msg("failed to marshal item.Object")
+	// } else {
+	// 	log.Info().Msg(string(jsonBytes))
+	// }
 
 	// Try to determine environment from various possible locations
 	app.Environment = determineEnvironment(spec, item.GetLabels(), item.GetAnnotations())

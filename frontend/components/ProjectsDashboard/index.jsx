@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Card, Modal, Stack, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip, Drawer, Container } from '@mantine/core';
+import { Card, Modal, Stack, Text, Group, Badge, TextInput, Button, Switch, Table, ScrollArea, Box, Loader, Tooltip, Drawer, Container, Anchor } from '@mantine/core';
 import { IconFilter, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 
 import { DataTable } from 'mantine-datatable';
@@ -18,6 +18,8 @@ import { Tabs } from '@mantine/core';
 import YamlEditor from '@/components/YamlEditor/YamlEditor';
 
 import NestedCollapses from '@/components/NestedCollapse';
+
+import callK8sApi from '@/lib/k8s';
 
 const ClusterDashboard = () => {
   const [clusters, setClusters] = useState([]);
@@ -47,10 +49,41 @@ const ClusterDashboard = () => {
   const [deleteRelease, setDeleteRelease] = useState('');
   const [deleteNamespace, setDeleteNamespace] = useState('');
 
+
+  const [detailsModalOpened, setDetailsModalOpened] = useState(false);
+  const [selectedChart, setSelectedChart] = useState(null);
+
+
   const deleteValidate = inputClusterName === deleteCluster && inputReleaseName === deleteRelease && inputNamespace === deleteNamespace;
 
   const { data: sessionData } = useSession();
   const accessToken = sessionData;
+
+  async function triggerArgoCDAppSync(appName, namespace, clusterName, accessToken) {
+    const endpoint = `/apis/argoproj.io/v1alpha1/namespaces/${namespace}/applications/${appName}`;
+
+    // Using JSON Merge Patch format (RFC 7386)
+    // This is a simpler approach that just specifies the fields to modify
+    const syncPayload = {
+      "operation": {
+        "sync": {}
+      }
+    };
+
+    try {
+      const response = await callK8sApi(endpoint, 'PATCH', syncPayload, {
+        'Content-Type': 'application/merge-patch+json'
+      }, clusterName, accessToken);
+
+      console.log(`Triggered sync for Argo CD app '${appName}' in '${namespace}'`);
+      return response;
+    } catch (error) {
+      console.error(`Failed to trigger sync for '${appName}':`, error);
+      throw error;
+    }
+  }
+
+
 
   const fetchClustersAndCharts = async () => {
     if (!accessToken) return;
@@ -92,25 +125,51 @@ const ClusterDashboard = () => {
     }
   }, [sessionData]);
 
+  // useEffect(() => {
+  //   if (nonGen3) {
+  //     console.log(clusters[0])
+  //     setFilteredCharts(clusters.flatMap(cluster =>
+  //       cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
+  //     ).filter(chart =>
+  //       chart.name.toLowerCase().includes("gen3")
+  //       // ||
+  //     ));
+  //   } else {
+  //     const filteredChartsTmp = clusters.flatMap(cluster =>
+  //       cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
+  //     ).filter(chart =>
+  //       chart.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //       chart.clusterName.toLowerCase().includes(searchTerm.toLowerCase())
+  //     );
+  //     setFilteredCharts(filteredChartsTmp);
+  //   }
+  // }, [nonGen3, sessionData, clusters, searchTerm]);
+
   useEffect(() => {
-    if (nonGen3) {
-      console.log(clusters[0])
-      setFilteredCharts(clusters.flatMap(cluster =>
-        cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
-      ).filter(chart =>
-        chart.name.toLowerCase().includes("gen3")
-        // ||
-      ));
-    } else {
-      const filteredChartsTmp = clusters.flatMap(cluster =>
-        cluster.charts.map(chart => ({ ...chart, clusterName: cluster.name }))
-      ).filter(chart =>
-        chart.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        chart.clusterName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredCharts(filteredChartsTmp);
-    }
-  }, [nonGen3, sessionData, clusters]);
+    const allCharts = clusters.flatMap(cluster =>
+      cluster.charts.map(chart => ({
+        ...chart,
+        clusterName: cluster.name,
+      }))
+    );
+
+    const term = searchTerm.toLowerCase();
+
+    const matchesSearch = (chart) =>
+      chart.name.toLowerCase().includes(term) ||
+      chart.clusterName.toLowerCase().includes(term) ||
+      chart.namespace?.toLowerCase().includes(term) ||
+      chart.status?.toLowerCase().includes(term) ||
+      chart.chart?.toLowerCase().includes(term);
+
+    const filtered = allCharts.filter(chart => {
+      const isGen3 = chart.chart.toLowerCase().includes("gen3") || chart.name.toLowerCase().includes("gen3");;
+      return nonGen3 ? isGen3 && matchesSearch(chart) : matchesSearch(chart);
+    });
+
+    setFilteredCharts(filtered);
+  }, [nonGen3, clusters, searchTerm]);
+
 
 
   const totalPages = Math.ceil(filteredCharts.length / itemsPerPage);
@@ -131,14 +190,21 @@ const ClusterDashboard = () => {
     );
   };
 
-  const viewValues = async (name, namespace, clusterName) => {
+  const viewValues = async (name, namespace, clusterName, helm) => {
     console.log("viewing values for", name, namespace)
+    let values;
+
     // call go api to get the values
     // then open a modal with the values
-    const values = await callGoApi(`/agent/${clusterName}/helm/values/${name}/${namespace}`, 'GET', null, null, accessToken);
-    console.log("values", values)
-
+    if (helm) {
+      values = await callGoApi(`/agent/${clusterName}/helm/values/${name}/${namespace}`, 'GET', null, null, accessToken);
+      console.log("values", values)
+    } else {
+      const endpoint = `/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/${name}`;
+      values = await callK8sApi(endpoint, 'GET', null, null, clusterName, accessToken);
+    }
     setCurrentValues(values)
+
     open()
 
   }
@@ -218,7 +284,66 @@ const ClusterDashboard = () => {
           <Button onClick={fetchClustersAndCharts}>Refresh</Button>
         </Group>
 
-        {/* <ScrollArea> */}
+        <Modal
+          opened={detailsModalOpened}
+          onClose={() => setDetailsModalOpened(false)}
+          title="Chart Details"
+          centered
+        >
+          {selectedChart ? (
+            <Stack>
+              {selectedChart.helm && (
+                <>
+                  {selectedChart.icon && (
+                    <img src={selectedChart.icon} alt="Chart Icon" width={40} height={40} />
+                  )}
+                </>
+              )}
+              <Text><strong>Name:</strong> {selectedChart.name}</Text>
+              <Text><strong>Namespace:</strong> {selectedChart.namespace}</Text>
+              <Text><strong>Cluster:</strong> {selectedChart.clusterName}</Text>
+              <Text><strong>Status:</strong> {selectedChart.status}</Text>
+              <Text><strong>Chart:</strong> {selectedChart.chart}</Text>
+
+              {/* Helm-specific info */}
+              {selectedChart.helm && (
+                <>
+                  <Text><strong>App Version:</strong> {selectedChart.appVersion}</Text>
+                  <Text><strong>Revision:</strong> {selectedChart.revision}</Text>
+                </>
+              )}
+
+              {/* ArgoCD-specific info */}
+              {selectedChart.syncStatus && (
+                <>
+                  <Text><strong>Sync Status:</strong> {selectedChart.syncStatus}</Text>
+                  <Text><strong>Target Revision:</strong> {selectedChart.targetRevision}</Text>
+                </>
+              )}
+
+              {/* Sync app button for ArgoCD-managed deployments */}
+              {!selectedChart.helm && selectedChart.syncStatus === 'OutOfSync' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  color="green"
+                  onClick={() => {
+                    console.log("Syncing app", selectedChart.name, selectedChart.namespace, selectedChart.clusterName);
+                    triggerArgoCDAppSync(selectedChart.name, selectedChart.namespace, selectedChart.clusterName, "")
+                    // callGoApi() here if you want to implement actual sync
+                  }}
+                >
+                  Sync app
+                </Button>
+              )}
+            </Stack>
+          ) : (
+            <Loader />
+          )}
+        </Modal>
+
+
+
         <DataTable
           striped
           highlightOnHover
@@ -229,7 +354,21 @@ const ClusterDashboard = () => {
           // onSelectedRecordsChange={setSelection}
           columns={[
             { accessor: 'clusterName' },
-            { accessor: 'name' },
+            // { accessor: 'name', render: ({ name }) => <Anchor>{name}</Anchor> },
+            {
+              accessor: 'name',
+              render: (chart) => (
+                <Anchor
+                  onClick={() => {
+                    setSelectedChart(chart);
+                    setDetailsModalOpened(true);
+                  }}
+                >
+                  {chart.name}
+                </Anchor>
+              )
+            },
+
             { accessor: 'namespace' },
             { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
             { accessor: 'chart' },
@@ -247,12 +386,12 @@ const ClusterDashboard = () => {
               "accessor": "Edit",
               "id": "name",
               // Add a button to edit / view the values of the deployment
-              render: ({ name, namespace, clusterName }) => (
+              render: ({ name, namespace, clusterName, helm }) => (
                 <Button
                   variant="outline"
                   size="sm"
                   color="blue"
-                  onClick={() => viewValues(name, namespace, clusterName)}
+                  onClick={() => viewValues(name, namespace, clusterName, helm)}
                 >
                   Edit
                 </Button>
@@ -339,17 +478,13 @@ const ClusterDashboard = () => {
               )
             },
             {
-              "accessor": "Sync",
-              "id": "tests",
-              render: ({ helm }) => (
+              "accessor": "Sync Status",
+              "id": "syncstatuc",
+              render: ({ helm, syncStatus }) => (
                 helm ? null :
-                <Button
-                  variant="outline"
-                  size="sm"
-                  color="green"
-                >
-                  Sync app
-                </Button>
+                <>
+                {syncStatus}
+                </>
               )
             }
           ]}
@@ -364,32 +499,7 @@ const ClusterDashboard = () => {
         // })}
         />
 
-        {/* <Table striped highlightOnHover>
-          <thead>
-            <tr>
-              <th>Cluster / Chart</th>
-              <th>Development</th>
-              <th>Staging</th>
-              <th>Production</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedCharts.map((chart, index) => (
-              <tr key={`${chart.clusterName}-${chart.name}-${index}`}>
-                <td>
-                  <Group spacing="sm">
-                    <Text size="sm" weight={500}>{chart.clusterName}</Text>
-                    <Text size="sm">{chart.name}</Text>
-                  </Group>
-                </td>
-                <td>{renderDeploymentStatus(chart.environments.development)}</td>
-                <td>{renderDeploymentStatus(chart.environments.staging)}</td>
-                <td>{renderDeploymentStatus(chart.environments.production)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </Table> */}
-        {/* </ScrollArea> */}
+
 
         <Group position="apart" mt="md">
           <Text>

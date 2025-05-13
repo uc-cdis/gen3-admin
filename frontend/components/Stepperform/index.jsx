@@ -42,7 +42,7 @@ const StepperForm = () => {
       },
       values: {
         global: {
-          // environment: "test",
+          environment: "dev",
           aws: {
             enabled: true,
             scheme: "internet-facing",
@@ -56,6 +56,19 @@ const StepperForm = () => {
           revproxyArn: '',
           frontendRoot: 'gen3ff',
           netPolicy: { enabled: false, dbSubnet: '0.0.0.0/0' },
+        },
+        postgresql: {
+          image: {
+            registry: "quay.io",
+            repository: "uc-cdis/postgresql",
+            tag: "14.5.0-debian-11-r35"
+          }
+        },
+        revproxy: {
+          image: {
+            repository: "quay.io/cdis/nginx",
+            tag: "master"
+          }
         },
         arborist: { enabled: true },
         audit: { enabled: true },
