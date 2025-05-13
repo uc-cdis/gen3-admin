@@ -3,7 +3,7 @@
 
 export default async function callK8sApi(endpoint, method = 'GET', body = null, headers = {}, cluster = null, accessToken = null, responseType = 'json') {
   // console.log('calling k8s api', endpoint)
-  
+
   let baseUrl = '/api/k8s/proxy';
 
   if (cluster) {
@@ -14,13 +14,13 @@ export default async function callK8sApi(endpoint, method = 'GET', body = null, 
     // Base headers with authorization
     const baseHeaders = {
       'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
     };
 
     // Merge headers, giving priority to the input `headers`
     const mergedHeaders = {
+      // 'Content-Type': 'application/json',
       ...baseHeaders,
-      ...headers, 
+      ...headers,
     };
 
     const response = await fetch(`${baseUrl}${endpoint}`, {
@@ -59,7 +59,7 @@ export async function callGoApi(endpoint, method = 'GET', body = null, headers =
     // Merge headers, giving priority to the input `headers`
     const mergedHeaders = {
       ...baseHeaders,
-      ...headers, 
+      ...headers,
     };
 
     const response = await fetch(`${baseUrl}${endpoint}`, {

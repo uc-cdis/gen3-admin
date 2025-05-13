@@ -20,7 +20,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -100,6 +102,7 @@ var (
 	certCurve = elliptic.P384()
 	// agentConnections = make(map[string]pb.TunnelService_ConnectServer)
 	agentConnections = make(map[string]*AgentConnection)
+	validAgentName   = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -211,8 +214,13 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		return status.Errorf(codes.PermissionDenied, "agent name mismatch")
 	}
 
+	// Allow only alphanumeric, underscore, and hyphen
+	if !validAgentName.MatchString(agentName) {
+		return status.Error(codes.InvalidArgument, "invalid agent name")
+	}
+
 	// Read agent cert file
-	certFile, err := os.ReadFile(filepath.Join("certs", agentName+".crt"))
+	certFile, err := os.ReadFile(filepath.Join("certs", path.Clean(agentName+".crt")))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error reading agent cert file")
 		return err
@@ -591,8 +599,8 @@ func deleteAgent(agentName string) error {
 	}
 
 	// Delete the certs from disk
-	os.Remove(filepath.Join("certs", agent.agent.Name+".crt"))
-	os.Remove(filepath.Join("certs", agent.agent.Name+".key"))
+	os.Remove(filepath.Join("certs", path.Clean(agent.agent.Name+".crt")))
+	os.Remove(filepath.Join("certs", path.Clean(agent.agent.Name+".key")))
 
 	// TODO: CRL stuff
 	// // Load CA certificate and key

@@ -47,7 +47,10 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
                 }
                 setLoading(false);
             }
-        );
+        ).catch((error) => {
+            setError(error?.message || "Failed to fetch logs.");
+            setLoading(false);
+        });
     }, [namespace, pod, container, cluster]);
 
     // Function to scroll the editor to the bottom
