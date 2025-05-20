@@ -65,8 +65,13 @@ const ClusterDashboard = () => {
     // Using JSON Merge Patch format (RFC 7386)
     // This is a simpler approach that just specifies the fields to modify
     const syncPayload = {
-      "operation": {
-        "sync": {}
+      operation: {
+        sync: {
+          syncOptions: [
+            "RespectIgnoreDifferences=true",
+            "CreateNamespace=true"
+          ]
+        }
       }
     };
 
@@ -247,12 +252,12 @@ const ClusterDashboard = () => {
         <>
           <Tabs defaultValue="Yaml Editor" size="sm">
             <Tabs.List>
-              <Tabs.Tab value="Visual Editor"> Visual Editor</Tabs.Tab>
+              {/* <Tabs.Tab value="Visual Editor"> Visual Editor</Tabs.Tab> */}
               <Tabs.Tab value="Yaml Editor">Yaml Editor</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="Visual Editor">
+            {/* <Tabs.Panel value="Visual Editor">
               <NestedCollapses data={currentValues} />
-            </Tabs.Panel>
+            </Tabs.Panel> */}
             <Tabs.Panel value="Yaml Editor">
               <YamlEditor data={currentValues} setData={setCurrentValues} />
             </Tabs.Panel>
@@ -300,7 +305,7 @@ const ClusterDashboard = () => {
                 </>
               )}
               <Text><strong>Name:</strong> {selectedChart.name}</Text>
-              <Text><strong>Namespace:</strong> {selectedChart.namespace}</Text>
+              <Text><strong>Namespace:</strong> {selectedChart.helm ? selectedChart.namespace : selectedChart.environment}</Text>
               <Text><strong>Cluster:</strong> {selectedChart.clusterName}</Text>
               <Text><strong>Status:</strong> {selectedChart.status}</Text>
               <Text><strong>Chart:</strong> {selectedChart.chart}</Text>
@@ -369,7 +374,7 @@ const ClusterDashboard = () => {
               )
             },
 
-            { accessor: 'namespace' },
+            { accessor: 'namespace', render: ({ helm, namespace, environment }) => ( <Text> {helm ? namespace : environment} </Text> ) },
             { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
             { accessor: 'chart' },
             {

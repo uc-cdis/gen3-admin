@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -231,8 +232,11 @@ func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
 
 	// Set headers
 	for k, v := range req.Headers {
+		log.Warn().Str("key", k).Str("value", v).Msg("Setting request header")
 		httpReq.Header.Set(k, v)
 	}
+
+	// Print headers
 
 	// Execute request
 	client := &http.Client{}
@@ -432,21 +436,34 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	url := fmt.Sprintf("%s%s", host, req.Path)
 	// url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
 	log.Debug().Msg("Creating request to url: " + url)
-	httpReq, err := http.NewRequest(req.Method, url, nil)
+
+	bodyReader := bytes.NewReader(req.Body)
+	httpReq, err := http.NewRequest(req.Method, url, bodyReader)
+
+	// httpReq, err := http.NewRequest(req.Method, url, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create request")
 		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to create request: %v", err))
 		return
 	}
 
-	// Set headers
+	// // Set headers
 	// for k, v := range req.Headers {
 	// 	log.Debug().Msg(fmt.Sprintf("Setting header %s to %s", k, v))
 	// 	httpReq.Header.Set(k, v)
 	// }
 
-	// Set content type if needed
-	httpReq.Header.Set("Content-Type", "application/json")
+	// // Set content type if needed
+	// // httpReq.Header.Set("Content-Type", "application/json")
+
+	// Set Content-Type header from req.Headers if present; else fallback to application/json
+	if contentType, ok := req.Headers["Content-Type"]; ok {
+		log.Debug().Msg(fmt.Sprintf("Setting Content-Type header to %s", contentType))
+		httpReq.Header.Set("Content-Type", contentType)
+	} else {
+		log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
 
 	// Set up the transport using the REST configuration
 	transport, err := rest.TransportFor(restConfig)

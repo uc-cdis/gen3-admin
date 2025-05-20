@@ -94,7 +94,7 @@ function NestedCollapses({ data, path = [], onChange }) {
             </div>
           ))}
           <Button
-            leftIcon={<IconPlus size={16} />}
+            leftSection={<IconPlus size={16} />}
             variant="subtle"
             onClick={handleAddArrayItem}
             style={{ marginTop: '10px' }}
@@ -235,7 +235,7 @@ function NestedCollapses({ data, path = [], onChange }) {
               style={{ width: '200px' }}
             />
             <Button
-              leftIcon={<IconPlus size={16} />}
+              leftSection={<IconPlus size={16} />}
               variant="subtle"
               onClick={handleAddKeyValue}
             >

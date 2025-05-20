@@ -80,7 +80,7 @@ async function restartDeployment(deploymentName, accessToken, clusterName) {
             patchBody,
             { 'Content-Type': 'application/strategic-merge-patch+json' }, null, accessToken
         );
-        
+
         console.log(`Successfully triggered restart for deployment ${deploymentName}`);
         return true;
     } catch (error) {
@@ -145,7 +145,7 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
 
     return (
         <>
-            <Table.Tr 
+            <Table.Tr
                 // style={{ cursor: 'pointer', backgroundColor: isOpen ? '#f0f0f0' : 'transparent' }}
             >
                 <Table.Td>
@@ -173,8 +173,8 @@ function DeploymentRow({ deployment, onToggle, isOpen, onRestart }) {
                     />
                 </Table.Td>
                 <Table.Td>
-                    <Button 
-                        leftIcon={<IconRefresh size={14} />}
+                    <Button
+                        leftSection={<IconRefresh size={14} />}
                         variant="outline"
                         size="xs"
                         onClick={(e) => {
