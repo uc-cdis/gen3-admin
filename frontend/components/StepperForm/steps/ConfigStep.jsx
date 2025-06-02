@@ -180,7 +180,7 @@ const ConfigStep = ({ form, clusters, fetchClusters }) => {
 
             <Group position="center" mt="lg">
               <Button
-                leftIcon={<IconPlus size={18} />}
+                leftSection={<IconPlus size={18} />}
                 onClick={addContainer}
                 variant="outline"
               >

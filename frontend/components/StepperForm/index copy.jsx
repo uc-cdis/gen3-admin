@@ -637,7 +637,7 @@ const StepperForm = () => {
     },
     {
       label: 'Configure Auth',
-      // selectedModules.includes('auth') 
+      // selectedModules.includes('auth')
       content: (
         <Container size="xl" px="md">
           <Stack spacing="xl">
@@ -1067,7 +1067,7 @@ const StepperForm = () => {
 
                       <Button
                         // onClick={addNewFlavor}
-                        leftIcon={<IconPlus size={16} />}
+                        leftSection={<IconPlus size={16} />}
                         variant="light"
                       >
                         Add New Flavor
@@ -1093,7 +1093,7 @@ const StepperForm = () => {
                         component="a"
                         href="https://gen3.org/resources/user/custom-workspace"
                         target="_blank"
-                        leftIcon={<IconExternalLink size={14} />}
+                        leftSection={<IconExternalLink size={14} />}
                       >
                         Learn more about custom workspaces
                       </Button>

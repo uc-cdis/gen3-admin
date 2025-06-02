@@ -186,11 +186,11 @@ export function NavBar() {
             label: 'Gen3',
             icon: IconPentagonNumber3,
             links: [
-                { label: 'Helm deployments', link: '/projects', icon: IconChartBar },
-                { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
+                { label: 'Deployments', link: '/projects', icon: IconChartBar },
+                { label: 'Gen3 Deployment Wizard', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
                 { label: 'Agents', link: `/clusters/`, icon: IconChartBar },
-                { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
-                { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
+                // { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
+                // { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
                 // { label: 'Databases', link: '/', icon: IconChartBar },
             ],
         },
@@ -198,9 +198,9 @@ export function NavBar() {
             label: 'Helm',
             icon: IconWheel,
             links: [
-                { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
+                // { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
                 { label: 'App Store', link: '/helm/repo/bitnami', icon: IconChartBar },
-                { label: 'Deployments', link: '/projects', icon: IconChartBar },
+                // { label: 'Deployments', link: '/projects', icon: IconChartBar },
             ],
         },
         {
@@ -325,9 +325,9 @@ export function NavBar() {
                             {clusterLinks}
                         </Stack>
                     </Center>
-    
+
                     <Center>
-    
+
                         <Stack justify="center" gap={0}>
                             <UnstyledButton component={Link} href="/clusters">
                                 <IconPlus size={30} stroke={1.5} />
@@ -337,18 +337,18 @@ export function NavBar() {
                             </UnstyledButton>
                         </Stack>
                     </Center>
-    
+
                     <Center>
-    
+
                         <Stack justify="center" gap={0}>
                             <NavbarLink icon={IconSwitchHorizontal} label="Change account" />
                             <NavbarLink icon={IconLogout} label="Logout" />
                         </Stack>
                     </Center>
-    
-    
+
+
                 </nav> */}
-    
+
                     {/* Right Side: Nested Links */}
                     {/* Don't display right navbar on `/` route, use Nextjs to determine the path */}
                     <nav className={classes.rightNavbar}>
@@ -358,7 +358,7 @@ export function NavBar() {
                             {/* <UserButton /> */}
                         </Group>
                         {/* </div> */}
-    
+
                         <ScrollArea className={classes.links}>
                             <div className={classes.linksInner}>
                                 <Accordion multiple>
@@ -368,7 +368,7 @@ export function NavBar() {
                         </ScrollArea>
                     </nav>
                 </div>
-    
+
             </>
         );
 
