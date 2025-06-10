@@ -7,6 +7,9 @@ A comprehensive admin dashboard and platform for managing Gen3 deployments acros
 The Gen3 CSOC Dashboard is a centralized platform designed to facilitate the management of multiple Gen3 deployments and Kubernetes clusters. Built with scalability and enterprise requirements in mind, it provides system administrators and operators with a comprehensive set of tools to deploy, monitor, and manage their Gen3 ecosystems effectively across cloud-native environments.
 
 ## High-Level Architecture
+![](docs/high_level_architecture.png)
+
+![](docs/microservices-overview.png)
 
 ### Agent/Server Architecture
 The platform follows a distributed agent/server architecture enabling centralized management of multiple Kubernetes clusters:

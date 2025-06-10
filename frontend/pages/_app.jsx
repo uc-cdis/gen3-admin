@@ -151,7 +151,7 @@ export default function App({
   return (
     <GlobalStateProvider>
       <SessionProvider session={session}>
-      <KeycloakProvider>
+      {/* <KeycloakProvider> */}
         <MantineProvider theme={theme}>
           <Head>
             <title>Gen3 - Admin</title>
@@ -166,7 +166,7 @@ export default function App({
           <AppContent Component={Component} pageProps={pageProps} />
           {/* <Component {...pageProps} /> */}
         </MantineProvider>
-      </KeycloakProvider>
+      {/* </KeycloakProvider> */}
       </SessionProvider>
     </GlobalStateProvider>
   );
