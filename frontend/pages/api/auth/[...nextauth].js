@@ -8,8 +8,8 @@ export default NextAuth({
   providers: [
     // Keycloak provider
     KeycloakProvider({
-      clientId: process.env.KEYCLOAK_CLIENT_ID ?? "",
-      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
+      clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
+      clientSecret: process.env.NEXT_KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: "http://localhost:8080/realms/master",
       profile(profile) {
         return {
