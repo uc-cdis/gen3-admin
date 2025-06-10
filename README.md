@@ -1,110 +1,194 @@
-# Gen3 CSOC
+# Gen3 CSOC (Cloud Security Operations Center)
 
-This is a first attempt at creating an admin dashboard, very much WIP. 
+A comprehensive admin dashboard and platform for managing Gen3 deployments across multiple Kubernetes clusters with enterprise-scale infrastructure management capabilities.
 
-The idea is to move a lot of the functionality of what operators do in an adminvm to an api + UI. 
+## Overview
 
-This is being developed by the PE team. 
+The Gen3 CSOC Dashboard is a centralized platform designed to facilitate the management of multiple Gen3 deployments and Kubernetes clusters. Built with scalability and enterprise requirements in mind, it provides system administrators and operators with a comprehensive set of tools to deploy, monitor, and manage their Gen3 ecosystems effectively across cloud-native environments.
 
-## Frontend
-
-Frontend is written in next.js using mantine as the library. 
-
-It's using pages router to route. 
-
-If you wanna add a new page add it under the `pages` folder. 
-
-## Backend
-
-Go api using gin.
-
-Calls k8s api based on your current context.
-
-## Dev environment
-
-Make sure you have a kubectl set up and working towards a k8s cluster. KIND is a great way to run kubernetes in docker f.ex
-
-Then run these commands:
-
-## start api
-
-```
-cd api/
-export PORT=8002; nodemon --exec go run main.go --signal SIGTERM
-```
-
-## start frontend
-
-In a separate terminal
-```
-cd frontend/
-
-npm install
-npm run dev
-```
-
--------------------------------------------------
-
-# Gen3 CSOC/Admin  Overview
-
-## Introduction
-The Gen3 CSOC/Admin Dashboard is a centralized platform designed to facilitate the management of multiple Gen3 deployments and Kubernetes (k8s) clusters. Built with scalability and ease of use in mind, it provides system administrators and operators with a comprehensive set of tools to deploy, monitor, and manage their Gen3 ecosystems effectively. By integrating Helm and ArgoCD for deployment management, along with Kubernetes native tools for cluster and resource administration, the dashboard offers seamless control over complex cloud-native environments.
-
-## Key Features
-
-### Management of Gen3 Deployments
-
-The Gen3 CSOC Dashboard provides an intuitive interface for managing one or multiple Gen3 deployments using Helm, a package manager for Kubernetes. Helm simplifies the deployment and configuration process by allowing administrators to define, install, and upgrade complex Kubernetes applications.
-
-- Multi-Deployment Support:
-  - Administrators can manage several Gen3 environments (production, development, and testing) from a single interface, providing centralized control over configuration and updates.
-- Helm-Based Deployment:
-  - The dashboard leverages Helm charts in the backend to deploy and manage Gen3 components across different environments, ensuring a consistent deployment workflow.
-- Simplified Upgrades:
-  - With Helm, the Admin Dashboard makes upgrading Gen3 deployments straightforward, reducing the risk of manual errors by automating the process and ensuring that updates are applied consistently across all environments.
-
-### Build Generic Support for Managing Helm and ArgoCD
-
-In addition to supporting Helm, the Gen3 CSOC Dashboard also integrates ArgoCD, a declarative GitOps continuous delivery tool for Kubernetes. This integration ensures that administrators have the flexibility to choose their preferred management tool while maintaining GitOps best practices.
-
-- Helm and ArgoCD Integration: The dashboard provides built-in support for both Helm and ArgoCD, giving administrators the ability to manage Kubernetes resources either through Helm's package manager or ArgoCD's GitOps approach.
-- GitOps Workflow: By leveraging ArgoCD, the dashboard enables administrators to implement a GitOps workflow, where all changes to Kubernetes clusters and applications are version-controlled, audited, and automatically synchronized with the cluster, promoting reliability and transparency.
-- Unified Management Interface: Administrators can view, manage, and monitor their deployments, regardless of whether they use Helm or ArgoCD, from the same dashboard interface.
-
-### Kubernetes Dashboard for Cluster and Resource Management
-
-In addition to managing Gen3 deployments, the Admin Dashboard includes a Kubernetes management layer that enables users to monitor and control Kubernetes clusters and the resources deployed within them.
-
-- Cluster Monitoring: The dashboard provides an overview of all connected Kubernetes clusters, displaying critical metrics such as node health, resource usage, and pod status.
-- Resource Management: Administrators can easily view and manage Kubernetes resources such as Pods, Services, Deployments, and ConfigMaps from within the dashboard, reducing the need to switch between different tools or interfaces.
-- Access Control: The dashboard integrates with Kubernetes Role-Based Access Control (RBAC), allowing administrators to assign granular permissions to users based on their roles within the organization.
+## High-Level Architecture
 
 ### Agent/Server Architecture
+The platform follows a distributed agent/server architecture enabling centralized management of multiple Kubernetes clusters:
 
-The Gen3 CSOC Dashboard follows an agent/server architecture, allowing distributed management of multiple Kubernetes clusters from a centralized control plane. This architecture enhances scalability and simplifies the management of multiple, geographically dispersed clusters.
+- **Central Server**: Go-based API server with REST endpoints and gRPC communication
+- **Gen3 Agents**: Deployed to each target Kubernetes cluster, acting as secure proxies
+- **Frontend Dashboard**: Next.js application providing unified management interface
+- **External Integrations**: KeyCloak for authentication, Grafana for monitoring
 
-- Gen3 Agent Deployment: To manage multiple clusters, administrators deploy a Gen3 agent to each target Kubernetes cluster. The agent serves as the interface between the cluster and the central Gen3 CSOC Dashboard.
-- Agent-Based Management: Once the Gen3 agent is deployed, administrators can manage the associated cluster directly from the dashboard without needing direct access to the cluster’s control plane, allowing for secure, remote management of multiple environments.
-- Scalability: This architecture enables seamless management of clusters across different cloud providers or on-premises environments, making it easy to scale as new clusters are added or existing clusters grow in size.
+### Technology Stack
 
-## Benefits
+**Frontend**
+- Next.js with Pages Router
+- Mantine UI component library
+- REST API communication with backend
 
-### Centralized Control
+**Backend**
+- Go API using Gin framework
+- gRPC with mTLS for secure agent communication
+- Kubernetes API integration based on current context
+- Certificate-based authentication for agents
 
-- The Gen3 CSOC Dashboard provides a single, unified interface to manage multiple Gen3 deployments and Kubernetes clusters, simplifying operations and improving efficiency. With the ability to deploy, monitor, and manage resources from one platform, administrators can streamline their workflows and reduce the complexity of managing distributed environments.
+**Infrastructure**
+- Kubernetes-native deployment model
+- Helm charts for application management
+- ArgoCD for GitOps workflows
+- Multi-cloud support (AWS, Google Cloud, Azure)
 
-- Flexibility
-With built-in support for both Helm and ArgoCD, the dashboard caters to various deployment and management preferences. Administrators have the flexibility to choose the toolset that best fits their operational needs while maintaining control through a single dashboard.
+## Core Features
 
-- Improved Scalability
-The agent/server architecture makes the system highly scalable, allowing for easy management of an expanding infrastructure. As the number of Kubernetes clusters grows, new agents can be deployed quickly to integrate them into the centralized management system.
+### 🚀 Gen3 Deployment Management
+- **Multi-Environment Support**: Manage production, development, and testing environments from a single interface
+- **Helm-Based Deployment**: Leverage Helm charts for consistent Gen3 component deployment
+- **Deployment Wizard**: Guided setup process for new Gen3 installations
+- **Configuration Management**: Centralized configuration for services, load balancers, and system components
 
-- Enhanced Security and Auditability
-By leveraging Kubernetes’ native RBAC and the GitOps principles provided by ArgoCD, the Admin Dashboard ensures that all changes to the system are controlled and auditable. This results in enhanced security, as administrators can enforce strict access controls and maintain a clear audit trail for all cluster and resource changes.
+### ☸️ Kubernetes Cluster Management
+- **Multi-Cluster Support**: Manage multiple Kubernetes clusters from one dashboard
+- **Resource Monitoring**: Real-time visibility into pods, services, deployments, and ConfigMaps
+- **Cluster Health**: Monitor node health, resource usage, and system metrics
+- **RBAC Integration**: Kubernetes Role-Based Access Control integration
+- **Custom Resource Management**: Support for Gen3-specific Kubernetes resources
 
-- Simplified Management of Complex Environments
-The dashboard abstracts away much of the complexity of managing multiple Gen3 deployments and Kubernetes clusters, reducing the learning curve for administrators. By automating many of the common management tasks (e.g., deployment, upgrades, monitoring), the dashboard helps organizations efficiently manage large-scale environments with fewer resources.
+### 🔧 DevOps & GitOps Integration
+- **Helm Support**: Native Helm chart management and deployment
+- **ArgoCD Integration**: GitOps workflow implementation for declarative deployments
+- **Deployment Lifecycle**: Complete application lifecycle management
+- **Version Control**: Git-based configuration management
+- **Automated Synchronization**: Continuous deployment with ArgoCD
 
-## Conclusion
+### 🏗️ Infrastructure as Code (IaC)
+- **Multi-Cloud Support**:
+  - **AWS**: EKS integration
+  - **Google Cloud**: GKE support
+  - **Microsoft Azure**: AKS support
+- **Infrastructure Provisioning**: Automated cloud infrastructure deployment
+- **Network Configuration**: Load balancer and networking setup
+- **Storage Management**: Persistent volume and database configuration
+- **BYOI (Bring Your Own Infrastructure)**: Support for existing infrastructure
 
-The Gen3 CSOC/Admin Dashboard is a powerful tool designed to simplify the management of Gen3 deployments and Kubernetes clusters. By integrating with Helm and ArgoCD, providing comprehensive Kubernetes cluster management, and adopting a scalable agent/server architecture, the dashboard helps organizations streamline their operations, improve security, and scale effectively as their infrastructure grows.
+### 📊 Monitoring & Observability
+- **Grafana Integration**: Built-in monitoring dashboard setup and configuration
+- **Application Monitoring**: Gen3 service health and performance metrics
+- **Database Monitoring**: Database performance and connectivity monitoring
+- **OpenTelemetry**: Distributed tracing and profiling capabilities
+- **Custom Metrics**: Gen3-specific monitoring and alerting
+
+### 🔐 Security & Authentication
+- **KeyCloak Integration**: Enterprise authentication and authorization
+- **RBAC**: Role-based access control for the CSOC portal
+- **Certificate Management**: Automated TLS certificate provisioning
+- **Secure Agent Communication**: mTLS encrypted communication between server and agents
+- **Multi-Tenant Security**: Isolated environments for different teams/projects
+
+### 💰 Cloud Cost Management
+- **Cloud Inventory**: Multi-cloud resource inventory and tracking
+- **Cost Analysis**: Cloud spending overview and optimization recommendations
+- **Resource Optimization**: Right-sizing recommendations for cloud resources
+- **Budget Monitoring**: Cost alerts and budget management
+
+## Getting Started
+
+### Prerequisites
+- Kubernetes cluster with kubectl configured
+- Docker (for local development)
+- Node.js and npm
+- Go 1.19+ (for backend development)
+
+### Development Environment Setup
+
+1. **Ensure kubectl is configured** with access to your target Kubernetes cluster:
+   ```bash
+   kubectl cluster-info
+   ```
+
+2. **Start the API server**:
+   ```bash
+   cd api/
+   export PORT=8002
+   nodemon --exec go run main.go --signal SIGTERM
+   ```
+
+3. **Start the frontend** (in a separate terminal):
+   ```bash
+   cd frontend/
+   npm install
+   npm run dev
+   ```
+
+4. **Access the dashboard** at `http://localhost:3000`
+
+5. **Create Agent Configuration** (First-time setup):
+
+   If this is the first time you're setting up a dev environment, you need to create the certificates for agent communication.
+
+   - Create agent configuration in the UI by browsing to: `http://localhost:3000/clusters`
+   - Click "Import existing cluster"
+   - Give it a name and hit the import button
+   - This will create the certificates needed for secure agent communication
+
+6. **Start Agent** (for development):
+
+   Use the cluster name from the previous step:
+   ```bash
+   nodemon --exec go run gen3-agent/agent.go --name <CLUSTER_NAME> --signal SIGTERM
+   ```
+
+## Project Structure
+
+```
+gen3-csoc/
+├── api/                    # Go backend API
+│   ├── main.go            # API server entry point
+│   ├── handlers/          # REST API handlers
+│   ├── grpc/             # gRPC server for agent communication
+│   └── k8s/              # Kubernetes client integration
+├── frontend/              # Next.js frontend
+│   ├── pages/            # Page components (Pages Router)
+│   ├── components/       # Reusable UI components
+│   └── lib/              # Utility functions
+├── agents/               # Gen3 agent codebase
+│   └── agent.go         # Agent implementation
+└── charts/              # Helm charts for deployment
+```
+
+## Deployment Options
+
+### Managed Infrastructure
+- **AWS**: Automated EKS deployment with Biocommons CDK
+- **Google Cloud**: GKE setup with integrated tooling
+- **Azure**: AKS deployment (community support)
+
+### Bring Your Own Infrastructure (BYOI)
+- Self-hosted Kubernetes clusters (Rancher, K3s, OpenShift)
+- Existing cloud environments
+- On-premises infrastructure
+
+## Roadmap
+
+- TBD
+
+## Contributing
+
+This project is developed by the Platform Engineering (PE) team. For contributions:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## Architecture Diagrams
+
+The platform architecture includes:
+- **CSOC Portal**: Central management interface
+- **Agent Network**: Distributed agents for cluster management
+- **Cloud Integration**: Multi-cloud infrastructure support
+- **Monitoring Stack**: Integrated observability platform
+
+## Support
+
+For issues, questions, or contributions, please contact the Platform Engineering team or create an issue in the project repository.
+
+---
+
+**Note**: This is an active development project. Features and documentation are continuously evolving as the platform matures.

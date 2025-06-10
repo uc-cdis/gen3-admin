@@ -7,6 +7,8 @@ import { useDisclosure } from '@mantine/hooks';
 // import { NavBar } from '../components/NavBar/NavBar';
 // import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
 
+import { KeycloakProvider } from '@/contexts/KeycloakContext';
+
 
 import SpotLight from '@/components/Spotlight/Spotlight';
 
@@ -58,7 +60,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 
 
   // if (user && !authorized) {
-  //   // TODO: Implement some 403 page here. 
+  //   // TODO: Implement some 403 page here.
   //   // logout()
   // }
 
@@ -91,7 +93,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
             <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" width={100} />
             <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
           </Box>
-          
+
         </Group> */}
 
       <AppShell.Header>
@@ -128,7 +130,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
         <Center inline>
           {/* <AppShell.Footer>
             <Container size="xl" maw={600}>
-              Made with <IconHeart color="var(--mantine-color-blue-filled)" /> by the <Anchor component={Link} href="https://gen3.org/"> Gen3</Anchor> team @ <Anchor component={Link} href="https://ctds.uchicago.edu">CTDS / UChicago.edu</Anchor> 
+              Made with <IconHeart color="var(--mantine-color-blue-filled)" /> by the <Anchor component={Link} href="https://gen3.org/"> Gen3</Anchor> team @ <Anchor component={Link} href="https://ctds.uchicago.edu">CTDS / UChicago.edu</Anchor>
             </Container>
           </AppShell.Footer> */}
         </Center>
@@ -149,6 +151,7 @@ export default function App({
   return (
     <GlobalStateProvider>
       <SessionProvider session={session}>
+      <KeycloakProvider>
         <MantineProvider theme={theme}>
           <Head>
             <title>Gen3 - Admin</title>
@@ -163,6 +166,7 @@ export default function App({
           <AppContent Component={Component} pageProps={pageProps} />
           {/* <Component {...pageProps} /> */}
         </MantineProvider>
+      </KeycloakProvider>
       </SessionProvider>
     </GlobalStateProvider>
   );
