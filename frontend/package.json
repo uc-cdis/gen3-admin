@@ -54,7 +54,7 @@
   "proxy": "http://localhost:8000",
   "devDependencies": {
     "@babel/core": "^7.23.2",
-    "@next/eslint-plugin-next": "^14.0.1",
+    "@next/eslint-plugin-next": "^15.0.0",
     "@types/jest": "^29.5.7",
     "@types/lodash": "^4.17.16",
     "@types/node": "^20.17.30",
@@ -79,7 +79,7 @@
     "postcss-preset-mantine": "1.12.3",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.0.3",
-    "stylelint": "^15.11.0",
+    "stylelint": "^16.6.1",
     "stylelint-config-standard-scss": "^11.1.0",
     "ts-jest": "^29.1.1",
     "typescript": "5.8.3"
