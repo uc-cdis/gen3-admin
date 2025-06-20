@@ -9,7 +9,7 @@ jobs:
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.frontend"
       OVERRIDE_REPO_NAME: "csoc-frontend"
-      USE_QUAY_ONLY: true
+      USE_QUAY_ONLY: 'true'
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
@@ -23,7 +23,7 @@ jobs:
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.api"
       OVERRIDE_REPO_NAME: "csoc-api"
-      USE_QUAY_ONLY: true
+      USE_QUAY_ONLY: 'true'
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
@@ -36,7 +36,7 @@ jobs:
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.agent"
       OVERRIDE_REPO_NAME: "csoc-agent"
-      USE_QUAY_ONLY: true
+      USE_QUAY_ONLY: 'true'
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
