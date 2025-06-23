@@ -5,7 +5,7 @@ on: push
 jobs:
   build-frontend:
     name: Build Frontend Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.frontend"
       OVERRIDE_REPO_NAME: "csoc-frontend"
@@ -19,7 +19,7 @@ jobs:
 
   build-api:
     name: Build API Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.api"
       OVERRIDE_REPO_NAME: "csoc-api"
@@ -32,7 +32,7 @@ jobs:
 
   build-agent:
     name: Build Agent Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.agent"
       OVERRIDE_REPO_NAME: "csoc-agent"
