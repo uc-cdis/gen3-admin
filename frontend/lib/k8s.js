@@ -23,6 +23,7 @@ export default async function callK8sApi(endpoint, method = 'GET', body = null, 
       ...headers,
     };
 
+    console.log('----------> CallK8Api',`${baseUrl}${endpoint}`)
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method,
       headers: mergedHeaders,
@@ -67,6 +68,8 @@ export async function callGoApi(endpoint, method = 'GET', body = null, headers =
       headers: mergedHeaders,
       body: body ? JSON.stringify(body) : null,
     });
+
+    // console.log("callGoApi",`${baseUrl}${endpoint}`, response);
 
     if (!response.ok) {
       throw new Error(`API call failed: ${response.status} ${response.statusText}`);
