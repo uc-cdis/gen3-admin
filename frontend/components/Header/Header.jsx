@@ -4,7 +4,7 @@ import { useState, useContext, useEffect } from 'react';
 import cx from 'clsx';
 
 import Image from 'next/image'
-import { Group, Button, Burger, Box, Loader, Menu, UnstyledButton, Text, rem, useMantineTheme, Select } from '@mantine/core';
+import { Group, Button, Burger, Box, Loader, Menu, UnstyledButton, Text, rem, Badge, useMantineTheme, Select, Combobox, useCombobox, InputBase } from '@mantine/core';
 import AuthContext from '@/contexts/auth';
 
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
@@ -15,16 +15,17 @@ import { useGlobalState } from '@/contexts/global';
 
 import {
     IconLogout,
-    IconHeart,
-    IconStar,
-    IconMessage,
-    IconSettings,
-    IconPlayerPause,
-    IconTrash,
-    IconRefresh,
-    IconSwitchHorizontal,
-    IconChevronDown,
     IconPlus,
+    IconCircleCheck,      // deployed
+    IconCircleX,          // failed
+    IconCircleMinus,      // unknown
+    IconTrash,            // uninstalled
+    IconReplace,          // superseded
+    IconLoader,           // uninstalling
+    IconClock,            // pending-install
+    IconRefresh,          // pending-upgrade
+    IconArrowBackUp,      // pending-rollback
+    IconChevronDown 
 } from '@tabler/icons-react';
 
 
@@ -34,6 +35,59 @@ import { callGoApi } from '@/lib/k8s';
 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+
+
+const getStatusIcon = (status) => {
+    const statusConfig = {
+        'deployed': {
+            icon: IconCircleCheck,
+            color: 'var(--mantine-color-green-6)',
+            badgeColor: 'green'
+        },
+        'failed': {
+            icon: IconCircleX,
+            color: 'var(--mantine-color-red-6)',
+            badgeColor: 'red'
+        },
+        'unknown': {
+            icon: IconCircleMinus,
+            color: 'var(--mantine-color-gray-6)',
+            badgeColor: 'gray'
+        },
+        'uninstalled': {
+            icon: IconTrash,
+            color: 'var(--mantine-color-gray-6)',
+            badgeColor: 'gray'
+        },
+        'superseded': {
+            icon: IconReplace,
+            color: 'var(--mantine-color-orange-6)',
+            badgeColor: 'orange'
+        },
+        'uninstalling': {
+            icon: IconLoader,
+            color: 'var(--mantine-color-yellow-6)',
+            badgeColor: 'yellow'
+        },
+        'pending-install': {
+            icon: IconClock,
+            color: 'var(--mantine-color-blue-6)',
+            badgeColor: 'blue'
+        },
+        'pending-upgrade': {
+            icon: IconRefresh,
+            color: 'var(--mantine-color-blue-6)',
+            badgeColor: 'blue'
+        },
+        'pending-rollback': {
+            icon: IconArrowBackUp,
+            color: 'var(--mantine-color-cyan-6)',
+            badgeColor: 'cyan'
+        }
+    };
+
+    return statusConfig[status] || statusConfig['unknown'];
+};
 
 
 export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDesktop }) {
@@ -47,7 +101,10 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
 
     const [clusters, setClusters] = useState([])
     const [loading, setLoading] = useState(false)
-    const { activeCluster, setActiveCluster } = useGlobalState();
+    const [loading2, setLoading2] = useState(false);
+    const { activeCluster, setActiveCluster, setActiveGlobalEnv } = useGlobalState();
+    const [environments, setEnvironments] = useState();
+    const [activeEnvironments, setActiveEnvironments] = useState();
 
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
@@ -112,6 +169,116 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
         });
     }, []);
 
+    const fetchEnvironments = async () => {
+        setLoading2(true);
+        try {
+            const agentsResponse = await callGoApi('/agents', 'GET', null, null, accessToken);
+            if (!agentsResponse?.length) {
+                console.log("No agents registered");
+                setEnvironments([]);
+                return;
+            }
+
+            const environmentsData = await Promise.all(
+                agentsResponse.map(async (agent) => {
+                    try {
+                        const chartsResponse = await callGoApi(
+                            `/agents/${agent.name}/helm/list`,
+                            'GET',
+                            null,
+                            null,
+                            accessToken
+                        );
+                        console.log({"agents":agentsResponse,"charts": chartsResponse})
+                        return chartsResponse?.map(chart => ({
+                            value: `${agent.name}/${chart.namespace}`,
+                            label: `${agent.name}/${chart.name}`,
+                            status: chart.status || 'unknown',
+                            namespace: chart.namespace,
+                        })) || [];
+                    } catch (err) {
+                        console.error(`Error fetching charts for agent ${agent.name}:`, err);
+                        return [];
+                    }
+                })
+            );
+            setEnvironments(environmentsData.flat());
+        } catch (err) {
+            console.error("Error fetching environments:", err);
+            setEnvironments([]);
+        } finally {
+            setLoading2(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchEnvironments();
+    }, []);
+
+    const EnvironmentSelect = () => {
+        const combobox = useCombobox({
+            onDropdownClose: () => combobox.resetSelectedOption(),
+        });
+
+        const handleEnvironmentChange = (value) => {
+            setActiveEnvironments(value);
+            setActiveGlobalEnv(value); // Update the global state
+            combobox.closeDropdown();
+        };
+
+        const options = (environments || []).map((item) => {
+            const statusConfig = getStatusIcon(item.status);
+            const StatusIcon = statusConfig.icon;
+
+            return (
+                <Combobox.Option value={item.value} key={item.value}>
+                    <Group justify="space-between" wrap="nowrap" w="100%">
+                        <div style={{ fontFamily: 'monospace' }}>{item.label}</div>
+                        <Group gap="xs" wrap="nowrap">
+                            <Badge 
+                                size="sm" 
+                                variant="light" 
+                                color="gray"
+                                radius="xl"
+                            >
+                                {item.namespace}
+                            </Badge>
+                            <StatusIcon 
+                                style={{ width: rem(16), height: rem(16) }} 
+                                color={statusConfig.color}
+                            />
+                        </Group>
+                    </Group>
+                </Combobox.Option>
+            );
+        });
+
+        return (
+            <Combobox
+                store={combobox}
+                onOptionSubmit={handleEnvironmentChange}
+                style={{ flex: 1, minWidth: 120 }}
+            >
+                <Combobox.Target>
+                    <InputBase
+                        component="button"
+                        type="button"
+                        pointer
+                        rightSection={<IconChevronDown style={{ width: rem(18), height: rem(18) }} stroke={1.5} />}
+                        onClick={() => combobox.toggleDropdown()}
+                        rightSectionPointerEvents="none"
+                        style={{ fontFamily: 'monospace' }}
+                    >
+                        {activeEnvironments || 'Select Environment'}
+                    </InputBase>
+                </Combobox.Target>
+
+                <Combobox.Dropdown>
+                    <Combobox.Options>{options}</Combobox.Options>
+                </Combobox.Dropdown>
+            </Combobox>
+        );
+    };
 
     const menu = (
         <Menu
@@ -255,7 +422,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                     <Group
                         wrap="wrap"
                         gap="xs"
-                        style={{ flexGrow: 1 }}
+                        style={{ flexGrow: 1, display: 'none' }}
                     >
                         {loading ? <Loader size="sm" /> : null}
                         <Select
@@ -277,6 +444,20 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                             component={Link}
                             href="/clusters">
                             <IconPlus />
+                        </Button>
+                    </Group>
+                    <Group
+                        wrap="wrap"
+                        gap="xs"
+                        style={{ flexGrow: 1 }}
+                    >
+                        {/* {loading2 ? <Loader size="sm" /> : null} */}
+                        <EnvironmentSelect />
+                        <Button
+                            onClick={fetchEnvironments}
+                            loading={loading2}  // Show loading state on the button
+                        >
+                            <IconRefresh />
                         </Button>
                     </Group>
                 </Group>
