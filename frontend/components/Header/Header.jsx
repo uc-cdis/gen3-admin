@@ -25,7 +25,7 @@ import {
     IconClock,            // pending-install
     IconRefresh,          // pending-upgrade
     IconArrowBackUp,      // pending-rollback
-    IconChevronDown 
+    IconChevronDown
 } from '@tabler/icons-react';
 
 
@@ -179,8 +179,10 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                 return;
             }
 
+            const connectedAgents = agentsResponse.filter(cluster => cluster.connected)
+
             const environmentsData = await Promise.all(
-                agentsResponse.map(async (agent) => {
+                connectedAgents.map(async (agent) => {
                     try {
                         const chartsResponse = await callGoApi(
                             `/agents/${agent.name}/helm/list`,
@@ -189,8 +191,11 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                             null,
                             accessToken
                         );
-                        console.log({"agents":agentsResponse,"charts": chartsResponse})
-                        return chartsResponse?.map(chart => ({
+                        console.log({ "agents": agentsResponse, "charts": chartsResponse })
+
+                        const filtered = chartsResponse.filter(chart => chart.chart.toLowerCase().includes("gen3") || chart.name.toLowerCase().includes("gen3"));
+
+                        return filtered?.map(chart => ({
                             value: `${agent.name}/${chart.namespace}`,
                             label: `${agent.name}/${chart.name}`,
                             status: chart.status || 'unknown',
@@ -235,16 +240,16 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                     <Group justify="space-between" wrap="nowrap" w="100%">
                         <div style={{ fontFamily: 'monospace' }}>{item.label}</div>
                         <Group gap="xs" wrap="nowrap">
-                            <Badge 
-                                size="sm" 
-                                variant="light" 
+                            <Badge
+                                size="sm"
+                                variant="light"
                                 color="gray"
                                 radius="xl"
                             >
                                 {item.namespace}
                             </Badge>
-                            <StatusIcon 
-                                style={{ width: rem(16), height: rem(16) }} 
+                            <StatusIcon
+                                style={{ width: rem(16), height: rem(16) }}
                                 color={statusConfig.color}
                             />
                         </Group>
@@ -363,7 +368,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                 </Menu.Item>
 
                 {/* <Menu.Divider />
-    
+
             <Menu.Label>Danger zone</Menu.Label>
             <Menu.Item
                 leftSection={
@@ -398,7 +403,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                     bg="var(--mantine-color-yellow-light)"
                     w={20}
                   >
-                      
+
                   </Group> */}
 
                 <Group
