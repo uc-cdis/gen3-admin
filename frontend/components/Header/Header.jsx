@@ -121,20 +121,34 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
     const handleClusterChange = (newCluster) => {
         setActiveCluster(newCluster);
 
-        // Check if the current path matches the pattern
-
-        console.log(currentPath)
-        // Split the path into segments
+        console.log(currentPath);
         const pathSegments = currentPath.split('/');
 
-        // Assuming the cluster is the third segment in the path (e.g., `/cluster/old-cluster/something/else/here`)
-        const clusterIndex = 2;
-        const currentCluster = pathSegments[clusterIndex];
-
-
-        if (currentCluster !== newCluster && currentPath.includes('cluster')) {
-            // Construct the new path
-            const newPath = currentPath.replace(currentCluster, newCluster);
+        // If we have an active environment, extract the namespace and navigate to environments path
+        if (activeEnvironments) {
+            const [cluster, namespace] = activeEnvironments.split('/');
+            const newPath = `/environments/${newCluster}/${namespace}`;
+            router.push(newPath);
+        } else if (currentPath.includes('cluster')) {
+            // If we're on old cluster path, navigate to environments with default namespace
+            const newPath = `/environments/${newCluster}/default`;
+            router.push(newPath);
+        } else if (currentPath.includes('environments')) {
+            // If we're already on environments path, update the cluster
+            const environmentsIndex = pathSegments.indexOf('environments');
+            if (environmentsIndex !== -1 && pathSegments[environmentsIndex + 2]) {
+                // Keep the existing namespace
+                const namespace = pathSegments[environmentsIndex + 2];
+                const newPath = `/environments/${newCluster}/${namespace}`;
+                router.push(newPath);
+            } else {
+                // Default to 'default' namespace if none exists
+                const newPath = `/environments/${newCluster}/default`;
+                router.push(newPath);
+            }
+        } else {
+            // Default navigation to environments path
+            const newPath = `/environments/${newCluster}/default`;
             router.push(newPath);
         }
     };
@@ -227,8 +241,20 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
 
         const handleEnvironmentChange = (value) => {
             setActiveEnvironments(value);
-            setActiveGlobalEnv(value); // Update the global state
+            setActiveGlobalEnv(value);
             combobox.closeDropdown();
+
+            // Extract cluster and namespace from the value (format: "cluster/namespace")
+            const [cluster, namespace] = value.split('/');
+
+            // Navigate to the environments path
+            const newPath = `/environments/${cluster}/${namespace}`;
+            router.push(newPath);
+
+            // Also update the active cluster if it's different
+            if (cluster !== activeCluster) {
+                setActiveCluster(cluster);
+            }
         };
 
         const options = (environments || []).map((item) => {
