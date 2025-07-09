@@ -808,6 +808,148 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	}
 }
 
+func HandleHTTPProxyRequest(c *gin.Context) {
+	agentID := c.Param("agent")
+	path := c.Param("path")
+
+	log.Info().Msgf("Path: %s", path)
+
+	// Ensure path starts with /
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	// Add query string if present
+	if c.Request.URL.RawQuery != "" {
+		path += "?" + c.Request.URL.RawQuery
+	}
+
+	var wg sync.WaitGroup
+
+	agentsMutex.RLock()
+	agent, exists := agentConnections[agentID]
+	agentsMutex.RUnlock()
+
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		log.Warn().Msgf("Agent not found: %s", agentID)
+		return
+	}
+
+	// Generate a unique stream ID for this request
+	streamID := uuid.New().String()
+
+	// Create a channel for this request
+	responseChan := make(chan *pb.ProxyResponse, 100)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+
+	agent.mutex.Lock()
+	agent.requestChannels[streamID] = responseChan
+	agent.cancelFuncs[streamID] = cancel
+	agent.contexts[streamID] = ctx
+	agent.mutex.Unlock()
+
+	defer func() {
+		cancel()
+		wg.Wait()
+		agent.mutex.Lock()
+		delete(agent.requestChannels, streamID)
+		delete(agent.cancelFuncs, streamID)
+		agent.mutex.Unlock()
+		close(responseChan)
+	}()
+
+	// Create a ProxyRequest for HTTP
+	proxyReq := &pb.ProxyRequest{
+		StreamId:  streamID,
+		Method:    c.Request.Method,
+		Path:      path,
+		Headers:   make(map[string]string),
+		Body:      nil,
+		ProxyType: "http",
+	}
+
+	// Copy headers
+	for k, v := range c.Request.Header {
+		proxyReq.Headers[k] = strings.Join(v, ",")
+	}
+
+	// Read and set body if present
+	if c.Request.Body != nil {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read request body"})
+			return
+		}
+		proxyReq.Body = body
+	}
+
+	// Send the request through the gRPC stream
+	err := agent.stream.Send(&pb.ServerMessage{
+		Message: &pb.ServerMessage_Proxy{
+			Proxy: proxyReq,
+		},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
+		return
+	}
+
+	// Handle the response stream (same as K8s version)
+	var responseStarted bool
+	for {
+		select {
+		case resp, ok := <-responseChan:
+			if !ok {
+				if !responseStarted {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+				}
+				log.Debug().Msgf("Response channel closed for stream ID: %s", streamID)
+				return
+			}
+			switch resp.Status {
+			case pb.ProxyResponseType_HEADERS:
+				if !responseStarted {
+					responseStarted = true
+					// Set response headers
+					for k, v := range resp.Headers {
+						c.Header(k, v)
+					}
+					c.Status(int(resp.StatusCode))
+				}
+			case pb.ProxyResponseType_DATA:
+				log.Debug().Msgf("Got data chunk from agent")
+				if !responseStarted {
+					responseStarted = true
+				}
+				// Write response body chunk
+				_, err := c.Writer.Write(resp.Body)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to write response body chunk")
+					return
+				}
+			case pb.ProxyResponseType_END:
+				log.Trace().Msg("Proxy response end message")
+				c.Writer.Flush()
+				c.Abort()
+				return
+			case pb.ProxyResponseType_ERROR:
+				log.Trace().Msg("Proxy response error message")
+				if !responseStarted {
+					responseStarted = true
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": string(resp.Body)})
+				return
+			default:
+				log.Warn().Msgf("Unknown message type from stream %s: %T", streamID, resp)
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func setupGRCPServer() {
 	creds, err := ca.SetupCerts()
 	if err != nil {
@@ -872,6 +1014,11 @@ func setupHTTPServer() {
 	r.Any("api/k8s/:agent/proxy/*path", func(c *gin.Context) {
 		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
 		HandleK8sProxyRequest(c)
+	})
+
+	r.Any("/api/:agent/proxy/*path", func(c *gin.Context) {
+		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
+		HandleHTTPProxyRequest(c)
 	})
 
 	r.POST("/api/agents", CreateAgentHandler)
