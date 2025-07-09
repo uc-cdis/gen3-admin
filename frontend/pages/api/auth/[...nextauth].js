@@ -8,13 +8,19 @@ export default NextAuth({
   providers: [
     // Keycloak provider
     KeycloakProvider({
-      clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
-      clientSecret: process.env.NEXT_KEYCLOAK_CLIENT_SECRET ?? "",
-      issuer: "http://localhost:8080/realms/master",
+      clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? "",
+      clientSecret: "",
+      issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
+      authorization: {
+        params: {
+          scope: "openid profile email", // Explicitly request these scopes
+        }
+      },
       profile(profile) {
+        console.log("Keycloak profile:", profile); // Debug log
         return {
           id: profile.sub,
-          name: profile.name,
+          name: profile.name || `${profile.given_name || ''} ${profile.family_name || ''}`.trim() || profile.preferred_username,
           email: profile.email,
           image: profile.picture,
         };
@@ -29,15 +35,13 @@ export default NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // You can return any mock user object here
         const user = {
           id: "1",
           name: "John Doe",
           email: "johndoe@example.com",
-          image: "https://via.placeholder.com/150", // Fake profile image
+          image: "https://via.placeholder.com/150",
         };
 
-        // This is a mock authentication, so we ignore credentials and always return the mock user
         if (user) {
           return user;
         } else {
@@ -48,17 +52,19 @@ export default NextAuth({
   ],
 
   callbacks: {
-    // Add access token, refresh token, and expiry to JWT
     async jwt({ token, user, account }) {
       // Initial sign in
       if (account && user) {
-        // Save the initial token details in the JWT
+        
         return {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
-          accessTokenExpires: account.expires_at ? account.expires_at * 1000 : 0, // Convert to ms
+          accessTokenExpires: account.expires_at ? account.expires_at * 1000 : 0,
           id: user.id,
+          name: user.name,
+          email: user.email,
+          picture: user.image,
         };
       }
 
@@ -67,22 +73,20 @@ export default NextAuth({
         return token;
       }
 
-      // Access token has expired, try to refresh it
+      // For public clients, we typically don't refresh tokens
+      // If you need refresh functionality, you'd need a confidential client
       return refreshAccessToken(token);
     },
 
-    // Send token data to the client-side session
     async session({ session, token }) {
-      // Add user info and token details to the session
       session.user = {
         ...session.user,
         id: token.id,
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
+        name: token.name,
+        email: token.email,
+        image: token.picture,
       };
 
-      // Add access token to the session so client can use it
       session.accessToken = token.accessToken;
       session.error = token.error;
 
@@ -92,13 +96,12 @@ export default NextAuth({
 
   // Enable debug mode for easier development
   debug: process.env.NODE_ENV === "development",
-  secret: process.env.NEXTAUTH_SECRET, // Secret for signing JWT
+  secret: process.env.NEXTAUTH_SECRET,
 
   // Token session settings
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
-    // maxAge: 60, // for testing purposes set it to 1 min
   },
 });
 
@@ -117,7 +120,7 @@ async function refreshAccessToken(token) {
       },
       method: "POST",
       body: new URLSearchParams({
-        client_id: process.env.KEYCLOAK_CLIENT_ID ?? "",
+        client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? "",
         client_secret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
         refresh_token: token.refreshToken,
