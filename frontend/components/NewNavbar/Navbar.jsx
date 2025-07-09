@@ -189,7 +189,7 @@ export function NavBar() {
                 { label: 'Deployments', link: '/projects', icon: IconChartBar },
                 { label: 'Gen3 Deployment Wizard', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
                 { label: 'Agents', link: `/clusters/`, icon: IconChartBar },
-                // { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
+                { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
                 // { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
                 // { label: 'Databases', link: '/', icon: IconChartBar },
             ],

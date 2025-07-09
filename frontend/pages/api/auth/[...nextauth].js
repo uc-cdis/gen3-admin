@@ -8,8 +8,8 @@ export default NextAuth({
   providers: [
     // Keycloak provider
     KeycloakProvider({
-      clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? "",
-      clientSecret: "",
+      clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
+      clientSecret: process.env.NEXT_KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
       authorization: {
         params: {
@@ -55,7 +55,7 @@ export default NextAuth({
     async jwt({ token, user, account }) {
       // Initial sign in
       if (account && user) {
-        
+
         return {
           ...token,
           accessToken: account.access_token,
@@ -101,7 +101,8 @@ export default NextAuth({
   // Token session settings
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    // maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 60 * 15
   },
 });
 
