@@ -6,6 +6,8 @@ import { IconFilter, IconChevronLeft, IconChevronRight } from '@tabler/icons-rea
 
 import callK8sApi from '@/lib/k8s';
 
+import { useSession } from "next-auth/react";
+
 // Helper function to safely get nested properties (e.g., "metadata.name" or "status.conditions[0].type")
 const getNestedValue = (obj, keyPath) => {
     // Return an empty string if obj is null/undefined to prevent errors later
@@ -17,8 +19,8 @@ const getNestedValue = (obj, keyPath) => {
             const index = parseInt(indexStr, 10); // Ensure index is a number
             // Check if acc, baseKey, and the index exist
             return acc && acc[baseKey] && Array.isArray(acc[baseKey]) && acc[baseKey].length > index
-                   ? acc[baseKey][index]
-                   : undefined; // Return undefined if path is invalid
+                ? acc[baseKey][index]
+                : undefined; // Return undefined if path is invalid
         }
         // Check if acc and the keyPart exist
         return acc && typeof acc === 'object' && acc[keyPart] !== undefined ? acc[keyPart] : undefined; // Return undefined if path is invalid
@@ -26,10 +28,13 @@ const getNestedValue = (obj, keyPath) => {
 };
 
 
-const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoint, buttonsConfig }) => {
+const GenericDataTable = ({ agent, endpoint, fields, accessTokenss, metricsEndpoint, buttonsConfig }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
 
     const [metricsData, setMetricsData] = useState([]); // Note: metricsData structure seems slightly off in original usage
 
@@ -38,8 +43,8 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
 
     const fetchData = async () => {
         if (!agent) {
-             setData([]); // Clear data if no agent
-             setLoading(false);
+            setData([]); // Clear data if no agent
+            setLoading(false);
             return;
         }
         try {
@@ -95,7 +100,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
     // Map the data into rows, extracting only the relevant fields
     // Use useMemo to prevent recalculating rows unless data or fields change
     const baseRows = useMemo(() => {
-       return data.map((item, index) => ({
+        return data.map((item, index) => ({
             id: item.metadata?.uid || `temp-id-${index}`, // Use UID if available, fallback to index
             // Add the original item for potential complex render functions or actions
             // original: item,
@@ -105,7 +110,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
                 acc[field.label] = getNestedValue(item, field.key) ?? '';
                 return acc;
             }, {}),
-             // Include metadata name explicitly if needed for metrics merging and not already a field
+            // Include metadata name explicitly if needed for metrics merging and not already a field
             'metadata.name': item.metadata?.name // Example: If needed and not in fields
         }));
     }, [data, fields]);
@@ -162,8 +167,8 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
         });
     }, [searchTerm, baseRows, rowsWithMetrics, metricsData.length]); // Add dependencies
 
-     // Clear selection when filtered data changes to avoid stale selections
-     useEffect(() => {
+    // Clear selection when filtered data changes to avoid stale selections
+    useEffect(() => {
         setSelectedRecords([]);
     }, [filteredRows]);
 
@@ -183,7 +188,7 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.currentTarget.value)}
                         style={{ flexGrow: 1 }}
-                        // maw={400} // Max width for search bar
+                    // maw={400} // Max width for search bar
                     />
                     <Group> {/* Group buttons */}
                         {/* <Tooltip label="Not yet implemented">
@@ -198,12 +203,12 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
             </Container>
             {/* Data Table Container */}
             <Container fluid size="lg" p="md" radius="md" my="md" style={{ border: '1px solid #dee2e6', borderRadius: '4px' }}>
-                 {/* Conditionally render error message above the table */}
-                 {error && !loading && (
-                     <Center mb="md">
-                         <p style={{ color: 'red' }}>Failed to load data: {error}</p>
-                     </Center>
-                 )}
+                {/* Conditionally render error message above the table */}
+                {error && !loading && (
+                    <Center mb="md">
+                        <p style={{ color: 'red' }}>Failed to load data: {error}</p>
+                    </Center>
+                )}
                 <DataTable
                     //   withBorder // Redundant if container has border
                     highlightOnHover
@@ -219,11 +224,11 @@ const GenericDataTable = ({ agent, endpoint, fields, accessToken, metricsEndpoin
                     loaderVariant="dots"
                     minHeight={150} // Ensure table doesn't collapse when empty/loading
                     noRecordsText="No records found" // Text for empty state
-                    // Add pagination if needed for large datasets
-                    // page={page}
-                    // onPageChange={setPage}
-                    // totalRecords={filteredRows.length} // Or total before filtering if doing server-side pagination
-                    // recordsPerPage={PAGE_SIZE}
+                // Add pagination if needed for large datasets
+                // page={page}
+                // onPageChange={setPage}
+                // totalRecords={filteredRows.length} // Or total before filtering if doing server-side pagination
+                // recordsPerPage={PAGE_SIZE}
                 />
             </Container>
         </>

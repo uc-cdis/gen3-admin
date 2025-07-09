@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -108,14 +107,18 @@ var (
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+
 		if authHeader == "" {
+			log.Error().Msg("error: Authorization header is required")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
 			c.Abort()
 			return
 		}
 
 		bearerToken := strings.Split(authHeader, " ")
+		log.Info().Msgf("Token: %s", bearerToken)
 		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			log.Error().Msg("error: Invalid Authorization header format")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
 			c.Abort()
 			return
@@ -123,15 +126,19 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Extract claims for use in authz request
 		tokenString := bearerToken[1]
-		token, err := jwt.Parse(tokenString, nil)
+
+		// Parse token without verification to extract claims
+		token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			log.Error().Err(err).Msg("error: Invalid token format")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
 			c.Abort()
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			log.Error().Msg("error: Invalid claims")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
 			c.Abort()
 			return
@@ -139,24 +146,13 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		issuerURL, ok := claims["iss"].(string)
 		if !ok {
+			log.Error().Msg("error: missing issuer in token")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing issuer in token"})
 			c.Abort()
 			return
 		}
 
 		log.Info().Msgf("Issuer URL: %s", issuerURL)
-
-		// Call AuthZ Service
-		authzEndpoint := issuerURL + "/auth/mapping"
-		reqBody, _ := json.Marshal(claims)
-		authzResp, err := http.Post(authzEndpoint, "application/json", bytes.NewBuffer(reqBody))
-		if err != nil {
-			log.Error().Err(err).Msg("Error calling authZ service")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Authorization service error"})
-			c.Abort()
-			return
-		}
-		defer authzResp.Body.Close()
 
 		log.Info().Msg("User is authorized")
 		c.Next()
@@ -985,7 +981,7 @@ func setupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	// r.Use(AuthMiddleware())
+	r.Use(AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
