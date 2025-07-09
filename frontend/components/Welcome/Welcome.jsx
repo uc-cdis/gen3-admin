@@ -41,8 +41,9 @@ export function Welcome() {
   };
 
   useEffect(() => {
+    if(!accessToken) return
     fetchClusters(accessToken)
-  }, []);
+  }, [accessToken]);
 
   // Add styles for the Card hover effect
   const cardStyles = {

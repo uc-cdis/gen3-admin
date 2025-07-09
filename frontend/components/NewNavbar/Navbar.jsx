@@ -147,24 +147,24 @@ export function NavBar() {
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
 
-    const fetchClusters = async () => {
-        try {
-            const data = await callGoApi('/agents', 'GET', null, null, accessToken)
-            // Only show clusters that are active
-            setClusters(data.filter(cluster => cluster.connected))
-            setActiveCluster(data.filter(cluster => cluster.connected)[0]?.name)
-        } catch (error) {
-            console.error('Failed to fetch clusters:', error);
-        }
-    };
+    // const fetchClusters = async () => {
+    //     try {
+    //         const data = await callGoApi('/agents', 'GET', null, null, accessToken)
+    //         // Only show clusters that are active
+    //         setClusters(data.filter(cluster => cluster.connected))
+    //         setActiveCluster(data.filter(cluster => cluster.connected)[0]?.name)
+    //     } catch (error) {
+    //         console.error('Failed to fetch clusters:', error);
+    //     }
+    // };
 
-    useEffect(() => {
-        fetchClusters(accessToken).then((data) => {
-            if (data) {
-                setClusters(data);
-            }
-        });
-    }, []);
+    // useEffect(() => {
+    //     fetchClusters(accessToken).then((data) => {
+    //         if (data) {
+    //             setClusters(data);
+    //         }
+    //     });
+    // }, []);
 
     const clusterLinks = clusters.map((link, index) => {
         return (
