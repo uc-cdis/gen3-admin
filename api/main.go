@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -108,14 +107,18 @@ var (
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+
 		if authHeader == "" {
+			log.Error().Msg("error: Authorization header is required")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
 			c.Abort()
 			return
 		}
 
 		bearerToken := strings.Split(authHeader, " ")
+		log.Info().Msgf("Token: %s", bearerToken)
 		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			log.Error().Msg("error: Invalid Authorization header format")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
 			c.Abort()
 			return
@@ -123,15 +126,19 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Extract claims for use in authz request
 		tokenString := bearerToken[1]
-		token, err := jwt.Parse(tokenString, nil)
+
+		// Parse token without verification to extract claims
+		token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			log.Error().Err(err).Msg("error: Invalid token format")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
 			c.Abort()
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			log.Error().Msg("error: Invalid claims")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
 			c.Abort()
 			return
@@ -139,24 +146,13 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		issuerURL, ok := claims["iss"].(string)
 		if !ok {
+			log.Error().Msg("error: missing issuer in token")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing issuer in token"})
 			c.Abort()
 			return
 		}
 
 		log.Info().Msgf("Issuer URL: %s", issuerURL)
-
-		// Call AuthZ Service
-		authzEndpoint := issuerURL + "/auth/mapping"
-		reqBody, _ := json.Marshal(claims)
-		authzResp, err := http.Post(authzEndpoint, "application/json", bytes.NewBuffer(reqBody))
-		if err != nil {
-			log.Error().Err(err).Msg("Error calling authZ service")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Authorization service error"})
-			c.Abort()
-			return
-		}
-		defer authzResp.Body.Close()
 
 		log.Info().Msg("User is authorized")
 		c.Next()
@@ -808,6 +804,148 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	}
 }
 
+func HandleHTTPProxyRequest(c *gin.Context) {
+	agentID := c.Param("agent")
+	path := c.Param("path")
+
+	log.Info().Msgf("Path: %s", path)
+
+	// Ensure path starts with /
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	// Add query string if present
+	if c.Request.URL.RawQuery != "" {
+		path += "?" + c.Request.URL.RawQuery
+	}
+
+	var wg sync.WaitGroup
+
+	agentsMutex.RLock()
+	agent, exists := agentConnections[agentID]
+	agentsMutex.RUnlock()
+
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		log.Warn().Msgf("Agent not found: %s", agentID)
+		return
+	}
+
+	// Generate a unique stream ID for this request
+	streamID := uuid.New().String()
+
+	// Create a channel for this request
+	responseChan := make(chan *pb.ProxyResponse, 100)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+
+	agent.mutex.Lock()
+	agent.requestChannels[streamID] = responseChan
+	agent.cancelFuncs[streamID] = cancel
+	agent.contexts[streamID] = ctx
+	agent.mutex.Unlock()
+
+	defer func() {
+		cancel()
+		wg.Wait()
+		agent.mutex.Lock()
+		delete(agent.requestChannels, streamID)
+		delete(agent.cancelFuncs, streamID)
+		agent.mutex.Unlock()
+		close(responseChan)
+	}()
+
+	// Create a ProxyRequest for HTTP
+	proxyReq := &pb.ProxyRequest{
+		StreamId:  streamID,
+		Method:    c.Request.Method,
+		Path:      path,
+		Headers:   make(map[string]string),
+		Body:      nil,
+		ProxyType: "http",
+	}
+
+	// Copy headers
+	for k, v := range c.Request.Header {
+		proxyReq.Headers[k] = strings.Join(v, ",")
+	}
+
+	// Read and set body if present
+	if c.Request.Body != nil {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read request body"})
+			return
+		}
+		proxyReq.Body = body
+	}
+
+	// Send the request through the gRPC stream
+	err := agent.stream.Send(&pb.ServerMessage{
+		Message: &pb.ServerMessage_Proxy{
+			Proxy: proxyReq,
+		},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
+		return
+	}
+
+	// Handle the response stream (same as K8s version)
+	var responseStarted bool
+	for {
+		select {
+		case resp, ok := <-responseChan:
+			if !ok {
+				if !responseStarted {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+				}
+				log.Debug().Msgf("Response channel closed for stream ID: %s", streamID)
+				return
+			}
+			switch resp.Status {
+			case pb.ProxyResponseType_HEADERS:
+				if !responseStarted {
+					responseStarted = true
+					// Set response headers
+					for k, v := range resp.Headers {
+						c.Header(k, v)
+					}
+					c.Status(int(resp.StatusCode))
+				}
+			case pb.ProxyResponseType_DATA:
+				log.Debug().Msgf("Got data chunk from agent")
+				if !responseStarted {
+					responseStarted = true
+				}
+				// Write response body chunk
+				_, err := c.Writer.Write(resp.Body)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to write response body chunk")
+					return
+				}
+			case pb.ProxyResponseType_END:
+				log.Trace().Msg("Proxy response end message")
+				c.Writer.Flush()
+				c.Abort()
+				return
+			case pb.ProxyResponseType_ERROR:
+				log.Trace().Msg("Proxy response error message")
+				if !responseStarted {
+					responseStarted = true
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": string(resp.Body)})
+				return
+			default:
+				log.Warn().Msgf("Unknown message type from stream %s: %T", streamID, resp)
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func setupGRCPServer() {
 	creds, err := ca.SetupCerts()
 	if err != nil {
@@ -843,7 +981,7 @@ func setupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	// r.Use(AuthMiddleware())
+	r.Use(AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -872,6 +1010,11 @@ func setupHTTPServer() {
 	r.Any("api/k8s/:agent/proxy/*path", func(c *gin.Context) {
 		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
 		HandleK8sProxyRequest(c)
+	})
+
+	r.Any("/api/:agent/proxy/*path", func(c *gin.Context) {
+		log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
+		HandleHTTPProxyRequest(c)
 	})
 
 	r.POST("/api/agents", CreateAgentHandler)

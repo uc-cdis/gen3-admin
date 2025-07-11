@@ -90,20 +90,18 @@ const ClusterDashboard = () => {
 
 
 
-  const fetchClustersAndCharts = async () => {
-    if (!accessToken) return;
+  const fetchClustersAndCharts = async (token) => {
+    if (!token) return;
     try {
       setLoading(true);
-      const clustersData = await callGoApi('/agents', 'GET', null, null, accessToken);
+      const clustersData = await callGoApi('/agents', 'GET', null, null, token);
 
       const clustersWithCharts = await Promise.all(
         clustersData.map(async (cluster) => {
           try {
             if (cluster.connected) {
-              const chartsData = await callGoApi(`/agents/${cluster.name}/helm/list`, 'GET', null, null, accessToken);
-
-              const gen3Charts = chartsData  //.filter(chart => chart.name.includes('gen3'))
-
+              const chartsData = await callGoApi(`/agents/${cluster.name}/helm/list`, 'GET', null, null, token);
+              const gen3Charts = chartsData;
               return { ...cluster, charts: gen3Charts };
             } else {
               return { ...cluster, charts: [] };
@@ -125,7 +123,7 @@ const ClusterDashboard = () => {
 
   useEffect(() => {
     console.log('sessionData', sessionData);
-    if (sessionData) {
+    if (sessionData?.accessToken) {
       fetchClustersAndCharts(sessionData.accessToken);
     }
   }, [sessionData]);
@@ -374,7 +372,7 @@ const ClusterDashboard = () => {
               )
             },
 
-            { accessor: 'namespace', render: ({ helm, namespace, environment }) => ( <Text> {helm ? namespace : environment} </Text> ) },
+            { accessor: 'namespace', render: ({ helm, namespace, environment }) => (<Text> {helm ? namespace : environment} </Text>) },
             { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
             { accessor: 'chart' },
             {
@@ -487,9 +485,9 @@ const ClusterDashboard = () => {
               "id": "syncstatuc",
               render: ({ helm, syncStatus }) => (
                 helm ? null :
-                <>
-                {syncStatus}
-                </>
+                  <>
+                    {syncStatus}
+                  </>
               )
             }
           ]}

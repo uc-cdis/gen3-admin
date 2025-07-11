@@ -147,24 +147,24 @@ export function NavBar() {
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
 
-    const fetchClusters = async () => {
-        try {
-            const data = await callGoApi('/agents', 'GET', null, null, accessToken)
-            // Only show clusters that are active
-            setClusters(data.filter(cluster => cluster.connected))
-            setActiveCluster(data.filter(cluster => cluster.connected)[0]?.name)
-        } catch (error) {
-            console.error('Failed to fetch clusters:', error);
-        }
-    };
+    // const fetchClusters = async () => {
+    //     try {
+    //         const data = await callGoApi('/agents', 'GET', null, null, accessToken)
+    //         // Only show clusters that are active
+    //         setClusters(data.filter(cluster => cluster.connected))
+    //         setActiveCluster(data.filter(cluster => cluster.connected)[0]?.name)
+    //     } catch (error) {
+    //         console.error('Failed to fetch clusters:', error);
+    //     }
+    // };
 
-    useEffect(() => {
-        fetchClusters(accessToken).then((data) => {
-            if (data) {
-                setClusters(data);
-            }
-        });
-    }, []);
+    // useEffect(() => {
+    //     fetchClusters(accessToken).then((data) => {
+    //         if (data) {
+    //             setClusters(data);
+    //         }
+    //     });
+    // }, []);
 
     const clusterLinks = clusters.map((link, index) => {
         return (
@@ -189,7 +189,7 @@ export function NavBar() {
                 { label: 'Deployments', link: '/projects', icon: IconChartBar },
                 { label: 'Gen3 Deployment Wizard', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
                 { label: 'Agents', link: `/clusters/`, icon: IconChartBar },
-                // { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
+                { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
                 // { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
                 // { label: 'Databases', link: '/', icon: IconChartBar },
             ],

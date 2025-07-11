@@ -1,297 +1,330 @@
 'use client'
 
-import { useState, useContext, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import cx from 'clsx';
-
-import Image from 'next/image'
-import { Group, Button, Burger, Box, Loader, Menu, UnstyledButton, Text, rem, useMantineTheme, Select } from '@mantine/core';
-import AuthContext from '@/contexts/auth';
-
-import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
-import { EnvSelector } from '@/components/EnvSelector';
-import { useSession, signOut } from "next-auth/react"
-
-import { useGlobalState } from '@/contexts/global';
-
-import {
-    IconLogout,
-    IconHeart,
-    IconStar,
-    IconMessage,
-    IconSettings,
-    IconPlayerPause,
-    IconTrash,
-    IconRefresh,
-    IconSwitchHorizontal,
-    IconChevronDown,
-    IconPlus,
-} from '@tabler/icons-react';
-
-
-import classes from './Header.module.css';
-
-import { callGoApi } from '@/lib/k8s';
-
 import { useRouter, usePathname } from 'next/navigation';
+import { useSession, signOut } from "next-auth/react";
 import Link from 'next/link';
 
+import {
+  Group,
+  Button,
+  Burger,
+  Box,
+  Menu,
+  UnstyledButton,
+  Text,
+  rem,
+  Badge,
+  Select,
+  Combobox,
+  useCombobox,
+  InputBase
+} from '@mantine/core';
+
+import {
+  IconLogout,
+  IconPlus,
+  IconCircleCheck,
+  IconCircleX,
+  IconCircleMinus,
+  IconTrash,
+  IconReplace,
+  IconLoader,
+  IconClock,
+  IconRefresh,
+  IconArrowBackUp,
+  IconChevronDown
+} from '@tabler/icons-react';
+
+import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
+import { useGlobalState } from '@/contexts/global';
+import { callGoApi } from '@/lib/k8s';
+import classes from './Header.module.css';
+
+// Status configuration for environment status icons
+const STATUS_CONFIG = {
+  'deployed': { icon: IconCircleCheck, color: 'var(--mantine-color-green-6)', badgeColor: 'green' },
+  'failed': { icon: IconCircleX, color: 'var(--mantine-color-red-6)', badgeColor: 'red' },
+  'unknown': { icon: IconCircleMinus, color: 'var(--mantine-color-gray-6)', badgeColor: 'gray' },
+  'uninstalled': { icon: IconTrash, color: 'var(--mantine-color-gray-6)', badgeColor: 'gray' },
+  'superseded': { icon: IconReplace, color: 'var(--mantine-color-orange-6)', badgeColor: 'orange' },
+  'uninstalling': { icon: IconLoader, color: 'var(--mantine-color-yellow-6)', badgeColor: 'yellow' },
+  'pending-install': { icon: IconClock, color: 'var(--mantine-color-blue-6)', badgeColor: 'blue' },
+  'pending-upgrade': { icon: IconRefresh, color: 'var(--mantine-color-blue-6)', badgeColor: 'blue' },
+  'pending-rollback': { icon: IconArrowBackUp, color: 'var(--mantine-color-cyan-6)', badgeColor: 'cyan' }
+};
+
+const getStatusIcon = (status) => STATUS_CONFIG[status] || STATUS_CONFIG['unknown'];
 
 export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDesktop }) {
-    const [userMenuOpened, setUserMenuOpened] = useState(false);
+  const [userMenuOpened, setUserMenuOpened] = useState(false);
+  const [clusters, setClusters] = useState([]);
+  const [environments, setEnvironments] = useState([]);
+  const [activeEnvironments, setActiveEnvironments] = useState('');
+  const [clustersLoading, setClustersLoading] = useState(false);
+  const [environmentsLoading, setEnvironmentsLoading] = useState(false);
 
-    // const { user, logout } = useContext(AuthContext)
+  const router = useRouter();
+  const currentPath = usePathname();
+  const { data: sessionData } = useSession();
+  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv } = useGlobalState();
 
-    // const { cluster, setCluster } = useGlobalStore()
-    const router = useRouter();
-    const currentPath = usePathname()
+  const accessToken = sessionData?.accessToken;
 
-    const [clusters, setClusters] = useState([])
-    const [loading, setLoading] = useState(false)
-    const { activeCluster, setActiveCluster } = useGlobalState();
+  // Fetch available clusters
+  const fetchClusters = async () => {
+    if (!accessToken) return;
 
-    const { data: sessionData } = useSession();
-    const accessToken = sessionData?.accessToken;
+    setClustersLoading(true);
+    try {
+      const data = await callGoApi('/agents', 'GET', null, null, accessToken);
+      const connectedClusterNames = data
+        .filter(cluster => cluster.connected)
+        .map(cluster => cluster.name);
 
+      setClusters(connectedClusterNames);
+    } catch (error) {
+      console.error('Failed to fetch clusters:', error);
+      setClusters([]);
+    } finally {
+      setClustersLoading(false);
+    }
+  };
 
-    // next-auth stuff
-    const { data, status } = useSession()
+  // Fetch available environments
+  const fetchEnvironments = async () => {
+    if (!accessToken) return;
 
-    const handleLogout = () => {
-        signOut();
-        // Add any additional logout logic here (e.g., redirect to login page)
-    };
+    setEnvironmentsLoading(true);
+    try {
+      const agentsResponse = await callGoApi('/agents', 'GET', null, null, accessToken);
+      if (!agentsResponse?.length) {
+        setEnvironments([]);
+        return;
+      }
 
-    const handleClusterChange = (newCluster) => {
-        setActiveCluster(newCluster);
+      const connectedAgents = agentsResponse.filter(cluster => cluster.connected);
+      const environmentsData = await Promise.all(
+        connectedAgents.map(async (agent) => {
+          try {
+            const chartsResponse = await callGoApi(
+              `/agents/${agent.name}/helm/list`,
+              'GET',
+              null,
+              null,
+              accessToken
+            );
 
-        // Check if the current path matches the pattern
+            const filtered = chartsResponse.filter(chart =>
+              chart.chart.toLowerCase().includes("gen3") ||
+              chart.name.toLowerCase().includes("gen3")
+            );
 
-        console.log(currentPath)
-        // Split the path into segments
-        const pathSegments = currentPath.split('/');
+            return filtered?.map(chart => ({
+              value: `${agent.name}/${chart.namespace}`,
+              label: `${agent.name}/${chart.name}`,
+              status: chart.status || 'unknown',
+              namespace: chart.namespace,
+            })) || [];
+          } catch (err) {
+            console.error(`Error fetching charts for agent ${agent.name}:`, err);
+            return [];
+          }
+        })
+      );
 
-        // Assuming the cluster is the third segment in the path (e.g., `/cluster/old-cluster/something/else/here`)
-        const clusterIndex = 2;
-        const currentCluster = pathSegments[clusterIndex];
+      setEnvironments(environmentsData.flat());
+    } catch (err) {
+      console.error("Error fetching environments:", err);
+      setEnvironments([]);
+    } finally {
+      setEnvironmentsLoading(false);
+    }
+  };
 
+  // Handle cluster change and navigation
+  const handleClusterChange = (newCluster) => {
+    setActiveCluster(newCluster);
 
-        if (currentCluster !== newCluster && currentPath.includes('cluster')) {
-            // Construct the new path
-            const newPath = currentPath.replace(currentCluster, newCluster);
-            router.push(newPath);
-        }
-    };
+    const pathSegments = currentPath.split('/');
+    let newPath;
 
+    if (activeEnvironments) {
+      const [, namespace] = activeEnvironments.split('/');
+      newPath = `/environments/${newCluster}/${namespace}`;
+    } else if (currentPath.includes('environments')) {
+      const environmentsIndex = pathSegments.indexOf('environments');
+      const namespace = pathSegments[environmentsIndex + 2] || 'default';
+      newPath = `/environments/${newCluster}/${namespace}`;
+    } else {
+      newPath = `/environments/${newCluster}/default`;
+    }
 
-    const fetchClusters = async () => {
-        setLoading(true)
-        try {
-            const data = await callGoApi('/agents', 'GET', null, null, accessToken)
-            // Only show clusters that are active
-            // setClusters(data.filter(cluster => cluster.connected))
-            const connectedClusterNames = data
-                .filter(cluster => cluster.connected)
-                .map(cluster => cluster.name);
+    router.push(newPath);
+  };
 
-            console.log(connectedClusterNames);
-            setClusters(connectedClusterNames)
-            setLoading(false)
-        } catch (error) {
-            console.error('Failed to fetch clusters:', error);
-            setLoading(false)
-        }
-    };
+  // Handle environment change and navigation
+  const handleEnvironmentChange = (value) => {
+    setActiveEnvironments(value);
+    setActiveGlobalEnv(value);
 
-    useEffect(() => {
-        fetchClusters(accessToken).then((data) => {
-            if (data) {
-                setClusters(data);
-            } else {
-                setActiveCluster(null);
-            }
-        });
-    }, []);
+    const [cluster, namespace] = value.split('/');
+    const newPath = `/environments/${cluster}/${namespace}`;
+    router.push(newPath);
 
+    if (cluster !== activeCluster) {
+      setActiveCluster(cluster);
+    }
+  };
 
-    const menu = (
-        <Menu
-            width={200}
-            position="bottom"
-            transitionProps={{ transition: 'pop-top-left' }}
-            onClose={() => setUserMenuOpened(false)}
-            onOpen={() => setUserMenuOpened(true)}
-            withinPortal
-        >
+  // Handle logout
+  const handleLogout = () => {
+    signOut();
+  };
 
-            <Menu.Target>
-                <UnstyledButton
-                    className={cx(classes.user, { [classes.userActive]: userMenuOpened })}
-                >
-                    <Group gap={7}>
-                        {/* <Avatar src={user.image} alt={user.name} radius="xl" size={20} /> */}
-                        <Text fw={500} size="sm" lh={1} mr={3}>
-                            {data?.user?.email}
-                        </Text>
-                        <IconChevronDown style={{ width: rem(12), height: rem(12) }} stroke={1.5} />
-                    </Group>
-                </UnstyledButton>
-            </Menu.Target>
-            <Menu.Dropdown>
-                {/* <Menu.Item
-                    leftSection={
-                        <IconHeart
-                            style={{ width: rem(16), height: rem(16) }}
-                            color={theme.colors.red[6]}
-                            stroke={1.5}
-                        />
-                    }
-                >
-                    Liked posts
-                </Menu.Item>
-                <Menu.Item
-                    leftSection={
-                        <IconStar
-                            style={{ width: rem(16), height: rem(16) }}
-                            color={theme.colors.yellow[6]}
-                            stroke={1.5}
-                        />
-                    }
-                >
-                    Saved posts
-                </Menu.Item> */}
-                {/* <Menu.Item
-                    leftSection={
-                        <IconMessage
-                            style={{ width: rem(16), height: rem(16) }}
-                            color={theme.colors.blue[6]}
-                            stroke={1.5}
-                        />
-                    }
-                >
-                    Your comments
-                </Menu.Item> */}
+  // Load initial data and sync with global state
+  useEffect(() => {
+    fetchClusters();
+    fetchEnvironments();
 
-                {/* <Menu.Label>Settings</Menu.Label>
-            <Menu.Item
-                leftSection={
-                    <IconSettings style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
-                }
-            >
-                Account settings
-            </Menu.Item>
-            <Menu.Item
-                leftSection={
-                    <IconSwitchHorizontal style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
-                }
-            >
-                Change account
-            </Menu.Item> */}
-                <Menu.Item
-                    leftSection={
-                        <IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
-                    }
-                    onClick={handleLogout}
-                >
-                    Logout
-                </Menu.Item>
+    // Sync local state with global state from localStorage
+    if (activeGlobalEnv) {
+      setActiveEnvironments(activeGlobalEnv);
+    }
+  }, [accessToken, activeGlobalEnv]);
 
-                {/* <Menu.Divider />
-    
-            <Menu.Label>Danger zone</Menu.Label>
-            <Menu.Item
-                leftSection={
-                    <IconPlayerPause style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
-                }
-            >
-                Pause subscription
-            </Menu.Item>
-            <Menu.Item
-                color="red"
-                leftSection={<IconTrash style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
-            >
-                Delete account
-            </Menu.Item> */}
-            </Menu.Dropdown>
+  // Environment selector component
+  const EnvironmentSelect = () => {
+    const combobox = useCombobox({
+      onDropdownClose: () => combobox.resetSelectedOption(),
+    });
 
-        </Menu>
-    )
+    const options = environments.map((item) => {
+      const statusConfig = getStatusIcon(item.status);
+      const StatusIcon = statusConfig.icon;
+
+      return (
+        <Combobox.Option value={item.value} key={item.value}>
+          <Group justify="space-between" wrap="nowrap" w="100%">
+            <div style={{ fontFamily: 'monospace' }}>{item.label}</div>
+            <Group gap="xs" wrap="nowrap">
+              <Badge size="sm" variant="light" color="gray" radius="xl">
+                {item.namespace}
+              </Badge>
+              <StatusIcon
+                style={{ width: rem(16), height: rem(16) }}
+                color={statusConfig.color}
+              />
+            </Group>
+          </Group>
+        </Combobox.Option>
+      );
+    });
 
     return (
-        <>
-            <Group
-                h="100%"
-                px="md"
-                justify="space-between"
-                align="center"
-                grow preventGrowOverflow={false} wrap="nowrap"
-            // bg="var(--mantine-color-red-light)"
-            >
-                {/* <Group
-                    justify="space-between" align="center" wrap="nowrap" preventGrowOverflow={false}
-                    bg="var(--mantine-color-yellow-light)"
-                    w={20}
-                  >
-                      
-                  </Group> */}
+      <Combobox
+        store={combobox}
+        onOptionSubmit={handleEnvironmentChange}
+        style={{ flex: 1, minWidth: 120 }}
+      >
+        <Combobox.Target>
+          <InputBase
+            component="button"
+            type="button"
+            pointer
+            rightSection={<IconChevronDown style={{ width: rem(18), height: rem(18) }} stroke={1.5} />}
+            onClick={() => combobox.toggleDropdown()}
+            rightSectionPointerEvents="none"
+            style={{ fontFamily: 'monospace' }}
+          >
+            {activeEnvironments || activeGlobalEnv || 'Select Environment'}
+          </InputBase>
+        </Combobox.Target>
+        <Combobox.Dropdown>
+          <Combobox.Options>{options}</Combobox.Options>
+        </Combobox.Dropdown>
+      </Combobox>
+    );
+  };
 
-                <Group
-                    // bg="var(--mantine-color-green-light)"
-                    wrap="nowrap"
-                    gap="xs"
-                    align="center"
-                >
-                    <Burger
-                        opened={mobileOpened}
-                        onClick={toggleMobile}
-                        hiddenFrom="sm"
-                        size="sm"
-                    />
-                    <Burger
-                        opened={desktopOpened}
-                        onClick={toggleDesktop}
-                        visibleFrom="sm"
-                        size="sm"
-                    />
-                    <Group
-                        wrap="wrap"
-                        gap="xs"
-                        style={{ flexGrow: 1 }}
-                    >
-                        {loading ? <Loader size="sm" /> : null}
-                        <Select
-                            placeholder="Select Cluster"
-                            data={clusters}
-                            value={activeCluster}
-                            allowDeselect={false}
-                            searchable
-                            onChange={handleClusterChange}
-                            miw={120}
-                            flex={1}
-                        />
-                        <Button
-                            onClick={fetchClusters}
-                        >
-                            <IconRefresh />
-                        </Button>
-                        <Button
-                            component={Link}
-                            href="/clusters">
-                            <IconPlus />
-                        </Button>
-                    </Group>
-                </Group>
-                <Box visibleFrom='sm'>
-                    <Group
-                        justify="flex-end"
-                    >
-                        <ColorSchemeToggle />
-                        {/* <EnvSelector /> */}
+  // User menu component
+  const UserMenu = () => (
+    <Menu
+      width={200}
+      position="bottom"
+      transitionProps={{ transition: 'pop-top-left' }}
+      onClose={() => setUserMenuOpened(false)}
+      onOpen={() => setUserMenuOpened(true)}
+      withinPortal
+    >
+      <Menu.Target>
+        <UnstyledButton
+          className={cx(classes.user, { [classes.userActive]: userMenuOpened })}
+        >
+          <Group gap={7}>
+            <Text fw={500} size="sm" lh={1} mr={3}>
+              {sessionData?.user?.email}
+            </Text>
+            <IconChevronDown style={{ width: rem(12), height: rem(12) }} stroke={1.5} />
+          </Group>
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Item
+          leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
+          onClick={handleLogout}
+        >
+          Logout
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
 
-                        {menu}
+  return (
+    <Group
+      h="100%"
+      px="md"
+      justify="space-between"
+      align="center"
+      grow
+      preventGrowOverflow={false}
+      wrap="nowrap"
+    >
+      {/* Left side: Burger menus and selectors */}
+      <Group wrap="nowrap" gap="xs" align="center">
+        <Burger
+          opened={mobileOpened}
+          onClick={toggleMobile}
+          hiddenFrom="sm"
+          size="sm"
+        />
+        <Burger
+          opened={desktopOpened}
+          onClick={toggleDesktop}
+          visibleFrom="sm"
+          size="sm"
+        />
 
-                    </Group>
-                </Box>
-            </Group>
-        </>
-    )
+        {/* Environment selector and refresh button */}
+        <Group wrap="wrap" gap="xs" style={{ flexGrow: 1 }}>
+          <EnvironmentSelect />
+          <Button
+            onClick={fetchEnvironments}
+            loading={environmentsLoading}
+          >
+            <IconRefresh />
+          </Button>
+        </Group>
+      </Group>
+
+      {/* Right side: Theme toggle and user menu */}
+      <Box visibleFrom='sm'>
+        <Group justify="flex-end">
+          <ColorSchemeToggle />
+          <UserMenu />
+        </Group>
+      </Box>
+    </Group>
+  );
 }
