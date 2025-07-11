@@ -57,7 +57,7 @@ const ClusterDashboard = () => {
   const deleteValidate = inputClusterName === deleteCluster && inputReleaseName === deleteRelease && inputNamespace === deleteNamespace;
 
   const { data: sessionData } = useSession();
-  const accessToken = sessionData;
+  const accessToken = sessionData?.accessToken || "fake";
 
   async function triggerArgoCDAppSync(appName, namespace, clusterName, accessToken) {
     const endpoint = `/apis/argoproj.io/v1alpha1/namespaces/${namespace}/applications/${appName}`;
@@ -90,17 +90,17 @@ const ClusterDashboard = () => {
 
 
 
-  const fetchClustersAndCharts = async (token) => {
-    if (!token) return;
+  const fetchClustersAndCharts = async () => {
+    if (!accessToken) return;
     try {
       setLoading(true);
-      const clustersData = await callGoApi('/agents', 'GET', null, null, token);
+      const clustersData = await callGoApi('/agents', 'GET', null, null, accessToken);
 
       const clustersWithCharts = await Promise.all(
         clustersData.map(async (cluster) => {
           try {
             if (cluster.connected) {
-              const chartsData = await callGoApi(`/agents/${cluster.name}/helm/list`, 'GET', null, null, token);
+              const chartsData = await callGoApi(`/agents/${cluster.name}/helm/list`, 'GET', null, null, accessToken);
               const gen3Charts = chartsData;
               return { ...cluster, charts: gen3Charts };
             } else {
@@ -120,6 +120,7 @@ const ClusterDashboard = () => {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     console.log('sessionData', sessionData);
@@ -197,18 +198,18 @@ const ClusterDashboard = () => {
     console.log("viewing values for", name, namespace)
     let values;
 
+    setCurrentValues()
+    open()
     // call go api to get the values
     // then open a modal with the values
     if (helm) {
       values = await callGoApi(`/agent/${clusterName}/helm/values/${name}/${namespace}`, 'GET', null, null, accessToken);
-      console.log("values", values)
     } else {
       const endpoint = `/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/${name}`;
       values = await callK8sApi(endpoint, 'GET', null, null, clusterName, accessToken);
     }
     setCurrentValues(values)
 
-    open()
 
   }
 
@@ -325,7 +326,7 @@ const ClusterDashboard = () => {
               )}
 
               {/* Sync app button for ArgoCD-managed deployments */}
-              {!selectedChart.helm && selectedChart.syncStatus === 'OutOfSync' && (
+              {!selectedChart.helm && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -394,7 +395,7 @@ const ClusterDashboard = () => {
                   variant="outline"
                   size="sm"
                   color="blue"
-                  onClick={() => viewValues(name, namespace, clusterName, helm)}
+                  onClick={() => viewValues(name, namespace, clusterName, helm, accessToken)}
                 >
                   Edit
                 </Button>

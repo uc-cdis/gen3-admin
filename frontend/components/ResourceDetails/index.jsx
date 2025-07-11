@@ -14,6 +14,7 @@ import Events from './Events';
 import { IconCheck, IconRefresh } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
+import { useSession } from 'next-auth/react';
 
 export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions, columnConfig }) {
     const { height, width } = useViewportSize();
@@ -22,6 +23,9 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
 
 
     const { colorScheme, setColorScheme } = useMantineColorScheme();
@@ -33,7 +37,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
         setError(null);
 
         try {
-            const response = await callK8sApi(url, 'GET', null, null, cluster, null);
+            const response = await callK8sApi(url, 'GET', null, null, cluster, accessToken);
             setResourceData(response);
             return response;
         } catch (error) {
@@ -136,24 +140,26 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                             </Tabs.Panel>
                             <Tabs.Panel value="logs">
                                 {/* && resourceData?.status.phase == "Running" */}
-                                {type === "Pod"  ? <Logs
+                                {type === "Pod" ? <Logs
                                     namespace={namespace}
                                     cluster={cluster}
+                                    accessToken={accessToken}
                                     pod={resource}
                                     // containers={resourceData?.spec.containers.map(container => container.name) }
                                     containers={[
                                         ...(resourceData?.spec?.containers || []).map(container => container.name),
                                         ...(resourceData?.spec?.initContainers || []).map(container => container.name),
-                                      ]}
+                                    ]}
                                 /> : null
                                 }
                             </Tabs.Panel>
                             <Tabs.Panel value="events">
                                 <Events
-                                  resource={resource}
-                                  type={type}
-                                  namespace={namespace}
-                                  cluster={cluster}
+                                    resource={resource}
+                                    type={type}
+                                    accessToken={accessToken}
+                                    namespace={namespace}
+                                    cluster={cluster}
                                 />
                             </Tabs.Panel>
                             <Tabs.Panel value="metrics">

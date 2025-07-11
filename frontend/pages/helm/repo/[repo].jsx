@@ -7,6 +7,9 @@ import { useState, useEffect } from 'react';
 import { Container, Loader, Title, SimpleGrid, Text, Group, Card, Accordion, Button, Divider } from '@mantine/core';
 
 import { IconMedicalCrossFilled } from '@tabler/icons-react';
+
+import { useSession } from 'next-auth/react';
+
 export default function Repo() {
 
     const [latestCharts, setLatestCharts] = useState([]);
@@ -17,12 +20,15 @@ export default function Repo() {
 
     const repo = useParams()?.repo;
 
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
+
 
     const fetchCharts = async () => {
         setLoading(true);
         console.log("fetching charts for repo", repo)
         try {
-            const data = await callGoApi(`/helm/charts/${repo}`, 'GET', null, null, null);
+            const data = await callGoApi(`/helm/charts/${repo}`, 'GET', null, null, accessToken);
 
             // Get all unique chart names
             const uniqueChartNames = [...new Set(data.map(chart => chart.name))];
@@ -83,45 +89,45 @@ export default function Repo() {
                 {error && <Text c="red">{error.message}</Text>}
 
 
-                {loading ? <Container > <Loader type="bars" /> </Container>:
-                (<SimpleGrid cols={3} spacing="lg">
-                    {latestCharts.map((chart) => (
-                        <Card key={chart.name} shadow="sm" p="lg" radius="md" withBorder>
-                            <Group position="apart" style={{ marginBottom: 5 }}>
-                                <Text weight={500}>{chart.name}</Text>
-                                <Text size="xs" color="dimmed">Latest Version: {chart.version}</Text>
-                            </Group>
+                {loading ? <Container > <Loader type="bars" /> </Container> :
+                    (<SimpleGrid cols={3} spacing="lg">
+                        {latestCharts.map((chart) => (
+                            <Card key={chart.name} shadow="sm" p="lg" radius="md" withBorder>
+                                <Group position="apart" style={{ marginBottom: 5 }}>
+                                    <Text weight={500}>{chart.name}</Text>
+                                    <Text size="xs" color="dimmed">Latest Version: {chart.version}</Text>
+                                </Group>
 
-                            <Group position="apart">
-                                {chart.icon ?
-                                    <img src={chart.icon} height={50} radius="md" />
-                                    : <IconMedicalCrossFilled style={{ height: 50 }} />}
-                                <Text size="sm" color="dimmed" style={{ marginBottom: 10 }}>
-                                    {chart.description}
-                                </Text>
-                            </Group>
+                                <Group position="apart">
+                                    {chart.icon ?
+                                        <img src={chart.icon} height={50} radius="md" />
+                                        : <IconMedicalCrossFilled style={{ height: 50 }} />}
+                                    <Text size="sm" color="dimmed" style={{ marginBottom: 10 }}>
+                                        {chart.description}
+                                    </Text>
+                                </Group>
 
-                            <Divider my="sm" />
+                                <Divider my="sm" />
 
-                            <Group position="apart">
-                                <Text size="xs" color="dimmed">App Version: {chart.appVersion}</Text>
-                            </Group>
+                                <Group position="apart">
+                                    <Text size="xs" color="dimmed">App Version: {chart.appVersion}</Text>
+                                </Group>
 
-                            <Group position="apart">
-                                <Text size="xs" color="dimmed">Release Date: {chart.releaseDate}</Text>
-                                <Button variant="light" size="xs" color="blue">
-                                    More Details
-                                </Button>
-                                <Button variant="light" size="xs" color="green">
-                                    Install
-                                </Button>
-                            </Group>
-                            {/* Render accordion for older versions */}
-                            <OlderVersionsAccordion name={chart.name} versions={olderCharts.find(oc => oc.name === chart.name)?.versions || []} />
-                        </Card>
+                                <Group position="apart">
+                                    <Text size="xs" color="dimmed">Release Date: {chart.releaseDate}</Text>
+                                    <Button variant="light" size="xs" color="blue">
+                                        More Details
+                                    </Button>
+                                    <Button variant="light" size="xs" color="green">
+                                        Install
+                                    </Button>
+                                </Group>
+                                {/* Render accordion for older versions */}
+                                <OlderVersionsAccordion name={chart.name} versions={olderCharts.find(oc => oc.name === chart.name)?.versions || []} />
+                            </Card>
 
-                    ))}
-                </SimpleGrid>)
+                        ))}
+                    </SimpleGrid>)
                 }
 
             </div>

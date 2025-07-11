@@ -32,12 +32,12 @@ export default function EnvironmentDashboardComp({
   env,
   namespace,
   status = "healthy",
+  hostname,
   test,
 }) {
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
-  console.log("++++++++++++++HITTTT",env, namespace)
-  
+
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
   const [memoryData, setMemoryData] = useState([]);
@@ -92,20 +92,20 @@ export default function EnvironmentDashboardComp({
   // Data processing functions
   const processNodesData = (nodesResponse, metricsMap = {}) => {
     if (!nodesResponse?.items) return [];
-    
+
     return nodesResponse.items.map(node => {
       const conditions = node.status?.conditions || [];
       const readyCondition = conditions.find(c => c.type === 'Ready');
       const nodeMetrics = metricsMap[node.metadata.name];
-      
+
       const cpuCapacity = parseCpu(node.status?.capacity?.cpu || '0');
       const memoryCapacity = parseMemory(node.status?.capacity?.memory || '0');
       const memoryInMB = memoryCapacity / (1024 * 1024);
 
-      const cpuUsage = nodeMetrics ? 
+      const cpuUsage = nodeMetrics ?
         Math.round((parseCpu(nodeMetrics.cpu) / cpuCapacity * 100)) : 0;
-      
-      const memoryUsage = nodeMetrics ? 
+
+      const memoryUsage = nodeMetrics ?
         Math.round((parseMemory(nodeMetrics.memory) / memoryCapacity * 100)) : 0;
 
       return {
@@ -127,7 +127,7 @@ export default function EnvironmentDashboardComp({
 
   const processNamespaceData = (namespaceResponse, podsResponse) => {
     if (!namespaceResponse?.items) return [];
-    
+
     // Count pods per namespace and calculate resource usage
     const namespaceMetrics = {};
     if (podsResponse?.items) {
@@ -141,7 +141,7 @@ export default function EnvironmentDashboardComp({
           };
         }
         namespaceMetrics[ns].podCount++;
-        
+
         // Calculate resource requests
         pod.spec?.containers?.forEach(container => {
           namespaceMetrics[ns].cpuRequest += parseCpu(container.resources?.requests?.cpu || '0');
@@ -149,7 +149,7 @@ export default function EnvironmentDashboardComp({
         });
       });
     }
-    
+
     return namespaceResponse.items.map(namespace => {
       const metrics = namespaceMetrics[namespace.metadata.name] || {};
       return {
@@ -165,12 +165,12 @@ export default function EnvironmentDashboardComp({
 
   const processPodData = (podsResponse) => {
     if (!podsResponse?.items) return [];
-    
+
     return podsResponse.items.map(pod => {
       const conditions = pod.status?.conditions || [];
       const readyCondition = conditions.find(c => c.type === 'Ready');
       const containerStatuses = pod.status?.containerStatuses || [];
-      
+
       // Calculate resource requests
       let cpuRequest = 0;
       let memoryRequest = 0;
@@ -182,7 +182,7 @@ export default function EnvironmentDashboardComp({
       // Determine pod status
       let podStatus = pod.status?.phase || 'Unknown';
       if (podStatus === 'Pending') {
-        const containerWaiting = containerStatuses.find(cs => 
+        const containerWaiting = containerStatuses.find(cs =>
           cs.state?.waiting?.reason
         );
         if (containerWaiting) {
@@ -259,8 +259,8 @@ export default function EnvironmentDashboardComp({
     // Calculate pod status counts
     if (podsResponse?.items) {
       totalPods = podsResponse.items.length;
-      runningPods = podsResponse.items.filter(pod => 
-        pod.status?.phase === 'Running' && 
+      runningPods = podsResponse.items.filter(pod =>
+        pod.status?.phase === 'Running' &&
         pod.status?.containerStatuses?.every(cs => cs.ready)
       ).length;
     }
@@ -316,17 +316,17 @@ export default function EnvironmentDashboardComp({
         // Update charts with current metrics
         const now = new Date();
         setCpuData(prev => {
-          const newData = [...prev, { 
-            time: now.toLocaleTimeString(), 
-            usage: processedMetrics.cluster.cpuPercentage 
+          const newData = [...prev, {
+            time: now.toLocaleTimeString(),
+            usage: processedMetrics.cluster.cpuPercentage
           }];
           return newData.slice(-24);
         });
-        
+
         setMemoryData(prev => {
-          const newData = [...prev, { 
-            time: now.toLocaleTimeString(), 
-            usage: processedMetrics.cluster.memoryPercentage 
+          const newData = [...prev, {
+            time: now.toLocaleTimeString(),
+            usage: processedMetrics.cluster.memoryPercentage
           }];
           return newData.slice(-24);
         });
@@ -352,24 +352,24 @@ export default function EnvironmentDashboardComp({
   const dynamicMetrics = [
     {
       title: "Nodes",
-      value: metricsData ? 
-        `${nodeStatusData.filter(n => n.status === 'Ready').length}/${nodeStatusData.length}` : 
+      value: metricsData ?
+        `${nodeStatusData.filter(n => n.status === 'Ready').length}/${nodeStatusData.length}` :
         "0/0",
-      subtitle: metricsData ? 
-        `${nodeStatusData.filter(n => n.status !== 'Ready').length} not ready` : 
+      subtitle: metricsData ?
+        `${nodeStatusData.filter(n => n.status !== 'Ready').length} not ready` :
         "0 not ready",
-      progress: metricsData ? 
-        Math.round((nodeStatusData.filter(n => n.status === 'Ready').length / nodeStatusData.length) * 100) : 
+      progress: metricsData ?
+        Math.round((nodeStatusData.filter(n => n.status === 'Ready').length / nodeStatusData.length) * 100) :
         0,
       icon: IconServer,
     },
     {
       title: "Pods",
-      value: metricsData ? 
-        `${metricsData.cluster.runningPods}/${metricsData.cluster.totalPods}` : 
+      value: metricsData ?
+        `${metricsData.cluster.runningPods}/${metricsData.cluster.totalPods}` :
         "0/0",
-      subtitle: metricsData ? 
-        `${metricsData.cluster.totalPods - metricsData.cluster.runningPods} not running` : 
+      subtitle: metricsData ?
+        `${metricsData.cluster.totalPods - metricsData.cluster.runningPods} not running` :
         "0 not running",
       progress: metricsData ? metricsData.cluster.podPercentage : 0,
       icon: IconDatabase,
@@ -377,8 +377,8 @@ export default function EnvironmentDashboardComp({
     {
       title: "CPU Usage",
       value: metricsData ? `${metricsData.cluster.cpuPercentage}%` : "0%",
-      subtitle: metricsData ? 
-        `${metricsData.cluster.usedCpu} of ${metricsData.cluster.totalCpu}` : 
+      subtitle: metricsData ?
+        `${metricsData.cluster.usedCpu} of ${metricsData.cluster.totalCpu}` :
         "0 of 0 cores",
       progress: metricsData ? metricsData.cluster.cpuPercentage : 0,
       icon: IconCpu,
@@ -386,8 +386,8 @@ export default function EnvironmentDashboardComp({
     {
       title: "Memory Usage",
       value: metricsData ? `${metricsData.cluster.memoryPercentage}%` : "0%",
-      subtitle: metricsData ? 
-        `${metricsData.cluster.usedMemory} of ${metricsData.cluster.totalMemory}` : 
+      subtitle: metricsData ?
+        `${metricsData.cluster.usedMemory} of ${metricsData.cluster.totalMemory}` :
         "0 of 0 GB",
       progress: metricsData ? metricsData.cluster.memoryPercentage : 0,
       icon: IconDeviceSdCard,
@@ -397,10 +397,10 @@ export default function EnvironmentDashboardComp({
   return (
     <Container size="xl" mt="xl" pos="relative">
       <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} />
-      
+
       {/* Header Section */}
       <Group justify="space-between" mb="md">
-        <Title order={1}>{env} Dashboard</Title>
+        <Title order={1}>{hostname || namespace} Dashboard</Title>
         <Group>
           <Button
             onClick={fetchDashboardData}
@@ -472,8 +472,8 @@ export default function EnvironmentDashboardComp({
             curveType="monotone"
             withYAxis={false}
             withGradient
-            referenceLines={metricsData ? 
-              [{ y: metricsData.cluster.cpuPercentage, label: `Current (${metricsData.cluster.cpuPercentage}%)`, color: "red" }] : 
+            referenceLines={metricsData ?
+              [{ y: metricsData.cluster.cpuPercentage, label: `Current (${metricsData.cluster.cpuPercentage}%)`, color: "red" }] :
               []}
           />
         </Card>
@@ -488,8 +488,8 @@ export default function EnvironmentDashboardComp({
             series={[{ name: "usage", color: "green" }]}
             curveType="linear"
             withYAxis={false}
-            referenceLines={metricsData ? 
-              [{ y: metricsData.cluster.memoryPercentage, label: `Current (${metricsData.cluster.memoryPercentage}%)`, color: "red" }] : 
+            referenceLines={metricsData ?
+              [{ y: metricsData.cluster.memoryPercentage, label: `Current (${metricsData.cluster.memoryPercentage}%)`, color: "red" }] :
               []}
           />
         </Card>
@@ -544,8 +544,8 @@ export default function EnvironmentDashboardComp({
                         <Group>
                           <Text size="xs">{node.memory}%</Text>
                           <Text size="xs" style={{fontFamily:'monospace'}}>
-                            {node.rawMetrics ? 
-                              `${formatMemoryUsage(node.rawMetrics.memory)} / ${node.capacity.memory}` : 
+                            {node.rawMetrics ?
+                              `${formatMemoryUsage(node.rawMetrics.memory)} / ${node.capacity.memory}` :
                               node.capacity.memory}
                           </Text>
                         </Group>

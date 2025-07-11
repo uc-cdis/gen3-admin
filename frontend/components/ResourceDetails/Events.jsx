@@ -4,7 +4,7 @@ import { IconAlertCircle } from "@tabler/icons-react";
 import { DataTable } from "mantine-datatable";
 import { useEffect, useState } from "react";
 
-export default function Events({ resource, namespace, type, cluster }) {
+export default function Events({ resource, namespace, type, cluster, accessToken }) {
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -19,7 +19,7 @@ export default function Events({ resource, namespace, type, cluster }) {
         const url = `/api/v1/namespaces/${namespace}/events?fieldSelector=involvedObject.name=${resource}`
 
         try {
-            const response = await callK8sApi(url, 'GET', null, null, cluster, null);
+            const response = await callK8sApi(url, 'GET', null, null, cluster, accessToken);
             return response;
         } catch (error) {
             console.error('Failed to fetch resource:', error);
@@ -154,4 +154,3 @@ export default function Events({ resource, namespace, type, cluster }) {
         </div>
     );
 }
-
