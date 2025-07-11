@@ -40,7 +40,9 @@ import {
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
 import { useGlobalState } from '@/contexts/global';
 import { callGoApi } from '@/lib/k8s';
+import callK8sApi from '@/lib/k8s'
 import classes from './Header.module.css';
+import { filter } from 'lodash';
 
 // Status configuration for environment status icons
 const STATUS_CONFIG = {
@@ -121,12 +123,51 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
               chart.name.toLowerCase().includes("gen3")
             );
 
-            return filtered?.map(chart => ({
-              value: `${agent.name}/${chart.namespace}`,
-              label: `${agent.name}/${chart.name}`,
-              status: chart.status || 'unknown',
-              namespace: chart.namespace,
-            })) || [];
+            // If no gen3 charts found, return the connected agent instead
+            if (filtered.length === 0) {
+              return [{
+                value: agent.name,
+                label: agent.name,
+                status: agent.connected ? 'connected' : 'disconnected',
+                namespace: 'default', // or whatever default namespace you want
+              }];
+            }
+
+            // For gen3 charts, fetch hostname from manifest-global configmap
+            const chartsWithHostnames = await Promise.all(
+              filtered.map(async (chart) => {
+                try {
+                  const configMapResponse = await callK8sApi(
+                    `/api/v1/namespaces/${chart.namespace}/configmaps/manifest-global`,
+                    'GET',
+                    null,
+                    null,
+                    agent.name,
+                    accessToken
+                  );
+
+                  const hostname = configMapResponse?.data?.hostname || chart.name;
+
+                  return {
+                    value: `${agent.name}/${chart.namespace}`,
+                    label: `${agent.name}/${hostname}`,
+                    status: chart.status || 'unknown',
+                    namespace: chart.namespace,
+                  };
+                } catch (err) {
+                  console.error(`Error fetching configmap for ${agent.name}/${chart.namespace}:`, err);
+                  // Fallback to chart name if configmap fetch fails
+                  return {
+                    value: `${agent.name}/${chart.namespace}`,
+                    label: `${agent.name}/${chart.name}`,
+                    status: chart.status || 'unknown',
+                    namespace: chart.namespace,
+                  };
+                }
+              })
+            );
+
+            return chartsWithHostnames;
           } catch (err) {
             console.error(`Error fetching charts for agent ${agent.name}:`, err);
             return [];

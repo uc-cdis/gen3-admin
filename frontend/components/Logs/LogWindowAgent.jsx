@@ -9,6 +9,8 @@ import stripAnsi from 'strip-ansi';
 
 import { useViewportSize } from '@mantine/hooks';
 
+import { useSession } from "next-auth/react";
+
 export default function LogWindow({ namespace, pod, cluster, containers }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -19,6 +21,10 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     const editorRef = useRef(null);
 
     const { height, width } = useViewportSize();
+
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
+
 
     // Set initial container value when containers prop changes
     useEffect(() => {
@@ -39,7 +45,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
         }
         const endpoint = `/api/v1/namespaces/${namespace}/pods/${pod}/log?container=${container}`;
         setLoading(true);
-        callK8sApi(endpoint, "GET", null, null, cluster, null, "text").then(
+        callK8sApi(endpoint, "GET", null, null, cluster, accessToken, "text").then(
             (data) => {
                 if (data) {
                     data = stripAnsi(data);

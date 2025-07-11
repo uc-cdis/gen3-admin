@@ -1,0 +1,54 @@
+production: true
+proxy: edge
+
+
+
+ingress:
+  enabled: true
+  ingressClassName: "alb"
+  hostname: kc.planx-pla.net
+  path: /*
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:707767160287:certificate/520ede2f-fc82-4bb9-af96-4b4af7deabbd
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+adminIngress:
+  enabled: true
+  ingressClassName: "alb"
+  hostname: csoc-kc.planx-pla.net
+  path: /*
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:707767160287:certificate/520ede2f-fc82-4bb9-af96-4b4af7deabbd
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+keycloakConfigCli:
+  enabled: true
+  configuration:
+    master.json: |
+      {
+        "realm" : "master",
+        "attributes": {
+          "frontendUrl": "csoc-kc.planx-pla.net"
+        }
+      }
+
+
+rbac:
+  create: true
+extraEnvVars:
+  - name: KC_HEALTH_ENABLED
+    value: "true"
+  - name: KEYCLOAK_PRODUCTION
+    value: "true"
+  - name: KEYCLOAK_PROXY
+    value: "edge"
+auth:
+  createAdminUser: true
+  adminUser: admin
+  # adminPassword:
+serviceMonitor:
+  enabled: true

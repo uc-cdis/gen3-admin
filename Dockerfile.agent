@@ -15,6 +15,12 @@ COPY --from=go-builder /app/gen3-agent /app/gen3-agent
 
 ENV PATH=/app/gen3-agent:$PATH
 
-WORKDIR /app/gen3-agent 
+WORKDIR /app/gen3-agent
+
+# Install tar and then Helm (for RHEL/CentOS)
+RUN yum install -y tar && \
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+
 
 CMD ["agent"]

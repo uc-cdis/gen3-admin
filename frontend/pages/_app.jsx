@@ -7,7 +7,7 @@ import { useDisclosure } from '@mantine/hooks';
 // import { NavBar } from '../components/NavBar/NavBar';
 // import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
 
-import { KeycloakProvider } from '@/contexts/KeycloakContext';
+// import { KeycloakProvider } from '@/contexts/KeycloakContext';
 
 
 import SpotLight from '@/components/Spotlight/Spotlight';
