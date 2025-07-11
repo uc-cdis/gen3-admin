@@ -43,7 +43,13 @@ export default NextAuth({
         };
 
         if (user) {
-          return user;
+          // Simulate an account object with fake tokens
+          return {
+            ...user,
+            accessToken: "fake-access-token",
+            refreshToken: "fake-refresh-token",
+            expiresAt: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+          };
         } else {
           return null;
         }
@@ -61,6 +67,7 @@ export default NextAuth({
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           accessTokenExpires: account.expires_at ? account.expires_at * 1000 : 0,
+          provider: account.provider,
           id: user.id,
           name: user.name,
           email: user.email,
@@ -111,6 +118,17 @@ export default NextAuth({
  */
 async function refreshAccessToken(token) {
   try {
+    // Check if this is a mock provider token
+    if (token.provider === "mock-provider") {
+      // Return fake refreshed tokens for mock provider
+      return {
+        ...token,
+        accessToken: `fake-access-token-${Date.now()}`,
+        refreshToken: `fake-refresh-token-${Date.now()}`,
+        accessTokenExpires: Date.now() + (3600 * 1000), // 1 hour from now
+      };
+    }
+
     // Get the refresh URL from your Keycloak server
     const url = `http://localhost:8080/realms/master/protocol/openid-connect/token`;
 

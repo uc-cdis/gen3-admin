@@ -1,5 +1,5 @@
 {
-  "name": "mantine-next-template",
+  "name": "gen3-csoc",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -21,7 +21,7 @@
     "@mantine/charts": "^8.1.1",
     "@mantine/core": "^8.1.1",
     "@mantine/dates": "^8.1.1",
-    "@mantine/form": "^7.17.3",
+    "@mantine/form": "^8.1.1",
     "@mantine/hooks": "^8.1.1",
     "@mantine/notifications": "^8.1.1",
     "@mantine/spotlight": "^8.1.1",

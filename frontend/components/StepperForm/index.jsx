@@ -198,7 +198,7 @@ const StepperForm = () => {
 
   const fetchClusters = async () => {
     try {
-      const data = await callGoApi('/agents', 'GET');
+      const data = await callGoApi('/agents', 'GET', null, null, accessToken);
       const clusterData = data.filter(c => c.connected).map(c => ({ label: c.name, value: c.name }));
       setClusters(clusterData);
     } catch (err) {
@@ -208,7 +208,7 @@ const StepperForm = () => {
 
   const fetchCerts = async () => {
     try {
-      const data = await callGoApi('/aws/certificates', 'GET');
+      const data = await callGoApi('/aws/certificates', 'GET', null, null, accessToken);
       console.log(data)
       const certOptions = data.map((cert) => ({
         value: cert.arn,
@@ -241,6 +241,7 @@ const StepperForm = () => {
   };
 
   useEffect(() => {
+    if (!accessToken) return
     const load = async () => {
       try {
         await fetchClusters();
@@ -255,7 +256,7 @@ const StepperForm = () => {
       }
     };
     load();
-  }, []);
+  }, [accessToken]);
 
 
   const steps = [

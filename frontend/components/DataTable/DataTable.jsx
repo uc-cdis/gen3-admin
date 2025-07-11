@@ -28,7 +28,7 @@ const getNestedValue = (obj, keyPath) => {
 };
 
 
-const GenericDataTable = ({ agent, endpoint, fields, accessTokenss, metricsEndpoint, buttonsConfig }) => {
+const GenericDataTable = ({ agent, endpoint, fields, metricsEndpoint, buttonsConfig }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);

@@ -7,11 +7,16 @@ import { Container, Title, List, Paper, Anchor } from '@mantine/core';
 
 import Link from 'next/link';
 
+import { useSession } from 'next-auth/react';
+
 export default function Repo() {
+
+    const { data: sessionData } = useSession();
+    const accessToken = sessionData?.accessToken;
 
     const fetchRepos = async () => {
         try {
-            const data = await callGoApi('/helm/repos', 'GET', null, null, null);
+            const data = await callGoApi('/helm/repos', 'GET', null, null, accessToken);
             return data;
         } catch (error) {
             console.error('Failed to fetch repos:', error);

@@ -17,7 +17,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,6 +45,9 @@ import (
 	"github.com/uc-cdis/gen3-admin/internal/logger"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
 	"github.com/uc-cdis/gen3-admin/internal/utils"
+
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
@@ -692,7 +694,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	streamID := uuid.New().String()
 
 	// Create a channel for this request
-	responseChan := make(chan *pb.ProxyResponse, 100)
+	responseChan := make(chan *pb.ProxyResponse, 10000)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 
 	agent.mutex.Lock()
@@ -836,7 +838,7 @@ func HandleHTTPProxyRequest(c *gin.Context) {
 	streamID := uuid.New().String()
 
 	// Create a channel for this request
-	responseChan := make(chan *pb.ProxyResponse, 100)
+	responseChan := make(chan *pb.ProxyResponse, 10000)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 
 	agent.mutex.Lock()
@@ -976,12 +978,17 @@ func setupHTTPServer() {
 	r.Use(logger.DefaultStructuredLogger()) // adds our new middleware
 	r.Use(gin.Recovery())                   // adds the default recovery middleware
 
+	// Add to your main function
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	// Get environment variables
 	// jwksURL := os.Getenv("OKTA_JWKS_URL")
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	r.Use(AuthMiddleware())
+	// r.Use(AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -1032,7 +1039,7 @@ func setupHTTPServer() {
 		}
 
 		// Create a response channel for the agent
-		responseChan := make(chan *pb.ProxyResponse, 100)
+		responseChan := make(chan *pb.ProxyResponse, 10000)
 		ctx, cancel := context.WithCancel(c.Request.Context())
 
 		streamID := uuid.New().String()
@@ -1091,7 +1098,7 @@ func setupHTTPServer() {
 		}
 
 		// Create a response channel for the agent
-		responseChan := make(chan *pb.ProxyResponse, 100)
+		responseChan := make(chan *pb.ProxyResponse, 10000)
 		ctx, cancel := context.WithCancel(c.Request.Context())
 
 		streamID := uuid.New().String()
@@ -1153,7 +1160,7 @@ func setupHTTPServer() {
 		log.Warn().Msgf("Creating response channel for helm delete request: %v", releaseName)
 
 		// Create a response channel for the agent
-		responseChan := make(chan *pb.ProxyResponse, 100)
+		responseChan := make(chan *pb.ProxyResponse, 10000)
 		ctx, cancel := context.WithCancel(c.Request.Context())
 
 		streamID := uuid.New().String()
@@ -1256,7 +1263,7 @@ func setupHTTPServer() {
 		}
 
 		// Create a response channel for the agent
-		responseChan := make(chan *pb.ProxyResponse, 100)
+		responseChan := make(chan *pb.ProxyResponse, 10000)
 		ctx, cancel := context.WithCancel(c.Request.Context())
 
 		streamID := uuid.New().String()
