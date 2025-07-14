@@ -988,7 +988,7 @@ func setupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	// r.Use(AuthMiddleware())
+	r.Use(AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

@@ -13,7 +13,7 @@ export default NextAuth({
       issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
       authorization: {
         params: {
-          scope: "openid profile email", // Explicitly request these scopes
+          scope: "openid profile email groups roles", // Explicitly request these scopes
         }
       },
       profile(profile) {
@@ -23,6 +23,8 @@ export default NextAuth({
           name: profile.name || `${profile.given_name || ''} ${profile.family_name || ''}`.trim() || profile.preferred_username,
           email: profile.email,
           image: profile.picture,
+          roles: profile.roles || profile.realm_access?.roles || [],
+          groups: profile.groups || []
         };
       },
     }),
