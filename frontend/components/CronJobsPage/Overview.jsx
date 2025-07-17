@@ -30,7 +30,7 @@ const JobStatus = ({ status }) => {
 
 import callK8sApi from '@/lib/k8s';
 
-const Page = () => {
+const Page = ({ namespace, hideSelect = false }) => {
   const [jobs, setJobs] = useState([]);
   const [allJobInstances, setAllJobInstances] = useState([]);
   const [filteredJobInstances, setFilteredJobInstances] = useState([]);
@@ -39,7 +39,7 @@ const Page = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [namespaces, setNamespaces] = useState([]);
-  const [selectedNamespace, setSelectedNamespace] = useState('');
+  const [selectedNamespace, setSelectedNamespace] = useState(namespace);
 
   const router = useRouter();
   const { data: sessionData } = useSession();
@@ -131,49 +131,52 @@ const Page = () => {
       <Stack spacing="lg">
         <Title align="center" order={2}>
           <Text inherit variant="gradient" component="span" gradient={{ from: 'gray', to: 'blue' }}>
-            Kubernetes Job Dashboard
+            Kubernetes Job Dashboard {selectedNamespace}
           </Text>
         </Title>
 
-        <Card shadow="md" padding="md" radius="md" withBorder>
-          <Flex gap="md" align="center" wrap="wrap">
-            <TextInput
-              placeholder="Search jobs..."
-              icon={<IconSearch size={16} />}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.currentTarget.value)}
-            />
-            <Select
-              placeholder="Filter by status"
-              icon={<IconFilter size={16} />}
-              value={filterStatus}
-              onChange={setFilterStatus}
-              data={[
-                { value: '', label: 'All' },
-                { value: 'Active', label: 'Active' },
-                { value: 'Suspended', label: 'Suspended' }
-              ]}
-            />
-            <Select
-              placeholder="Namespace"
-              searchable
-              value={selectedNamespace}
-              onChange={setSelectedNamespace}
-              data={[
-                { value: '', label: 'All Namespaces' },
-                ...namespaces.map(ns => ({ value: ns, label: ns }))
-              ]}
-            />
+        {!hideSelect && (
+          <Card shadow="md" padding="md" radius="md" withBorder>
+            <Flex gap="md" align="center" wrap="wrap">
+              <TextInput
+                placeholder="Search jobs..."
+                icon={<IconSearch size={16} />}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.currentTarget.value)}
+              />
+              <Select
+                placeholder="Filter by status"
+                icon={<IconFilter size={16} />}
+                value={filterStatus}
+                onChange={setFilterStatus}
+                data={[
+                  { value: '', label: 'All' },
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Suspended', label: 'Suspended' }
+                ]}
+              />
+              <Select
+                placeholder="Namespace"
+                searchable
+                value={selectedNamespace}
+                onChange={setSelectedNamespace}
+                data={[
+                  { value: '', label: 'All Namespaces' },
+                  ...namespaces.map(ns => ({ value: ns, label: ns }))
+                ]}
+              />
 
-            <Button
-              leftSection={<IconRefresh size={16} />}
-              onClick={updateJobs}
-              loading={isLoading}
-            >
-              Refresh
-            </Button>
-          </Flex>
-        </Card>
+              <Button
+                leftSection={<IconRefresh size={16} />}
+                onClick={updateJobs}
+                loading={isLoading}
+              >
+                Refresh
+              </Button>
+            </Flex>
+          </Card>
+        )
+        }
 
         {filteredJobs.length > 0 ? (
           <Table striped highlightOnHover>
