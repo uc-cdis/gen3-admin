@@ -60,7 +60,7 @@ export default NextAuth({
   ],
 
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, profile }) {
       // Initial sign in
       if (account && user) {
 
@@ -69,11 +69,12 @@ export default NextAuth({
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           accessTokenExpires: account.expires_at ? account.expires_at * 1000 : 0,
-          provider: account.provider,
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          picture: user.image,
+          id: profile.sub,
+          name: profile.name || profile.preferred_username,
+          email: profile.email,
+          image: profile.picture,
+          roles: user?.roles || profile.roles || [],
+          groups: user?.groups || profile.groups || []
         };
       }
 
@@ -94,6 +95,8 @@ export default NextAuth({
         name: token.name,
         email: token.email,
         image: token.picture,
+        roles: token.roles || [],
+        groups: token.groups || []
       };
 
       session.accessToken = token.accessToken;
