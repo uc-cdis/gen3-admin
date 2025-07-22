@@ -340,13 +340,18 @@ export default function EnvironmentDashboardComp({
   };
 
   useEffect(() => {
-    if (true) {
+    if (sessionData?.error) {
+      console.log('Session error detected, signing out:', sessionData.error);
+      signOut({ callbackUrl: '/' });
+      return;
+    }
+
+    if (accessToken && env && namespace) {
       fetchDashboardData();
-      // Set up polling every 30 seconds
       const interval = setInterval(fetchDashboardData, 30000);
       return () => clearInterval(interval);
     }
-  }, [env, namespace]);
+  }, [env, namespace, accessToken, sessionData?.error]);
 
   // Dynamic metrics cards
   const dynamicMetrics = [
@@ -396,7 +401,7 @@ export default function EnvironmentDashboardComp({
 
   return (
     <Container size="xl" mt="xl" pos="relative">
-      <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} />
+      {/* <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} /> */}
 
       {/* Header Section */}
       <Group justify="space-between" mb="md">
@@ -404,10 +409,11 @@ export default function EnvironmentDashboardComp({
         <Group>
           <Button
             onClick={fetchDashboardData}
+            loading={isLoading}
           >
             <IconRefresh/>
           </Button>
-          <Card radius="md">
+          {/* <Card radius="md">
             <Group gap="sm">
               <Box style={{ position: "relative", width: 16, height: 16, display:'flex', alignItems: 'center', justifyContent:'center' }}>
                 <IconCircleFilled color={colors[status]} size={10} style={{ position: "relative", zIndex: 2 }} />
@@ -424,7 +430,7 @@ export default function EnvironmentDashboardComp({
               </Box>
               <Text>Cluster {status.charAt(0).toUpperCase() + status.slice(1)}</Text>
             </Group>
-          </Card>
+          </Card> */}
         </Group>
       </Group>
 
@@ -496,7 +502,7 @@ export default function EnvironmentDashboardComp({
       </Group>
 
       {/* Node Status Table */}
-      <Group align="flex-start" gap="md" grow>
+      {/* <Group align="flex-start" gap="md" grow>
         <Card withBorder mb="xl">
           <Title order={4} mb="sm">Node Status</Title>
           <Text c="dimmed" mb="sm">Individual node health and resource usage</Text>
@@ -572,10 +578,10 @@ export default function EnvironmentDashboardComp({
             </Table>
           </ScrollArea>
         </Card>
-      </Group>
+      </Group> */}
 
       {/* Namespace Overview */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         <Card withBorder mb="xl">
           <Title order={4} mb="sm">Namespace Overview</Title>
           <Text c="dimmed" mb="sm">Resource usage by namespace</Text>
@@ -625,7 +631,7 @@ export default function EnvironmentDashboardComp({
             </Table>
           </ScrollArea>
         </Card>
-      </Group>
+      </Group> */}
 
       {/* Pod Status Table */}
       <Group align="flex-start" gap="md" mb="xl" grow>
