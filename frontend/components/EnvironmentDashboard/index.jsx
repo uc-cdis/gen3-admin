@@ -28,7 +28,9 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { callGoApi } from '@/lib/k8s';
 
-export default function EnvironmentDashboardComp({
+import JobsPage from '@/components/CronJobsPage/Overview';
+
+export default  function EnvironmentDashboardComp({
   env,
   namespace,
   status = "healthy",
@@ -346,7 +348,7 @@ export default function EnvironmentDashboardComp({
       const interval = setInterval(fetchDashboardData, 30000);
       return () => clearInterval(interval);
     }
-  }, [env, namespace]);
+  }, [env, namespace, accessToken]);
 
   // Dynamic metrics cards
   const dynamicMetrics = [
@@ -439,6 +441,8 @@ export default function EnvironmentDashboardComp({
           <Text c="red" fw={500}>{error}</Text>
         </Card>
       )}
+
+      <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
       {/* Main metrics */}
       <Group align="flex-start" gap="md" mb="xl" grow>

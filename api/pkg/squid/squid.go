@@ -1,6 +1,7 @@
 package squid
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -8,11 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	asgtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 )
 
 // SquidInstance represents a single squid proxy instance
@@ -38,24 +43,24 @@ type ProxyResponse struct {
 // GetSquidASGs returns all Squid Auto Scaling Groups
 // If envFilter is provided, it will only return ASGs for that specific environment
 func GetSquidASGs(envFilter string) ([]string, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	// Get all ASGs
-	svc := autoscaling.New(sess)
+
+	svc := autoscaling.NewFromConfig(cfg)
 
 	// Get all ASGs
-	result, err := svc.DescribeAutoScalingGroups(&autoscaling.DescribeAutoScalingGroupsInput{})
+	result, err := svc.DescribeAutoScalingGroups(context.TODO(), &autoscaling.DescribeAutoScalingGroupsInput{})
 	if err != nil {
 		return nil, err
 	}
 
 	var squidASGs []string
 	for _, asg := range result.AutoScalingGroups {
-		asgName := aws.StringValue(asg.AutoScalingGroupName)
+		asgName := aws.ToString(asg.AutoScalingGroupName)
 
 		// First, check if this is a squid-auto-* ASG
 		if strings.HasPrefix(asgName, "squid-auto-") {
@@ -81,7 +86,7 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	vpcID := aws.StringValue(vpc.VpcId)
+	vpcID := aws.ToString(vpc.VpcId)
 
 	// Get route tables
 	eksPrivateRT, err := getRouteTable(vpcID, "eks_private")
@@ -104,8 +109,8 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 	currentGwInstanceID := ""
 	if len(currentGw.RouteTables) > 0 {
 		for _, route := range currentGw.RouteTables[0].Routes {
-			if route.DestinationCidrBlock != nil && aws.StringValue(route.DestinationCidrBlock) == "0.0.0.0/0" {
-				currentGwInstanceID = aws.StringValue(route.InstanceId)
+			if route.DestinationCidrBlock != nil && aws.ToString(route.DestinationCidrBlock) == "0.0.0.0/0" {
+				currentGwInstanceID = aws.ToString(route.InstanceId)
 				break
 			}
 		}
@@ -129,29 +134,7 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 			continue
 		}
 
-		// privIPs, err := getInstancesPrivIP([]string{instanceID})
-		// if err != nil {
-		// 	continue
-		// }
-
-		// pubIPs, err := getInstancesPubIP([]string{instanceID})
-		// if err != nil {
-		// 	continue
-		// }
-
-		// eniIDs, err := getInstancesENI([]string{instanceID})
-		// if err != nil {
-		// 	continue
-		// }
-
 		active := instanceID == currentGwInstanceID
-
-		// var privIPs []string
-		// for _, reservation := range reservations.Reservations {
-		// 	for _, instance := range reservation.Instances {
-		// 		privIPs = append(privIPs, aws.StringValue(instance.PrivateIpAddress))
-		// 	}
-		// }
 
 		var privIPs []string
 		var pubIPs []string
@@ -164,16 +147,20 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 					tags[*tag.Key] = *tag.Value
 				}
 				for _, networkInterface := range instance.NetworkInterfaces {
-					eniIDs = append(eniIDs, aws.StringValue(networkInterface.NetworkInterfaceId))
+					eniIDs = append(eniIDs, aws.ToString(networkInterface.NetworkInterfaceId))
 				}
 				privIPs = append(privIPs, *instance.PrivateIpAddress)
-				pubIPs = append(pubIPs, *instance.PublicIpAddress)
+				if instance.PublicIpAddress != nil {
+					pubIPs = append(pubIPs, *instance.PublicIpAddress)
+				} else {
+					pubIPs = append(pubIPs, "")
+				}
 				ami = *instance.ImageId
 			}
 		}
 
 		portStatus := "Closed"
-		if checkPort(privIPs[0], proxyPort) {
+		if len(privIPs) > 0 && checkPort(privIPs[0], proxyPort) {
 			portStatus = "Open"
 		}
 
@@ -196,7 +183,7 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 	var cloudProxyDNS interface{} = "NONE"
 	zone, err := getHostedZone(vpcName)
 	if err == nil {
-		recordSets, err := getRecordSets(aws.StringValue(zone.Id))
+		recordSets, err := getRecordSets(aws.ToString(zone.Id))
 		if err == nil {
 			if recordSet := getRecordSet(recordSets, "cloud-proxy.internal.io"); recordSet != nil {
 				cloudProxyDNS = recordSet
@@ -215,18 +202,19 @@ func GetProxiesInfo(vpcName string, proxyPort int) (*ProxyResponse, error) {
 
 // SwapProxy changes the active squid proxy
 func SwapProxy(vpcName, instanceID string) error {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return fmt.Errorf("failed to load AWS config: %v", err)
 	}
+
 	// Get VPC ID
 	vpc, err := getVPC(vpcName)
 	if err != nil {
 		return err
 	}
-	vpcID := aws.StringValue(vpc.VpcId)
+	vpcID := aws.ToString(vpc.VpcId)
 
 	// Get route tables
 	eksPrivateRT, err := getRouteTable(vpcID, "eks_private")
@@ -250,8 +238,8 @@ func SwapProxy(vpcName, instanceID string) error {
 	}
 
 	// Update route table to use the new instance as default gateway
-	svc := ec2.New(sess)
-	_, err = svc.ReplaceRoute(&ec2.ReplaceRouteInput{
+	svc := ec2.NewFromConfig(cfg)
+	_, err = svc.ReplaceRoute(context.TODO(), &ec2.ReplaceRouteInput{
 		RouteTableId:         aws.String(eksPrivateRTID),
 		DestinationCidrBlock: aws.String("0.0.0.0/0"),
 		NetworkInterfaceId:   aws.String(enis[0]),
@@ -261,26 +249,27 @@ func SwapProxy(vpcName, instanceID string) error {
 }
 
 // Helper functions
-func getASG(name string) ([]*autoscaling.Group, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+func getASG(name string) ([]asgtypes.AutoScalingGroup, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	svc := autoscaling.New(sess)
+
+	svc := autoscaling.NewFromConfig(cfg)
 
 	var input *autoscaling.DescribeAutoScalingGroupsInput
 
 	if name != "" {
 		input = &autoscaling.DescribeAutoScalingGroupsInput{
-			AutoScalingGroupNames: []*string{aws.String(name)},
+			AutoScalingGroupNames: []string{name},
 		}
 	} else {
 		input = &autoscaling.DescribeAutoScalingGroupsInput{}
 	}
 
-	result, err := svc.DescribeAutoScalingGroups(input)
+	result, err := svc.DescribeAutoScalingGroups(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -288,12 +277,12 @@ func getASG(name string) ([]*autoscaling.Group, error) {
 	return result.AutoScalingGroups, nil
 }
 
-func getHealthyInstancesID(asgGroups []*autoscaling.Group) []string {
+func getHealthyInstancesID(asgGroups []asgtypes.AutoScalingGroup) []string {
 	var idsList []string
 	for _, asg := range asgGroups {
 		for _, instance := range asg.Instances {
-			if aws.StringValue(instance.HealthStatus) == "Healthy" {
-				idsList = append(idsList, aws.StringValue(instance.InstanceId))
+			if aws.ToString(instance.HealthStatus) == "Healthy" {
+				idsList = append(idsList, aws.ToString(instance.InstanceId))
 			}
 		}
 	}
@@ -301,27 +290,24 @@ func getHealthyInstancesID(asgGroups []*autoscaling.Group) []string {
 }
 
 func getInstancesInfo(idList []string) (*ec2.DescribeInstancesOutput, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
+
 	if len(idList) == 0 {
 		return nil, fmt.Errorf("no instance IDs provided")
 	}
 
-	svc := ec2.New(sess)
-	var instanceIDs []*string
-	for _, id := range idList {
-		instanceIDs = append(instanceIDs, aws.String(id))
-	}
+	svc := ec2.NewFromConfig(cfg)
 
 	input := &ec2.DescribeInstancesInput{
-		InstanceIds: instanceIDs,
+		InstanceIds: idList,
 	}
 
-	result, err := svc.DescribeInstances(input)
+	result, err := svc.DescribeInstances(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +324,7 @@ func getInstancesPrivIP(instancesIDs []string) ([]string, error) {
 	var privIPs []string
 	for _, reservation := range reservations.Reservations {
 		for _, instance := range reservation.Instances {
-			privIPs = append(privIPs, aws.StringValue(instance.PrivateIpAddress))
+			privIPs = append(privIPs, aws.ToString(instance.PrivateIpAddress))
 		}
 	}
 
@@ -355,7 +341,7 @@ func getInstancesPubIP(instancesIDs []string) ([]string, error) {
 	for _, reservation := range reservations.Reservations {
 		for _, instance := range reservation.Instances {
 			if instance.PublicIpAddress != nil {
-				pubIPs = append(pubIPs, aws.StringValue(instance.PublicIpAddress))
+				pubIPs = append(pubIPs, aws.ToString(instance.PublicIpAddress))
 			} else {
 				pubIPs = append(pubIPs, "")
 			}
@@ -375,7 +361,7 @@ func getInstancesENI(instancesIDs []string) ([]string, error) {
 	for _, reservation := range reservations.Reservations {
 		for _, instance := range reservation.Instances {
 			for _, networkInterface := range instance.NetworkInterfaces {
-				eniIDs = append(eniIDs, aws.StringValue(networkInterface.NetworkInterfaceId))
+				eniIDs = append(eniIDs, aws.ToString(networkInterface.NetworkInterfaceId))
 			}
 		}
 	}
@@ -393,24 +379,25 @@ func checkPort(addr string, port int) bool {
 	return true
 }
 
-func getVPC(name string) (*ec2.Vpc, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+func getVPC(name string) (*ec2types.Vpc, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	svc := ec2.New(sess)
+
+	svc := ec2.NewFromConfig(cfg)
 	input := &ec2.DescribeVpcsInput{
-		Filters: []*ec2.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(name)},
+				Values: []string{name},
 			},
 		},
 	}
 
-	result, err := svc.DescribeVpcs(input)
+	result, err := svc.DescribeVpcs(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -419,31 +406,32 @@ func getVPC(name string) (*ec2.Vpc, error) {
 		return nil, fmt.Errorf("no VPC found with name %s", name)
 	}
 
-	return result.Vpcs[0], nil
+	return &result.Vpcs[0], nil
 }
 
 func getRouteTable(vpcID, name string) (*ec2.DescribeRouteTablesOutput, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	svc := ec2.New(sess)
+
+	svc := ec2.NewFromConfig(cfg)
 	input := &ec2.DescribeRouteTablesInput{
-		Filters: []*ec2.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(name)},
+				Values: []string{name},
 			},
 			{
 				Name:   aws.String("vpc-id"),
-				Values: []*string{aws.String(vpcID)},
+				Values: []string{vpcID},
 			},
 		},
 	}
 
-	result, err := svc.DescribeRouteTables(input)
+	result, err := svc.DescribeRouteTables(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -456,28 +444,29 @@ func getRouteTableID(routeTable *ec2.DescribeRouteTablesOutput) (string, error) 
 		return "", fmt.Errorf("no route table associations found")
 	}
 
-	return aws.StringValue(routeTable.RouteTables[0].Associations[0].RouteTableId), nil
+	return aws.ToString(routeTable.RouteTables[0].Associations[0].RouteTableId), nil
 }
 
 func existDefaultGw(rtID string) (*ec2.DescribeRouteTablesOutput, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
-	}
-	svc := ec2.New(sess)
-	input := &ec2.DescribeRouteTablesInput{
-		Filters: []*ec2.Filter{
-			{
-				Name:   aws.String("route.destination-cidr-block"),
-				Values: []*string{aws.String("0.0.0.0/0")},
-			},
-		},
-		RouteTableIds: []*string{aws.String(rtID)},
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
 
-	result, err := svc.DescribeRouteTables(input)
+	svc := ec2.NewFromConfig(cfg)
+	input := &ec2.DescribeRouteTablesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("route.destination-cidr-block"),
+				Values: []string{"0.0.0.0/0"},
+			},
+		},
+		RouteTableIds: []string{rtID},
+	}
+
+	result, err := svc.DescribeRouteTables(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -485,22 +474,23 @@ func existDefaultGw(rtID string) (*ec2.DescribeRouteTablesOutput, error) {
 	return result, nil
 }
 
-func getHostedZone(comment string) (*route53.HostedZone, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+func getHostedZone(comment string) (*types.HostedZone, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	svc := route53.New(sess)
-	result, err := svc.ListHostedZones(&route53.ListHostedZonesInput{})
+
+	svc := route53.NewFromConfig(cfg)
+	result, err := svc.ListHostedZones(context.TODO(), &route53.ListHostedZonesInput{})
 	if err != nil {
 		return nil, err
 	}
 
 	for _, zone := range result.HostedZones {
-		if zone.Config.Comment != nil && aws.StringValue(zone.Config.Comment) == comment {
-			return zone, nil
+		if zone.Config.Comment != nil && aws.ToString(zone.Config.Comment) == comment {
+			return &zone, nil
 		}
 	}
 
@@ -508,18 +498,19 @@ func getHostedZone(comment string) (*route53.HostedZone, error) {
 }
 
 func getRecordSets(zoneID string) (*route53.ListResourceRecordSetsOutput, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(getEnv("AWS_REGION", "us-east-1")),
-	})
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(getEnv("AWS_REGION", "us-east-1")),
+	)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create AWS session: %v", err))
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	svc := route53.New(sess)
+
+	svc := route53.NewFromConfig(cfg)
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId: aws.String(zoneID),
 	}
 
-	result, err := svc.ListResourceRecordSets(input)
+	result, err := svc.ListResourceRecordSets(context.TODO(), input)
 	if err != nil {
 		return nil, err
 	}
@@ -527,10 +518,10 @@ func getRecordSets(zoneID string) (*route53.ListResourceRecordSetsOutput, error)
 	return result, nil
 }
 
-func getRecordSet(recordSets *route53.ListResourceRecordSetsOutput, name string) *route53.ResourceRecordSet {
+func getRecordSet(recordSets *route53.ListResourceRecordSetsOutput, name string) *types.ResourceRecordSet {
 	for _, recordSet := range recordSets.ResourceRecordSets {
-		if aws.StringValue(recordSet.Name) == name {
-			return recordSet
+		if aws.ToString(recordSet.Name) == name {
+			return &recordSet
 		}
 	}
 	return nil

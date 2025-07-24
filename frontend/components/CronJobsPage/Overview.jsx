@@ -30,7 +30,7 @@ const JobStatus = ({ status }) => {
 
 import callK8sApi from '@/lib/k8s';
 
-const Page = ({ namespace, hideSelect = false }) => {
+const Page = ({ namespace, hideSelect = false, cluster }) => {
   const [jobs, setJobs] = useState([]);
   const [allJobInstances, setAllJobInstances] = useState([]);
   const [filteredJobInstances, setFilteredJobInstances] = useState([]);
@@ -41,10 +41,11 @@ const Page = ({ namespace, hideSelect = false }) => {
   const [namespaces, setNamespaces] = useState([]);
   const [selectedNamespace, setSelectedNamespace] = useState(namespace);
 
+
   const router = useRouter();
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
-  const clusterName = useParams()?.clustername;
+  const clusterName = useParams()?.clustername || cluster;
 
   useEffect(() => {
     if (!sessionData) return;
@@ -86,7 +87,7 @@ const Page = ({ namespace, hideSelect = false }) => {
     if (sessionData && selectedNamespace) {
       updateJobs();
     }
-  }, [sessionData, selectedNamespace]);
+  }, [sessionData, selectedNamespace, namespace, cluster, accessToken]);
 
   const toggleRow = (index) => {
     const jobName = jobs[index].metadata.name;
