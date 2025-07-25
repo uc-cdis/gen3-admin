@@ -24,12 +24,12 @@ export default function EnvironmentDashboard() {
   const [hostname, setHostname] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:');
-      signOut({ callbackUrl: '/' });
-    }
-  }, [sessionData]);
+  // useEffect(() => {
+  //   if (sessionData?.error) {
+  //     console.log('Session error detected, signing out:');
+  //     signOut({ callbackUrl: '/' });
+  //   }
+  // }, [sessionData]);
 
   useEffect(() => {
     const fetchHostname = async () => {
@@ -53,11 +53,11 @@ export default function EnvironmentDashboard() {
       }
     };
 
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:', sessionData.error);
-      signOut({ callbackUrl: '/' });
-      return;
-    }
+    // if (sessionData?.error) {
+    //   console.log('Session error detected, signing out:', sessionData.error);
+    //   signOut({ callbackUrl: '/' });
+    //   return;
+    // }
 
     if (namespace && accessToken) {
       fetchHostname();

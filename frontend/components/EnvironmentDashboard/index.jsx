@@ -25,7 +25,7 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession,signOut } from "next-auth/react";
 import { callGoApi } from '@/lib/k8s';
 
 export default function EnvironmentDashboardComp({
@@ -339,19 +339,29 @@ export default function EnvironmentDashboardComp({
     }
   };
 
+  // useEffect(() => {
+  //   if (sessionData?.error === 'RefreshAccessTokenError') {
+  //     console.log('Session error detected, signing out:', sessionData.error);
+  //     signOut({ callbackUrl: '/' });
+  //     return;
+  //   }
+  // }, [error])
+
   useEffect(() => {
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:', sessionData.error);
-      signOut({ callbackUrl: '/' });
-      return;
-    }
+    // if (sessionData?.error) {
+    //   console.log('Session error detected, signing out:', sessionData.error);
+    //   signOut({ callbackUrl: '/' });
+    //   return;
+    // }
 
     if (accessToken && env && namespace) {
       fetchDashboardData();
       const interval = setInterval(fetchDashboardData, 30000);
       return () => clearInterval(interval);
     }
-  }, [env, namespace, accessToken, sessionData?.error]);
+  }, [env, namespace, accessToken]);
+
+  // [env, namespace, accessToken, sessionData?.error]
 
   // Dynamic metrics cards
   const dynamicMetrics = [
