@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 
 import callK8sApi from "@/lib/k8s";
 
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 
 export default function EnvironmentDashboard() {
   const router = useRouter();
@@ -18,12 +18,18 @@ export default function EnvironmentDashboard() {
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
 
-
   [env, namespace] = activeGlobalEnv.split("/");
 
   // Add hostname retrieval
   const [hostname, setHostname] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // useEffect(() => {
+  //   if (sessionData?.error) {
+  //     console.log('Session error detected, signing out:');
+  //     signOut({ callbackUrl: '/' });
+  //   }
+  // }, [sessionData]);
 
   useEffect(() => {
     const fetchHostname = async () => {
@@ -47,10 +53,16 @@ export default function EnvironmentDashboard() {
       }
     };
 
+    // if (sessionData?.error) {
+    //   console.log('Session error detected, signing out:', sessionData.error);
+    //   signOut({ callbackUrl: '/' });
+    //   return;
+    // }
+
     if (namespace && accessToken) {
       fetchHostname();
     }
-  }, [namespace, env, accessToken]);
+  }, [namespace, env, accessToken, sessionData?.error]);
 
 
   return (
