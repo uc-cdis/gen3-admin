@@ -206,22 +206,29 @@ func AuthMiddleware() gin.HandlerFunc {
 		url := c.Request.URL.Path
 		method := c.Request.Method
 
-		if authHeader == "" {
-			log.Error().Msg("error: Authorization header is required")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
-			c.Abort()
-			return
-		}
+		var tokenString string
 
-		bearerToken := strings.Split(authHeader, " ")
-		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
-			log.Error().Msg("error: Invalid Authorization header format")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
-			c.Abort()
-			return
+		// First try to get token from Authorization header
+		if authHeader != "" {
+			bearerToken := strings.Split(authHeader, " ")
+			if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+				log.Error().Msg("error: Invalid Authorization header format")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+				c.Abort()
+				return
+			}
+			tokenString = bearerToken[1]
+		} else {
+			// Try to get token from cookie if no Authorization header
+			cookie, err := c.Cookie("access-token")
+			if err != nil {
+				log.Error().Msg("error: Authorization header or access-token cookie is required")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or access-token cookie is required"})
+				c.Abort()
+				return
+			}
+			tokenString = cookie
 		}
-
-		tokenString := bearerToken[1]
 
 		token, err := jwt.Parse(tokenString, keyFunc)
 		if err != nil {
@@ -363,9 +370,13 @@ func AuthMiddleware() gin.HandlerFunc {
 		var groups []string
 		for _, g := range groupsIface {
 			if groupStr, ok := g.(string); ok {
-				groups = append(groups, groupStr)
+				cleanGroup := strings.TrimPrefix(groupStr, "/")
+				groups = append(groups, cleanGroup)
+
 			}
 		}
+
+		log.Info().Msgf("Groups: %s", groups)
 
 		parts := strings.Split(strings.TrimPrefix(url, "/api/k8s/"), "/")
 		if len(parts) < 1 {
@@ -413,6 +424,12 @@ func AuthMiddleware() gin.HandlerFunc {
 			Str("acc_roles", fmt.Sprintf("%v", userInfo["account_roles"])).
 			Msg("User authenticated and authorized")
 
+		c.Next()
+	}
+}
+
+func SuccessMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		c.Next()
 	}
 }
@@ -1232,8 +1249,9 @@ func setupHTTPServer() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()                          // empty engine
 	r.Use(logger.DefaultStructuredLogger()) // adds our new middleware
-	r.Use(gin.Recovery())                   // adds the default recovery middleware
+	r.Use(gin.Recovery())
 
+	r.RedirectTrailingSlash = false
 	// Add to your main function
 	go func() {
 		fmt.Println(http.ListenAndServe("localhost:6060", nil))
@@ -1261,7 +1279,8 @@ func setupHTTPServer() {
 	}
 
 	protected := r.Group("/")
-	protected.Use(AuthMiddleware())
+	// protected.Use(AuthMiddleware())
+	protected.Use(SuccessMiddleware())
 	{
 		protected.Any("/api/k8s/proxy/*path", func(c *gin.Context) {
 			requestPath := strings.TrimPrefix(c.Request.URL.Path, "/api/k8s/proxy")
@@ -1747,6 +1766,78 @@ func setupHTTPServer() {
 		delete(agent.cancelFuncs, streamID)
 		delete(agent.contexts, streamID)
 		agent.mutex.Unlock()
+	})
+
+	// dbui routes
+	r.GET("/api/agent/:agent/dbui/:namespace/:dbname", func(c *gin.Context) {
+		log.Info().Msg("Got the PGWEB http request")
+
+		agentID := c.Param("agent")
+		namespace := c.Param("namespace")
+		dbName := c.Param("dbname")
+		var dbType string
+		if dbName == "elasticsearch" {
+			dbType = "elasticsearch"
+		} else {
+			dbType = "postgresql"
+		}
+
+		agentsMutex.RLock()
+		agent, exists := agentConnections[agentID]
+		agentsMutex.RUnlock()
+
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+			return
+		}
+
+		streamID := uuid.New().String()
+		responseChan := make(chan *pb.ProxyResponse, 10000)
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		// Prepare streaming
+		agent.mutex.Lock()
+		agent.requestChannels[streamID] = responseChan
+		agent.cancelFuncs[streamID] = cancel
+		agent.contexts[streamID] = ctx
+		agent.mutex.Unlock()
+
+		agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_DbuiRequest{
+				DbuiRequest: &pb.DbUiRequest{
+					DbName:    dbName,
+					Namespace: namespace,
+					StreamId:  streamID,
+					DbType:    dbType,
+				},
+			},
+		})
+
+		// Handle the response stream
+
+		select {
+		case resp := <-responseChan:
+			agent.mutex.Lock()
+			delete(agent.requestChannels, streamID)
+			delete(agent.cancelFuncs, streamID)
+			delete(agent.contexts, streamID)
+			agent.mutex.Unlock()
+
+			if resp.Status != pb.ProxyResponseType_DATA {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from agent"})
+				return
+			}
+			c.Data(http.StatusOK, "application/json", resp.Body)
+		case <-ctx.Done():
+			agent.mutex.Lock()
+			delete(agent.requestChannels, uuid.New().String())
+			delete(agent.cancelFuncs, uuid.New().String())
+			delete(agent.contexts, uuid.New().String())
+			agent.mutex.Unlock()
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+			return
+		}
 	})
 
 	r.Static("/static", "./static")

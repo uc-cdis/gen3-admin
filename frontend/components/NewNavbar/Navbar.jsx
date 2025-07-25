@@ -276,7 +276,7 @@ export function NavBar() {
             icon: IconSearch,
             links: [
                 { label: 'Search Clusters', link: `/elasticsearch/`, icon: IconSearch },
-                { label: 'Search Indices', link: `/elasticsearch/`, icon: IconSearch },
+                // { label: 'Search Indices', link: `/elasticsearch/`, icon: IconSearch },
                 { label: 'SQL Databases', link: `/databases/`, icon: IconDatabase },
 
             ],

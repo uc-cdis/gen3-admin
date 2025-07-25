@@ -5,8 +5,15 @@ import { ColorSchemeToggle } from '../components/ColorSchemeToggle/ColorSchemeTo
 import { Container } from '@mantine/core';
 import { AuthenticatedLayout } from '@/layout/AuthenticatedLayout';
 
+import { useGlobalState } from '@/contexts/global';
+
+import EnvironmentDashboardComp from '@/components/EnvironmentDashboard';
+
 export default function HomePage() {
   const { data: session } = useSession();
+  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv } = useGlobalState();
+
+  const [cluster, namespace] = activeGlobalEnv.split('/')
 
   useEffect(() => {
     if (session?.error) {
@@ -18,6 +25,7 @@ export default function HomePage() {
   return (
     <AuthenticatedLayout>
       <Welcome />
-    </AuthenticatedLayout>
+      <EnvironmentDashboardComp env={cluster} namespace={namespace} />
+  </AuthenticatedLayout>
   );
 }

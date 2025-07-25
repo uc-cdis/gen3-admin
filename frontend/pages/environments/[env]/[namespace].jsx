@@ -15,59 +15,11 @@ export default function EnvironmentDashboard() {
   let { env, namespace } = router.query;
   const { activeGlobalEnv } = useGlobalState();
 
-  const { data: sessionData } = useSession();
-  const accessToken = sessionData?.accessToken;
-
-  [env, namespace] = activeGlobalEnv.split("/");
-
-  // Add hostname retrieval
-  const [hostname, setHostname] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:');
-      signOut({ callbackUrl: '/' });
-    }
-  }, [sessionData]);
-
-  useEffect(() => {
-    const fetchHostname = async () => {
-      try {
-        const configMapResponse = await callK8sApi(
-          `/api/v1/namespaces/${namespace}/configmaps/manifest-global`,
-          'GET',
-          null,
-          null,
-          env,
-          accessToken
-        );
-
-        const retrievedHostname = configMapResponse?.data?.hostname || env;
-        setHostname(retrievedHostname);
-      } catch (error) {
-        console.error('Error fetching hostname:', error);
-        setHostname(env); // fallback to environment name
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:', sessionData.error);
-      signOut({ callbackUrl: '/' });
-      return;
-    }
-
-    if (namespace && accessToken) {
-      fetchHostname();
-    }
-  }, [namespace, env, accessToken, sessionData?.error]);
 
 
   return (
     <Container fluid>
-      <EnvironmentDashboardComp env={activeGlobalEnv.split("/")[0]} hostname={hostname} namespace={activeGlobalEnv.split("/")[1]} />
+      <EnvironmentDashboardComp env={activeGlobalEnv.split("/")[0]} namespace={activeGlobalEnv.split("/")[1]} />
     </Container>
   )
 }

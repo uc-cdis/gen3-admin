@@ -39,18 +39,58 @@ import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { callGoApi } from "@/lib/k8s";
 import EventsCards from "./EventsData";
+import callK8sApi from "@/lib/k8s";
 
 import JobsPage from '@/components/CronJobsPage/Overview';
 
-export default  function EnvironmentDashboardComp({
+
+
+export default function EnvironmentDashboardComp({
   env,
   namespace,
   status = "healthy",
-  hostname,
+  hostname: hostnameProp,
   test,
 }) {
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
+
+  const [hostname, setHostname] = useState(hostnameProp)
+  const [loading, setLoading] = useState(false)
+
+
+  useEffect(() => {
+    const fetchHostname = async () => {
+      try {
+        const configMapResponse = await callK8sApi(
+          `/api/v1/namespaces/${namespace}/configmaps/manifest-global`,
+          'GET',
+          null,
+          null,
+          env,
+          accessToken
+        );
+
+        const retrievedHostname = configMapResponse?.data?.hostname || env;
+        setHostname(retrievedHostname);
+      } catch (error) {
+        console.error('Error fetching hostname:', error);
+        setHostname(env); // fallback to environment name
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // if (sessionData?.error) {
+    //   console.log('Session error detected, signing out:', sessionData.error);
+    //   signOut({ callbackUrl: '/' });
+    //   return;
+    // }
+
+    if (namespace && accessToken) {
+      fetchHostname();
+    }
+  }, [namespace, env, accessToken, sessionData?.error]);
 
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
