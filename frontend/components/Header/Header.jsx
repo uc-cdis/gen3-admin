@@ -159,7 +159,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                   // Fallback to chart name if configmap fetch fails
                   return {
                     value: `${agent.name}/${chart.namespace}`,
-                    label: `${agent.name}/${hostname}`,
+                    label: `${agent.name}/${chart.namespace}`,
                     status: chart.status || 'unknown',
                     namespace: chart.namespace,
                   };
@@ -251,7 +251,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
     if (activeGlobalEnv) {
       setActiveEnvironments(activeGlobalEnv);
     }
-  }, [accessToken, activeGlobalEnv]);
+  }, [activeGlobalEnv]);
 
   // Simplified Environment selector component
   // Simplified Environment selector component
