@@ -7,19 +7,20 @@ export const config = {
 };
 
 const LOKI_BASE_URL = 'https://loki.planx-pla.net';
+// const LOKI_BASE_URL = 'http://monitoring-loki-gateway.monitoring';
 
 export default async function handler(req) {
   try {
     // Extract the path and query parameters from the request
     const { searchParams } = new URL(req.url);
     const path = searchParams.get('path') || '';
-    
+
     // Remove the path parameter from the search params
     searchParams.delete('path');
-    
+
     // Construct the URL for the Loki API
     const lokiUrl = new URL(`${LOKI_BASE_URL}${path}`);
-    
+
     // Copy all other query parameters to the Loki URL
     searchParams.forEach((value, key) => {
       lokiUrl.searchParams.append(key, value);
@@ -27,7 +28,7 @@ export default async function handler(req) {
 
     // Get the request method
     const method = req.method;
-    
+
     // Prepare headers for the Loki request
     const headers = new Headers();
     for (const [key, value] of req.headers) {
@@ -54,10 +55,10 @@ export default async function handler(req) {
 
     // Make the request to the Loki API
     const response = await fetch(lokiUrl.toString(), options);
-    
+
     // Get the response data
     const responseData = await response.text();
-    
+
     // Create a new response with the Loki API response
     const newResponse = new NextResponse(responseData, {
       status: response.status,
@@ -69,11 +70,11 @@ export default async function handler(req) {
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     });
-    
+
     return newResponse;
   } catch (error) {
     console.error('Error proxying request to Loki:', error);
-    
+
     return new NextResponse(
       JSON.stringify({ error: 'Failed to proxy request to Loki API' }),
       {

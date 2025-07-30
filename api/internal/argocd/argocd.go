@@ -152,14 +152,14 @@ func extractApplicationInfo(item *unstructured.Unstructured) (ArgoCDApplication,
 		app.OperationPhase, _ = operationState["phase"].(string)
 	}
 
-	// // chart, _, err := unstructured.NestedString()
-	// // inside your function
-	// jsonBytes, err := json.Marshal(item.Object)
-	// if err != nil {
-	// 	log.Error().Err(err).Msg("failed to marshal item.Object")
-	// } else {
-	// 	log.Info().Msg(string(jsonBytes))
-	// }
+	// Get destination namespace instead of ArgoCD resource namespace
+	destinationNamespace, _, _ := unstructured.NestedString(spec, "destination", "namespace")
+	if destinationNamespace != "" {
+		app.Namespace = destinationNamespace
+	} else {
+		// Fallback to ArgoCD resource namespace if destination namespace is not found
+		app.Namespace = item.GetNamespace()
+	}
 
 	// Try to determine environment from various possible locations
 	app.Environment = determineEnvironment(spec, item.GetLabels(), item.GetAnnotations())

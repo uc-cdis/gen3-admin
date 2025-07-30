@@ -12,9 +12,12 @@ export default async function callK8sApi(endpoint, method = 'GET', body = null, 
 
   try {
     // Base headers with authorization
-    const baseHeaders = {
-      'Authorization': `Bearer ${accessToken}`,
-    };
+    let baseHeaders;
+    if (accessToken) {
+      baseHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+      };
+    }
 
     // Merge headers, giving priority to the input `headers`
     const mergedHeaders = {

@@ -30,6 +30,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/transport"
@@ -287,7 +292,7 @@ func (a *Agent) sendProxyResponse(streamID string, status pb.ProxyResponseType, 
 		resp.Headers[k] = v[0]
 	}
 
-	log.Debug().Msg("Sending proxy response")
+	// log.Debug().Msg("Sending proxy response")
 	err := a.stream.Send(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
@@ -411,7 +416,7 @@ func getClientConfig() (*rest.Config, error) {
 }
 
 func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
-	log.Debug().Msgf("Handling k8s proxy request: %v", req.Path)
+	// log.Debug().Msgf("Handling k8s proxy request: %v", req.Path)
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -435,7 +440,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 	host := strings.TrimSuffix(restConfig.Host, "/")
 	url := fmt.Sprintf("%s%s", host, req.Path)
 	// url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
-	log.Debug().Msg("Creating request to url: " + url)
+	// log.Debug().Msg("Creating request to url: " + url)
 
 	bodyReader := bytes.NewReader(req.Body)
 	httpReq, err := http.NewRequest(req.Method, url, bodyReader)
@@ -461,7 +466,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		log.Debug().Msg(fmt.Sprintf("Setting Content-Type header to %s", contentType))
 		httpReq.Header.Set("Content-Type", contentType)
 	} else {
-		log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
+		// log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
@@ -492,13 +497,13 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		return
 	}
 
-	log.Debug().Msgf("Response Status: %s", resp.Status)
+	// log.Debug().Msgf("Response Status: %s", resp.Status)
 	defer resp.Body.Close()
 
 	// Print all response headers to debug log
-	for k, v := range resp.Header {
-		log.Debug().Msgf("Response Header: %s: %s", k, v)
-	}
+	// for k, v := range resp.Header {
+	// 	log.Debug().Msgf("Response Header: %s: %s", k, v)
+	// }
 
 	// // Send headers
 	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
@@ -519,7 +524,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
 		}
 		if err == io.EOF {
-			log.Debug().Msg("Request completed - EOF")
+			// log.Debug().Msg("Request completed - EOF")
 			break
 		}
 		if err != nil {
@@ -528,7 +533,7 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		}
 	}
 
-	log.Debug().Msg("Request completed")
+	// log.Debug().Msg("Request completed")
 	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
 }
 
@@ -599,6 +604,519 @@ func (a *Agent) handleProjectsRequest(req *pb.ProjectsRequest) {
 
 	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, helmDeploymentsJSON)
 
+}
+
+func (a *Agent) handleDbUiRequest(req *pb.DbUiRequest) {
+	ctx := context.Background()
+
+	// Set defaults
+	namespace := req.Namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	log.Info().Msgf("Launching %s UI for database: %s in namespace: %s", req.DbType, req.DbName, namespace)
+
+	config, err := k8s.GetConfig()
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Error().Msg("Error in getting clientset")
+		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 404, nil,
+			[]byte(fmt.Sprintf(`{"success": false, "message": "Error in clientset: %v"}`, err)))
+		return
+	}
+
+	if req.DbType == "elasticsearch" {
+		a.handleElasticsearchUI(ctx, clientset, req)
+	} else {
+		// Default to PostgreSQL (pgweb)
+		a.handlePostgresUI(ctx, clientset, req)
+	}
+}
+
+func (a *Agent) handleElasticsearchUI(ctx context.Context, clientset kubernetes.Interface, req *pb.DbUiRequest) {
+	port := int32(5601) // OpenSearch Dashboards default port
+	podName := fmt.Sprintf("opensearch-dashboards-%s", req.DbName)
+	serviceName := fmt.Sprintf("opensearch-dashboards-%s-service", req.DbName)
+
+	// Elasticsearch service URL (adjust this to match your ES service name)
+	elasticsearchURL := fmt.Sprintf("http://%s:9200", req.DbName)
+
+	// Check if pod already exists and is running
+	existingPod, err := clientset.CoreV1().Pods(req.Namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err == nil {
+		if existingPod.Status.Phase == corev1.PodRunning {
+			log.Info().Msgf("OpenSearch Dashboards pod %s already exists and is running", podName)
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 200, nil,
+				[]byte(fmt.Sprintf(`{
+					"success": true,
+					"message": "OpenSearch Dashboards pod already running",
+					"pod_name": "%s",
+					"service_name": "%s",
+					"namespace": "%s",
+					"db_name": "%s",
+					"port": %d,
+					"status": "already_running",
+					"db_type": "elasticsearch"
+				}`, podName, serviceName, req.Namespace, req.DbName, port)))
+			return
+		} else if existingPod.Status.Phase == corev1.PodFailed {
+			log.Info().Msgf("OpenSearch Dashboards pod %s exists but failed, deleting and recreating", podName)
+			clientset.CoreV1().Pods(req.Namespace).Delete(ctx, podName, metav1.DeleteOptions{})
+		} else {
+			log.Info().Msgf("OpenSearch Dashboards pod %s already exists with status: %s", podName, existingPod.Status.Phase)
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 200, nil,
+				[]byte(fmt.Sprintf(`{
+					"success": true,
+					"message": "OpenSearch Dashboards pod already exists",
+					"pod_name": "%s",
+					"service_name": "%s",
+					"namespace": "%s",
+					"db_name": "%s",
+					"port": %d,
+					"status": "%s",
+					"db_type": "elasticsearch"
+				}`, podName, serviceName, req.Namespace, req.DbName, port, existingPod.Status.Phase)))
+			return
+		}
+	}
+
+	// Create OpenSearch Dashboards configuration
+	dashboardsConfig := fmt.Sprintf(`
+# OpenSearch Dashboards configuration
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch configuration
+opensearch.hosts: ["%s"]
+
+# Disable security for simplicity (adjust as needed)
+opensearch.ssl.verificationMode: none
+opensearch.username: ""
+opensearch.password: ""
+
+# Security plugin disabled
+opensearch_security.multitenancy.enabled: false
+opensearch_security.readonly_mode.roles: []
+
+# CORS settings
+server.cors.enabled: true
+server.cors.allowOrigin: "*"
+server.cors.allowHeaders: ["Authorization", "Content-Type", "If-None-Match", "kbn-version", "kbn-xsrf"]
+
+# Telemetry
+telemetry.enabled: false
+telemetry.optIn: false
+
+# Logging
+logging.silent: false
+logging.verbose: false
+`, elasticsearchURL)
+
+	// Create ConfigMap for OpenSearch Dashboards configuration
+	configMapName := fmt.Sprintf("opensearch-dashboards-config-%s", req.DbName)
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: req.Namespace,
+			Labels: map[string]string{
+				"app":        "opensearch-dashboards",
+				"db-name":    req.DbName,
+				"managed-by": "tunnel-agent",
+			},
+		},
+		Data: map[string]string{
+			"opensearch_dashboards.yml": dashboardsConfig,
+		},
+	}
+
+	// Create or update ConfigMap
+	_, err = clientset.CoreV1().ConfigMaps(req.Namespace).Get(ctx, configMapName, metav1.GetOptions{})
+	if err != nil {
+		_, err = clientset.CoreV1().ConfigMaps(req.Namespace).Create(ctx, configMap, metav1.CreateOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to create OpenSearch Dashboards config map")
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 500, nil,
+				[]byte(fmt.Sprintf(`{"success": false, "message": "Failed to create OpenSearch Dashboards config map: %v"}`, err)))
+			return
+		}
+	} else {
+		_, err = clientset.CoreV1().ConfigMaps(req.Namespace).Update(ctx, configMap, metav1.UpdateOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to update OpenSearch Dashboards config map")
+		}
+	}
+
+	// Create OpenSearch Dashboards pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: req.Namespace,
+			Labels: map[string]string{
+				"app":        "opensearch-dashboards",
+				"db-name":    req.DbName,
+				"db-type":    "elasticsearch",
+				"managed-by": "tunnel-agent",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "opensearch-dashboards",
+					Image: "opensearchproject/opensearch-dashboards:2.11.1",
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: port,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "OPENSEARCH_HOSTS",
+							Value: elasticsearchURL,
+						},
+						{
+							Name:  "DISABLE_SECURITY_DASHBOARDS_PLUGIN",
+							Value: "true",
+						},
+					},
+					// VolumeMounts: []corev1.VolumeMount{
+					// 	{
+					// 		Name:      "config",
+					// 		MountPath: "/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml",
+					// 		SubPath:   "opensearch_dashboards.yml",
+					// 	},
+					// },
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/api/status",
+								Port: intstr.FromInt(int(port)),
+							},
+						},
+						InitialDelaySeconds: 30,
+						PeriodSeconds:       15,
+						TimeoutSeconds:      10,
+					},
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/api/status",
+								Port: intstr.FromInt(int(port)),
+							},
+						},
+						InitialDelaySeconds: 60,
+						PeriodSeconds:       30,
+						TimeoutSeconds:      10,
+					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "config",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: configMapName,
+							},
+						},
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyAlways,
+		},
+	}
+
+	// Add any additional labels from request
+	for k, v := range req.Labels {
+		pod.ObjectMeta.Labels[k] = v
+	}
+
+	// Create the pod
+	log.Info().Msgf("Creating OpenSearch Dashboards pod: %s", podName)
+	createdPod, err := clientset.CoreV1().Pods(req.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create OpenSearch Dashboards pod")
+		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 500, nil,
+			[]byte(fmt.Sprintf(`{"success": false, "message": "Failed to create OpenSearch Dashboards pod: %v"}`, err)))
+		return
+	}
+
+	log.Info().Msgf("OpenSearch Dashboards pod %s created successfully", createdPod.Name)
+
+	// Create or update the service
+	a.createOrUpdateService(ctx, clientset, req, serviceName, port, "opensearch-dashboards")
+}
+
+func (a *Agent) handlePostgresUI(ctx context.Context, clientset kubernetes.Interface, req *pb.DbUiRequest) {
+	port := int32(8081)
+	secretName := fmt.Sprintf("%s-dbcreds", req.DbName)
+	podName := fmt.Sprintf("pgweb-%s", req.DbName)
+	serviceName := fmt.Sprintf("pgweb-%s-service", req.DbName)
+
+	// Check if secret exists for PostgreSQL
+	secret, err := clientset.CoreV1().Secrets(req.Namespace).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		log.Error().Err(err).Msgf("Secret %s not found", secretName)
+		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 404, nil,
+			[]byte(fmt.Sprintf(`{"success": false, "message": "Secret %s not found: %v"}`, secretName, err)))
+		return
+	}
+
+	log.Debug().Msgf("Found secret %s with keys: %v", secretName, getSecretKeys(secret))
+
+	// Check if pod already exists and is running
+	existingPod, err := clientset.CoreV1().Pods(req.Namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err == nil {
+		if existingPod.Status.Phase == corev1.PodRunning {
+			log.Info().Msgf("PgWeb pod %s already exists and is running", podName)
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 200, nil,
+				[]byte(fmt.Sprintf(`{
+					"success": true,
+					"message": "PgWeb pod already running",
+					"pod_name": "%s",
+					"service_name": "%s",
+					"namespace": "%s",
+					"db_name": "%s",
+					"port": %d,
+					"status": "already_running",
+					"secret_found": true,
+					"secret_keys": %s,
+					"db_type": "postgresql"
+				}`, podName, serviceName, req.Namespace, req.DbName, port,
+					fmt.Sprintf(`["%s"]`, strings.Join(getSecretKeys(secret), `", "`)))))
+			return
+		} else if existingPod.Status.Phase == corev1.PodFailed {
+			log.Info().Msgf("PgWeb pod %s exists but failed, deleting and recreating", podName)
+			clientset.CoreV1().Pods(req.Namespace).Delete(ctx, podName, metav1.DeleteOptions{})
+		} else {
+			log.Info().Msgf("PgWeb pod %s already exists with status: %s", podName, existingPod.Status.Phase)
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 200, nil,
+				[]byte(fmt.Sprintf(`{
+					"success": true,
+					"message": "PgWeb pod already exists",
+					"pod_name": "%s",
+					"service_name": "%s",
+					"namespace": "%s",
+					"db_name": "%s",
+					"port": %d,
+					"status": "%s",
+					"secret_found": true,
+					"secret_keys": %s,
+					"db_type": "postgresql"
+				}`, podName, serviceName, req.Namespace, req.DbName, port, existingPod.Status.Phase,
+					fmt.Sprintf(`["%s"]`, strings.Join(getSecretKeys(secret), `", "`)))))
+			return
+		}
+	}
+
+	// Create PgWeb pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: req.Namespace,
+			Labels: map[string]string{
+				"app":        "pgweb",
+				"db-name":    req.DbName,
+				"db-type":    "postgresql",
+				"managed-by": "tunnel-agent",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "pgweb",
+					Image: "sosedoff/pgweb:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: port,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name: "PGHOST",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  "host",
+								},
+							},
+						},
+						{
+							Name: "PGPORT",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  "port",
+								},
+							},
+						},
+						{
+							Name: "PGUSER",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  "username",
+								},
+							},
+						},
+						{
+							Name: "PGPASSWORD",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  "password",
+								},
+							},
+						},
+						{
+							Name: "PGDATABASE",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  "database",
+								},
+							},
+						},
+						{
+							Name:  "PGWEB_BIND_HOST",
+							Value: "0.0.0.0",
+						},
+						{
+							Name:  "PGWEB_LISTEN_PORT",
+							Value: fmt.Sprintf("%d", port),
+						},
+						{
+							Name:  "PGWEB_DATABASE_URL",
+							Value: "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=disable",
+						},
+					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/",
+								Port: intstr.FromInt(int(port)),
+							},
+						},
+						InitialDelaySeconds: 5,
+						PeriodSeconds:       10,
+					},
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/",
+								Port: intstr.FromInt(int(port)),
+							},
+						},
+						InitialDelaySeconds: 15,
+						PeriodSeconds:       20,
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyAlways,
+		},
+	}
+
+	// Add any additional labels from request
+	for k, v := range req.Labels {
+		pod.ObjectMeta.Labels[k] = v
+	}
+
+	// Create the pod
+	log.Info().Msgf("Creating PgWeb pod: %s", podName)
+	createdPod, err := clientset.CoreV1().Pods(req.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create PgWeb pod")
+		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 500, nil,
+			[]byte(fmt.Sprintf(`{"success": false, "message": "Failed to create PgWeb pod: %v"}`, err)))
+		return
+	}
+
+	log.Info().Msgf("PgWeb pod %s created successfully", createdPod.Name)
+
+	// Create or update the service
+	a.createOrUpdateService(ctx, clientset, req, serviceName, port, "pgweb")
+}
+
+func (a *Agent) createOrUpdateService(ctx context.Context, clientset kubernetes.Interface, req *pb.DbUiRequest, serviceName string, port int32, appType string) {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: req.Namespace,
+			Labels: map[string]string{
+				"app":        appType,
+				"db-name":    req.DbName,
+				"db-type":    req.DbType,
+				"managed-by": "tunnel-agent",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app":     appType,
+				"db-name": req.DbName,
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       port,
+					TargetPort: intstr.FromInt(int(port)),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Type: corev1.ServiceTypeClusterIP,
+		},
+	}
+
+	// Try to get existing service first
+	existingService, err := clientset.CoreV1().Services(req.Namespace).Get(ctx, serviceName, metav1.GetOptions{})
+	if err != nil {
+		// Service doesn't exist, create it
+		log.Info().Msgf("Creating service: %s", serviceName)
+		createdService, err := clientset.CoreV1().Services(req.Namespace).Create(ctx, service, metav1.CreateOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to create service")
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 500, nil,
+				[]byte(fmt.Sprintf(`{"success": false, "message": "Failed to create service: %v"}`, err)))
+			return
+		}
+		log.Info().Msgf("Service %s created successfully", createdService.Name)
+	} else {
+		// Service exists, update it
+		log.Info().Msgf("Updating existing service: %s", serviceName)
+		existingService.Spec = service.Spec
+		_, err = clientset.CoreV1().Services(req.Namespace).Update(ctx, existingService, metav1.UpdateOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to update service")
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_ERROR, 500, nil,
+				[]byte(fmt.Sprintf(`{"success": false, "message": "Failed to update service: %v"}`, err)))
+			return
+		}
+		log.Info().Msgf("Service %s updated successfully", serviceName)
+	}
+
+	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 200, nil,
+		[]byte(fmt.Sprintf(`{
+			"success": true,
+			"message": "%s pod and service created successfully",
+			"pod_name": "%s",
+			"service_name": "%s",
+			"namespace": "%s",
+			"db_name": "%s",
+			"port": %d,
+			"status": "created",
+			"db_type": "%s"
+		}`, strings.Title(appType), fmt.Sprintf("%s-%s", appType, req.DbName), serviceName, req.Namespace, req.DbName, port, req.DbType)))
 }
 
 func (a *Agent) handleHelmValuesRequest(req *pb.HelmValuesRequest) {
@@ -733,10 +1251,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		case *pb.ServerMessage_Projects:
 			log.Debug().Msg("Got a projects request message")
 			go a.handleProjectsRequest(content.Projects)
+		case *pb.ServerMessage_DbuiRequest:
+			log.Debug().Msgf("Got a DBUI request: %s", content)
+			go a.handleDbUiRequest(content.DbuiRequest)
 		case *pb.ServerMessage_Proxy:
 			if content.Proxy.ProxyType == "k8s" {
-				log.Debug().Msg("Got a k8s proxy request message")
-				log.Debug().Msg(fmt.Sprintf("Content: %v", content.Proxy))
+				// log.Debug().Msg("Got a k8s proxy request message")
+				// log.Debug().Msg(fmt.Sprintf("Content: %v", content.Proxy))
 				go a.handleK8sProxyRequest(content.Proxy)
 			} else {
 				log.Debug().Msg("Got a non k8s proxy request message")
@@ -854,4 +1375,13 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Agent encountered an error")
 	}
+}
+
+// Helper function to get secret keys for debugging
+func getSecretKeys(secret *corev1.Secret) []string {
+	keys := make([]string, 0, len(secret.Data))
+	for k := range secret.Data {
+		keys = append(keys, k)
+	}
+	return keys
 }

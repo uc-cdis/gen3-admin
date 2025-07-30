@@ -20,6 +20,7 @@ message AgentMessage {
     HelmDeleteResponse helmDelete = 5;              // Helm delete responses
     HelmInstallResponse helmInstall = 6;              // Helm install responses
     TerminalStream terminalStream = 7;
+    PgWebResponse pgwebResponse = 8;
   }
 }
 
@@ -34,6 +35,7 @@ message ServerMessage {
     HelmDeleteRequest helmDeleteRequest = 6;          // Helm delete request
     HelmInstallRequest helmInstallRequest = 7;          // Helm install request
     TerminalStream terminalStream = 8;
+    DbUiRequest dbuiRequest = 9;
   }
 }
 
@@ -169,4 +171,32 @@ message Project {
 message TerminalStream {
   bytes data = 1;
   string session_id = 2; // optional
+}
+
+// Message to launch pgweb
+message DbUiRequest {
+  string stream_id = 1;
+  string db_name = 2;           // Database name (used to find <dbname>-creds secret)
+  string namespace = 3;         // Kubernetes namespace (optional, defaults to "default")
+  map<string, string> labels = 4; // Additional labels for the pod
+  string db_type = 5;
+}
+
+message PgWebResponse {
+  bool success = 1;
+  string message = 2;
+  string pod_name = 3;         // Name of the created pod
+  string service_name = 4;     // Name of the created service
+  int32 port = 5;             // Port the service is running on
+}
+
+// Message to stop/cleanup pgweb resources
+message StopPgWebRequest {
+  string db_name = 1;
+  string namespace = 2;
+}
+
+message StopPgWebResponse {
+  bool success = 1;
+  string message = 2;
 }

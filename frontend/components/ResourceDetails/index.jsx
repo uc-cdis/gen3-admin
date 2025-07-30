@@ -52,7 +52,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
 
     const deleteResource = async () => {
         try {
-            const data = await callK8sApi(url, 'DELETE', null, null, cluster, null);
+            const data = await callK8sApi(url, 'DELETE', null, null, cluster, accessToken);
             fetchResource()
 
             notifications.show({
