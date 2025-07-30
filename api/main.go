@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"text/template"
+	"bytes"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -95,6 +97,11 @@ type AgentConnection struct {
 	mutex           sync.Mutex
 	agent           Agent
 	terminalStreams map[string]*websocket.Conn
+}
+
+type ServiceAccountData struct {
+  	EKS				bool
+  	RoleARN			string
 }
 
 type JWK struct {
@@ -672,6 +679,18 @@ func (s *agentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 	}
 }
 
+const saTemplate = `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csoc
+  namespace: csoc
+{{- if .EKS }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .RoleARN }}
+{{- end }}
+`
+
 func generateAgentConfig(agentName string) (string, error) {
 	caCert, caKey, err := ca.LoadOrCreateCA()
 	if err != nil {
@@ -751,12 +770,6 @@ data:
   %s.key: %s
   ca.crt: %s
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: csoc
-  namespace: csoc
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -806,6 +819,52 @@ spec:
 		base64.StdEncoding.EncodeToString(caCertPem),
 		agentName,
 	)
+
+	const saTemplate = `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+name: csoc
+namespace: csoc
+{{- if .EKS }}
+annotations:
+	eks.amazonaws.com/role-arn: {{ .RoleARN }}
+{{- end -}}
+	`
+
+	saData := ServiceAccountData{
+		EKS: true,
+		RoleARN: "roleARN",
+    }
+
+	var saBuffer bytes.Buffer
+
+	tmpl, err := template.New("serviceaccount").Parse(saTemplate)
+	if err != nil {
+		return "", fmt.Errorf("error parsing template: %v", err)
+	}
+
+	err = tmpl.Execute(&saBuffer, saData)
+	if err != nil {
+		return "", fmt.Errorf("error executing template: %v", err)
+	}
+
+	config += saBuffer.String()
+	config += fmt.Sprintf(`
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: csoc
+  namespace: csoc
+`)
 
 	return strings.TrimSpace(config), nil
 }
