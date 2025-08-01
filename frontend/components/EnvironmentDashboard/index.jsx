@@ -920,7 +920,7 @@ export default function EnvironmentDashboardComp({
       </Group>
 
       {/* Network Traffic */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         <Card withBorder>
           <Title order={4} mb="sm">
             Network Traffic
@@ -936,7 +936,7 @@ export default function EnvironmentDashboardComp({
             withYAxis={false}
           />
         </Card>
-      </Group>
+      </Group> */}
 
       <style jsx>{`
         @keyframes pulse {
