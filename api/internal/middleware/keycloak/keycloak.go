@@ -127,7 +127,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			tokenString = bearerToken[1]
 		} else {
 			// Try to get token from cookie if no Authorization header
-			cookie, err := c.Cookie("access-token")
+			cookie, err := c.Cookie("keycloak-access-token")
 			if err != nil {
 				log.Error().Msg("error: Authorization header or access-token cookie is required")
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or access-token cookie is required"})

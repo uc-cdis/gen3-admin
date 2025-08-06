@@ -24,8 +24,10 @@ export default function HomePage() {
 
   return (
     <AuthenticatedLayout>
-      <Welcome />
+      {cluster == "" ?
+      <Welcome /> :
       <EnvironmentDashboardComp env={cluster} namespace={namespace} />
+      }
   </AuthenticatedLayout>
   );
 }
