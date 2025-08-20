@@ -259,7 +259,7 @@ function Clusters() {
           </Radio.Group>
         </Collapse>
             {/* Show the next question only when assumeMethod === role */}
-            <Collapse in={showRoleFollowup}>
+            <Collapse in={showRoleFollowup && showEksFollowup}>
               <TextInput
                 label="AWS RoleARN"
                 placeholder="arn:aws:iam::<account_id>:role/<role_name>"
@@ -267,7 +267,7 @@ function Clusters() {
               />
             </Collapse>
               {/* Show the next question only when assumeMethod === user */}
-            <Collapse in={showUserFollowup}>
+            <Collapse in={showUserFollowup && showEksFollowup}>
               <TextInput
                 label="AWS Access Key"
                 {...form.getInputProps('accessKey')}
