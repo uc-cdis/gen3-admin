@@ -1,0 +1,97 @@
+ingress:
+  ingressClassName: cloudflare-tunnel
+  enabled: true
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:707767160287:certificate/520ede2f-fc82-4bb9-af96-4b4af7deabbd
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+  rules:
+    - host: keycloak-csoc.aimag.no
+      paths:
+        - path: /
+          pathType: Prefix
+
+image:
+  tag: 26.3.2
+
+
+args:
+  - "start-dev"
+  # - "--optimize"
+#   # - "--features=fips" # CRITICAL: Enables FIPS mode
+#   # - "--proxy=edge" # CRITICAL: The modern replacement for PROXY_ADDRESS_FORWARDING
+#   - "--proxy-headers=xforwarded"
+#   - "--hostname=keycloak-csoc.planx-pla.net" # CRITICAL: Explicitly set the public hostname
+#   - "--http-enabled=true"
+
+
+extraInitContainers: |
+  - name: fips-provider-downloader
+    # Using a lightweight image with curl installed
+    image: curlimages/curl:latest
+    # The command to download the two required JARs
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        echo "Downloading Bouncy Castle FIPS providers..."
+        # These are the official JARs for Java 17 (used by Keycloak 26+)
+        BC_FIPS_URL="https://downloads.bouncycastle.org/fips-java/bc-fips-1.0.2.4.jar"
+        BCTLS_FIPS_URL="https://downloads.bouncycastle.org/fips-java/bctls-fips-1.0.13.4.jar"
+
+        # Download the files into the shared volume directory
+        curl -L --output /fips-jars/bc-fips.jar "${BC_FIPS_URL}"
+        curl -L --output /fips-jars/bctls-fips.jar "${BCTLS_FIPS_URL}"
+
+        echo "Downloads complete. Listing files:"
+        ls -l /fips-jars
+    # Mount the shared volume into the initContainer
+    volumeMounts:
+      - name: fips-jars
+        mountPath: /fips-jars
+
+# 2. Define the shared emptyDir volume.
+extraVolumes: |
+  - name: fips-jars
+    emptyDir: {}
+
+# # 3. Mount the shared volume into the main Keycloak container at the required path.
+extraVolumeMounts: |
+  - name: fips-jars
+    mountPath: /opt/keycloak/providers/
+
+
+# Startup probe configuration
+# startupProbe: |
+#   httpGet:
+#     path: /
+#     port: http
+#   initialDelaySeconds: 30
+#   timeoutSeconds: 1
+#   failureThreshold: 60
+#   periodSeconds: 5
+
+# readinessProbe: |
+#   httpGet:
+#     path: /
+#     port: http
+#   initialDelaySeconds: 30
+#   timeoutSeconds: 5
+
+# livenessProbe: |
+#   httpGet:
+#     path: /
+#     port: http
+#   initialDelaySeconds: 30
+#   timeoutSeconds: 5
+
+
+postgresql:
+  enabled: true
+  # For first install, password is set via --set. For upgrades,
+  # this empty value is ignored and Helm reuses the existing secret's password.
+  postgresqlPassword: ""
+
+extraEnvFrom: |
+  - secretRef:
+      name: keycloak-admin-credentials
