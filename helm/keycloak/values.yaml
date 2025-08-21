@@ -1,0 +1,84 @@
+# Minimal Keycloak configuration with FIPS support
+# Codecentric/keycloakx chart
+
+# Image
+image:
+  tag: 26.3.2
+
+# Production startup with FIPS
+args:
+  - "start"
+  - "--optimized"
+  - "--features=fips"
+  - "--proxy=edge"
+  - "--proxy-headers=xforwarded"
+  - "--hostname=keycloak-csoc.aimag.no"
+  - "--http-enabled=true"
+
+# Ingress (your existing config)
+ingress:
+  enabled: true
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:707767160287:certificate/520ede2f-fc82-4bb9-af96-4b4af7deabbd
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+  rules:
+    - host: keycloak-csoc.aimag.no
+      paths:
+        - path: /
+          pathType: Prefix
+
+# FIPS providers (required for FIPS mode)
+extraInitContainers: |
+  - name: fips-provider-downloader
+    image: curlimages/curl:latest
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        curl -L -o /fips-jars/bc-fips.jar https://downloads.bouncycastle.org/fips-java/bc-fips-1.0.2.4.jar
+        curl -L -o /fips-jars/bctls-fips.jar https://downloads.bouncycastle.org/fips-java/bctls-fips-1.0.13.4.jar
+    volumeMounts:
+      - name: fips-jars
+        mountPath: /fips-jars
+
+extraVolumes: |
+  - name: fips-jars
+    emptyDir: {}
+
+extraVolumeMounts: |
+  - name: fips-jars
+    mountPath: /opt/keycloak/providers/
+
+# Admin credentials from secret
+extraEnvFrom: |
+  - secretRef:
+      name: keycloak-admin-credentials
+
+# Database
+postgresql:
+  enabled: true
+  postgresqlPassword: ""
+
+# Basic production settings
+replicas: 2
+
+# JVM options with clustering configuration
+javaOpts: >-
+  -Xms1024m
+  -Xmx1536m
+  -XX:+UseG1GC
+  -Djgroups.dns.query=keycloak-headless.csoc.svc.cluster.local
+
+# Additional clustering arguments
+extraArgs:
+  - "--cache-stack=kubernetes"
+
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
