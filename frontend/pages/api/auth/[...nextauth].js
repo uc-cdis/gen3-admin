@@ -1,15 +1,14 @@
-// pages/api/auth/[...nextauth].ts
-import NextAuth, { NextAuthOptions } from "next-auth";
+// pages/api/auth/[...nextauth].js
+import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import KeycloakProvider from "next-auth/providers/keycloak";
-import { NextApiRequest, NextApiResponse } from "next";
 import { serialize } from "cookie";
 
 // Cookie configuration
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  sameSite: "lax",
   path: "/",
   maxAge: 60 * 60 * 8, // 8 hours
 };
@@ -18,14 +17,14 @@ const ACCESS_TOKEN_COOKIE = "keycloak-access-token";
 const REFRESH_TOKEN_COOKIE = "keycloak-refresh-token";
 
 // Store for passing cookies between callbacks
-let pendingCookies: string[] = [];
+let pendingCookies = [];
 
-const authOptions: NextAuthOptions = {
+const authOptions = {
   providers: [
     // Keycloak provider
     KeycloakProvider({
       clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
-      clientSecret: process.env.NEXT_KEYCLOAK_CLIENT_SECRET ?? "",
+      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
       authorization: {
         params: {
@@ -111,15 +110,20 @@ const authOptions: NextAuthOptions = {
           refreshToken: account.refresh_token,
           accessTokenExpires: expiresAt,
           provider: account.provider,
+          roles: user.roles || [],
+          groups: user.groups || [],
+          id: user.id,
+          picture: user.image,
           // Flag to indicate cookies need to be set
           setCookies: account.provider === "keycloak"
         };
       }
 
-      const timeUntilExpiry = Math.round((token.accessTokenExpires - Date.now()) / 1000);
+      const accessTokenExpires = token.accessTokenExpires || 0;
+      const timeUntilExpiry = Math.round((accessTokenExpires - Date.now()) / 1000);
       console.log('Token check - Time until expiration:', timeUntilExpiry, 'seconds');
 
-      if (Date.now() < (token.accessTokenExpires)) {
+      if (Date.now() < accessTokenExpires) {
         console.log('Token still valid, returning existing token');
         return token;
       }
@@ -135,7 +139,7 @@ const authOptions: NextAuthOptions = {
           serialize(ACCESS_TOKEN_COOKIE, '', { ...COOKIE_OPTIONS, maxAge: 0 }),
           serialize(REFRESH_TOKEN_COOKIE, '', { ...COOKIE_OPTIONS, maxAge: 0 })
         ];
-        return null; // This will trigger automatic sign out
+        return { ...token, error: 'RefreshAccessTokenError' };
       }
 
       // Update cookies with refreshed tokens for Keycloak
@@ -143,9 +147,11 @@ const authOptions: NextAuthOptions = {
         console.log('Preparing refreshed Keycloak cookies...');
         pendingCookies = [];
 
+        const refreshedExpires = refreshedToken.accessTokenExpires || Date.now() + (60 * 60 * 1000);
+
         pendingCookies.push(serialize(ACCESS_TOKEN_COOKIE, refreshedToken.accessToken, {
           ...COOKIE_OPTIONS,
-          maxAge: Math.min(COOKIE_OPTIONS.maxAge, Math.floor((refreshedToken.accessTokenExpires - Date.now()) / 1000))
+          maxAge: Math.min(COOKIE_OPTIONS.maxAge, Math.floor((refreshedExpires - Date.now()) / 1000))
         }));
 
         if (refreshedToken.refreshToken) {
@@ -160,12 +166,12 @@ const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (!token) {
-        return null;
+        return session;
       }
 
       session.user = {
         ...session.user,
-        id: token.id,
+        id: token.id || token.sub || '',
         name: token.name,
         email: token.email,
         image: token.picture,
@@ -208,7 +214,7 @@ const authOptions: NextAuthOptions = {
 /**
  * Refreshes the access token using the refresh token
  */
-async function refreshAccessToken(token: any) {
+async function refreshAccessToken(token) {
   try {
     // Check if this is a mock provider token
     if (token.provider === "mock-provider") {
@@ -220,6 +226,11 @@ async function refreshAccessToken(token: any) {
         refreshToken: `fake-refresh-token-${Date.now()}`,
         accessTokenExpires: Date.now() + (3600 * 1000), // 1 hour from now
       };
+    }
+
+    // Ensure we have a refresh token
+    if (!token.refreshToken) {
+      throw new Error('No refresh token available');
     }
 
     // Get the refresh URL from your Keycloak server
@@ -263,13 +274,13 @@ async function refreshAccessToken(token: any) {
 }
 
 // Main handler that wraps NextAuth and handles cookies
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req, res) {
   // Create a wrapper to intercept the response
   const originalSetHeader = res.setHeader.bind(res);
   const originalEnd = res.end.bind(res);
 
   // Override setHeader to add our cookies when needed
-  res.setHeader = function(name: string, value: string | string[]) {
+  res.setHeader = function(name, value) {
     if (name.toLowerCase() === 'set-cookie' && pendingCookies.length > 0) {
       console.log('Injecting pending cookies into response...');
       const existingCookies = Array.isArray(value) ? value : [value];
@@ -280,14 +291,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   };
 
   // Override end to ensure cookies are set before response ends
-  res.end = function(...args: any[]) {
+  res.end = function(...args) {
     if (pendingCookies.length > 0) {
       console.log('Setting cookies before response ends...');
       const existingCookies = res.getHeader('Set-Cookie') || [];
-      const allCookies = [
-        ...(Array.isArray(existingCookies) ? existingCookies : [existingCookies]),
-        ...pendingCookies
-      ];
+
+      // Handle different types that getHeader can return
+      let cookieArray = [];
+      if (typeof existingCookies === 'string') {
+        cookieArray = [existingCookies];
+      } else if (Array.isArray(existingCookies)) {
+        cookieArray = existingCookies.filter(cookie => typeof cookie === 'string');
+      }
+
+      const allCookies = [...cookieArray, ...pendingCookies];
       res.setHeader('Set-Cookie', allCookies);
       pendingCookies = [];
     }
@@ -300,23 +317,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 // ============= DEBUGGING HELPERS =============
 // Add this middleware to your _app.tsx or create a separate API route to check cookies
 
-// pages/api/debug-cookies.ts (create this file for debugging)
+// pages/api/debug-cookies.js (create this file for debugging)
 /*
-import { NextApiRequest, NextApiResponse } from 'next';
-
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default function handler(req, res) {
   console.log('All cookies:', req.headers.cookie);
 
   const cookies = req.headers.cookie?.split('; ').reduce((acc, cookie) => {
     const [key, value] = cookie.split('=');
     acc[key] = value;
     return acc;
-  }, {} as Record<string, string>) || {};
+  }, {}) || {};
 
   res.status(200).json({
     allCookies: cookies,
-    keycloakAccessToken: cookies[ACCESS_TOKEN_COOKIE] || 'Not found',
-    keycloakRefreshToken: cookies[REFRESH_TOKEN_COOKIE] || 'Not found',
+    keycloakAccessToken: cookies['keycloak-access-token'] || 'Not found',
+    keycloakRefreshToken: cookies['keycloak-refresh-token'] || 'Not found',
     nextAuthSession: cookies['next-auth.session-token'] || cookies['__Secure-next-auth.session-token'] || 'Not found',
   });
 }
@@ -326,7 +341,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 // Add this to any client component to check cookies
 
 /*
-// utils/debugCookies.ts
+// utils/debugCookies.js
 export function debugCookies() {
   if (typeof window !== 'undefined') {
     console.log('=== Cookie Debug ===');
@@ -336,7 +351,7 @@ export function debugCookies() {
       const [key, value] = cookie.split('=');
       acc[key] = value;
       return acc;
-    }, {} as Record<string, string>);
+    }, {});
 
     console.log('Parsed cookies:', cookies);
     console.log('Keycloak Access Token:', cookies['keycloak-access-token'] || 'Not found');
@@ -355,21 +370,20 @@ export function debugCookies() {
 */
 
 // ============= MIDDLEWARE APPROACH (Alternative) =============
-// middleware.ts (create in root directory)
+// middleware.js (create in root directory)
 
 /*
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-export async function middleware(request: NextRequest) {
+export async function middleware(request) {
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
   if (token && token.accessToken && token.provider === 'keycloak') {
     const response = NextResponse.next();
 
     // Set cookies in middleware
-    response.cookies.set('keycloak-access-token', token.accessToken as string, {
+    response.cookies.set('keycloak-access-token', token.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -377,7 +391,7 @@ export async function middleware(request: NextRequest) {
     });
 
     if (token.refreshToken) {
-      response.cookies.set('keycloak-refresh-token', token.refreshToken as string, {
+      response.cookies.set('keycloak-refresh-token', token.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
