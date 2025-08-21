@@ -58,19 +58,24 @@ var (
 )
 
 type Agent struct {
-	Id          string    `json:"id"`
-	Name        string    `json:"name"`
-	Certificate string    `json:"certificate"`
-	Metadata    Metadata  `json:"metadata"`
-	PrivateKey  string    `json:"private_key"`
-	Connected   bool      `json:"connected"`
-	LastSeen    time.Time `json:"lastSeen"`
-	CpuUsage    float64   `json:"cpuUsage"`
-	MemoryUsage float64   `json:"memoryUsage"`
-	Provider    string    `json:"provider"`
-	K8sVersion  string    `json:"k8sVersion"`
-	PodCapacity int       `json:"podCapacity"`
-	PodCount    int       `json:"podCount"`
+	Id          string     `json:"id"`
+	Name        string     `json:"name"`
+	Certificate string     `json:"certificate"`
+	Metadata    Metadata   `json:"metadata"`
+	PrivateKey  string     `json:"private_key"`
+	Connected   bool       `json:"connected"`
+	LastSeen    time.Time  `json:"lastSeen"`
+	CpuUsage    float64    `json:"cpuUsage"`
+	MemoryUsage float64    `json:"memoryUsage"`
+	Provider    string     `json:"provider"`
+	K8sVersion  string     `json:"k8sVersion"`
+	PodCapacity int        `json:"podCapacity"`
+	PodCount    int        `json:"podCount"`
+	RoleARN     string     `json:"rolearn"`
+	EKS    	    bool       `json:"eks"`
+	AssumeMethod string    `json:"assumemethod"`
+	AccessKey string       `json:"accesskey"`
+	SecretAccessKey string `json:"secretaccesskey"`
 }
 
 type Metadata struct {
@@ -98,9 +103,12 @@ type AgentConnection struct {
 type ServiceAccountData struct {
 	EKS     bool
 	RoleARN string
+	AssumeMethod string
+	AccessKey string
+	SecretAccessKey string
 }
 
-func generateAgentConfig(agentName string) (string, error) {
+func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMethod string, accessKey string, secretAccessKey string) (string, error) {
 	caCert, caKey, err := ca.LoadOrCreateCA()
 	if err != nil {
 		return "", fmt.Errorf("error loading/creating CA: %v", err)
@@ -165,10 +173,12 @@ func generateAgentConfig(agentName string) (string, error) {
 			Certificate: string(agentCertPEM),
 			// PrivateKey:  string(agentKeyPEM),
 			Connected: false,
+			RoleARN:     roleArn,
 		},
 	}
 
 	config := fmt.Sprintf(`
+---
 apiVersion: v1
 kind: Secret
 metadata:
@@ -177,20 +187,36 @@ type: opaque
 data:
   %s.crt: %s
   %s.key: %s
-  ca.crt: %s
+  ca.crt: %s`,
+		agentName,
+		base64.StdEncoding.EncodeToString(agentCertPEM),
+		agentName,
+		base64.StdEncoding.EncodeToString(agentKeyPEM),
+		base64.StdEncoding.EncodeToString(caCertPem),
+	)
+
+const saTemplate = `
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: cluster-admin-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
   name: csoc
   namespace: csoc
+{{- if and .EKS (eq .AssumeMethod "role") }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .RoleARN }}
+{{- else if and .EKS (eq .AssumeMethod "user")}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-creds
+  namespace: csoc
+type: Opaque
+stringData:
+  aws_access_key_id: {{ .AccessKey }}
+  aws_secret_access_key: {{ .SecretAccessKey }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -206,44 +232,42 @@ spec:
       labels:
         app: csoc-agent
     spec:
-	  serviceAccount: csoc
+      serviceAccount: csoc
       containers:
-      - name: agent
-        image: quay.io/jawadqur/agent:latest
-        command: ["agent"]
-        args: ["--name", "%s"]
-        volumeMounts:
-        - name: tls-certs
-          mountPath: /app/gen3-agent/certs/
-          readOnly: true
+        - name: agent
+          image: quay.io/jawadqur/agent:latest
+          command: ["agent"]
+          args: ["--name", "%s"]
+          {{- if and .EKS (eq .AssumeMethod "user") }}
+          env:
+            - name: AWS_REGION
+              value: us-west-2
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-creds
+                  key: aws_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-creds
+                  key: aws_secret_access_key
+          {{- end }}
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /app/gen3-agent/certs/
+              readOnly: true
       volumes:
-      - name: tls-certs
-        secret:
-          secretName: csoc-tls
-`,
-		agentName,
-		base64.StdEncoding.EncodeToString(agentCertPEM),
-		agentName,
-		base64.StdEncoding.EncodeToString(agentKeyPEM),
-		base64.StdEncoding.EncodeToString(caCertPem),
-		agentName,
-	)
-
-	const saTemplate = `---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-name: csoc
-namespace: csoc
-{{- if .EKS }}
-annotations:
-	eks.amazonaws.com/role-arn: {{ .RoleARN }}
-{{- end -}}
-	`
+        - name: tls-certs
+          secret:
+            secretName: csoc-tls`
 
 	saData := ServiceAccountData{
-		EKS:     true,
-		RoleARN: "roleARN",
+		EKS:     eks,
+		RoleARN: roleArn,
+		AssumeMethod: assumeMethod,
+		AccessKey: accessKey,
+		SecretAccessKey: secretAccessKey,
 	}
 
 	var saBuffer bytes.Buffer
@@ -270,9 +294,9 @@ roleRef:
   kind: ClusterRole
   name: cluster-admin
 subjects:
-- kind: ServiceAccount
-  name: csoc
-  namespace: csoc
+  - kind: ServiceAccount
+    name: csoc
+    namespace: csoc
 `)
 
 	return strings.TrimSpace(config), nil
@@ -312,6 +336,19 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 	}
 
 	agentName := registrationRequest.Registration.AgentName
+
+	var roleArn string
+	var assumeMethod string
+	var accessKey string
+	var secretAccessKey string
+	agentsMutex.RLock()
+	if existing := AgentConnections[agentName]; existing != nil {
+		roleArn = existing.agent.RoleARN
+		assumeMethod = existing.agent.AssumeMethod
+		accessKey = existing.agent.AccessKey
+		secretAccessKey = existing.agent.SecretAccessKey
+	}
+	agentsMutex.RUnlock()
 
 	// Check subject common name against configured username
 	if tlsAuth.State.VerifiedChains[0][0].Subject.CommonName != agentName {
@@ -393,6 +430,10 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			LastSeen:  time.Now(),
 			// TODO: Get the agent certificate from the registration message
 			// Certificate: string(certificate),
+			RoleARN:   roleArn,
+			AssumeMethod:   assumeMethod,
+			AccessKey: accessKey,
+			SecretAccessKey: secretAccessKey,
 		},
 	}
 
@@ -514,7 +555,12 @@ func CreateAgentHandler(c *gin.Context) {
 	r := c.Request
 	w := c.Writer
 	var requestData struct {
-		Name string `json:"name"`
+		Name            string `json:"name"`
+		RoleARN         string `json:"rolearn"`
+		EKS             bool   `json:"eks"`
+		AssumeMethod    string `json:"assumemethod"`
+		AccessKey       string `json:"accesskey"`
+		SecretAccessKey string `json:"secretaccesskey"`
 	}
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err != nil {
@@ -523,7 +569,7 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	config, err := generateAgentConfig(requestData.Name)
+	config, err := generateAgentConfig(requestData.Name, requestData.RoleARN, requestData.EKS, requestData.AssumeMethod, requestData.AccessKey, requestData.SecretAccessKey)
 	if err != nil {
 		log.Error().Err(err).Msg("Error generating agent config")
 		http.Error(w, "Error generating agent config: "+err.Error(), http.StatusInternalServerError)
@@ -650,7 +696,6 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	agentsMutex.RLock()
 	agent, exists := AgentConnections[agentID]
 	agentsMutex.RUnlock()
-
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
 		log.Warn().Msgf("Agent not found: %s", agentID)

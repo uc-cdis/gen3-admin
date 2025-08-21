@@ -17,18 +17,6 @@ import (
 	"github.com/rs/zerolog/pkgerrors"
 )
 
-// const saTemplate = `---
-// apiVersion: v1
-// kind: ServiceAccount
-// metadata:
-//   name: csoc
-//   namespace: csoc
-// {{- if .EKS }}
-//   annotations:
-//     eks.amazonaws.com/role-arn: {{ .RoleARN }}
-// {{- end }}
-// `
-
 func main() {
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
