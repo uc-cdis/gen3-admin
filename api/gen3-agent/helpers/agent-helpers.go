@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -30,13 +29,11 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport"
 )
 
@@ -66,8 +63,6 @@ type Agent struct {
 }
 
 var activeShells sync.Map
-
-var wsConnections sync.Map
 
 // Helper function to get secret keys for debugging
 func getSecretKeys(secret *corev1.Secret) []string {
@@ -406,14 +401,18 @@ func getClientConfig() (*rest.Config, error) {
 }
 
 func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
+	// log.Debug().Msgf("Handling k8s proxy request: %v", req.Path)
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// log.Debug().Msgf("Handling k8s proxy request: %v", req)
 	if req.Method == "CANCEL" {
 		log.Info().Msgf("Received cancellation for stream ID: %s", req.StreamId)
+		// Implement cancellation logic here
 		return
 	}
 
+	// Setup k8s auth
 	restConfig, err := k8s.GetConfig()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to setup k8s auth")
@@ -421,134 +420,106 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		return
 	}
 
-	if strings.ToLower(req.Headers["Upgrade"]) == "websocket" {
-		tlsConfig, err := rest.TLSConfigFor(restConfig)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to get TLS config for REST config")
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to get TLS config for REST config: %v", err))
-			return
-		}
+	// Create HTTP request
+	// Remove the last slash from the host
+	host := strings.TrimSuffix(restConfig.Host, "/")
+	url := fmt.Sprintf("%s%s", host, req.Path)
+	// url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
+	// log.Debug().Msg("Creating request to url: " + url)
 
-		dialer := &websocket.Dialer{
-			TLSClientConfig:  tlsConfig,
-			Subprotocols:     []string{"channel.k8s.io"}, // Kubernetes pod exec subprotocol
-			HandshakeTimeout: 10 * time.Second,
-		}
+	bodyReader := bytes.NewReader(req.Body)
+	httpReq, err := http.NewRequest(req.Method, url, bodyReader)
 
-		header := http.Header{}
-		// if auth, ok := req.Headers["Authorization"]; ok {
-		// 	header.Set("Authorization", auth)
-		// }
-		// header.Set("Authorization", "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkNYQ25nd1NFS0JWQl9DbWxvalo0eCJ9.eyJncm91cCI6ImNsb3Vkc3BhY2UtYWRtaW4iLCJuaWNrbmFtZSI6InBlczJ1ZzIyY3MwMTMiLCJuYW1lIjoicGVzMnVnMjJjczAxM0BwZXN1LnBlcy5lZHUiLCJwaWN0dXJlIjoiaHR0cHM6Ly9zLmdyYXZhdGFyLmNvbS9hdmF0YXIvMmFhMmNiZDQyODEwYmZlMjQ4NTAyYTZkMmI2YmQ2NGU_cz00ODAmcj1wZyZkPWh0dHBzJTNBJTJGJTJGY2RuLmF1dGgwLmNvbSUyRmF2YXRhcnMlMkZwZS5wbmciLCJ1cGRhdGVkX2F0IjoiMjAyNS0wOC0yNFQwNjo1MDowMy42NzZaIiwiZW1haWwiOiJwZXMydWcyMmNzMDEzQHBlc3UucGVzLmVkdSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJpc3MiOiJodHRwczovL2xvZ2luLnNwb3QucmFja3NwYWNlLmNvbS8iLCJhdWQiOiJtd0czbFVNVjhLeWVNcUhlNGZKNUJiM25NMXZCdlJOYSIsInN1YiI6ImF1dGgwfDY4NDg1ZGNjNWRhZWEwNGQ5M2Q5MTE0MiIsImlhdCI6MTc1NjAxODIxMywiZXhwIjoxNzU2Mjc3NDEzLCJzaWQiOiIxQVhyVG9IN28zTEtnVURyVHNIQ2Nlb0hNZ0tIaUM3dSIsIm5vbmNlIjoiUjJrME1sQnFXblo1Y2kxMU9WVndiWE5tVW5kSFdtUmpjRFpWT0U1WFNUVTBiRU40WVZaTU1XTlliUT09Iiwib3JnX2lkIjoib3JnX0EzRVo5TzNRZWRybURQbUoifQ.bc2yGZMf2h4oFMczcTVvvlI1khVL0ueEmMKTRVB5EDEzFn_HNbW4q4F95QXbkQ5Qxosm2WNcra_fx8cbH_Z2BfVxiRco5CpJ_QRZ_txPuU4zMH53IdZwEmhHV7N_feUUIAir4jArb_BSITmtt5lx7HfWvHsEgOQbUAyErh847D9ZWyRnwDdrsIh1_lj60HNGiGRyxG19JpED22FkI_7UnYoHILijH8sbEISliJq-d2jWbzMkquoRqRBwwc0LCgDyP0TU9TAKsDDuAfoE9c8kXigaM8z18v79mzjAqAbkQSDgismoR3sJw9iFERUO2TCimw88pDg3rnU_yQDYDpU0eA")
-		// Normalize host to avoid double slashes
-
-		if auth, ok := req.Headers["Authorization"]; ok {
-			header.Set("Authorization", auth)
-		} else {
-			log.Error().Msg("No authorization header found in request")
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("missing authorization"))
-			return
-		}
-		host := strings.TrimSuffix(restConfig.Host, "/")
-		host = strings.Replace(host, "http:", "ws:", 1)
-		host = strings.Replace(host, "https:", "wss:", 1)
-		wsURL := host + req.Path
-		log.Debug().Msgf("ws url: %s", wsURL)
-		log.Debug().Msgf("ws headers: %s", header)
-
-		wsConn, resp, err := dialer.Dial(wsURL, header)
-		if err != nil {
-			logMsg := fmt.Sprintf("Failed to dial WebSocket to K8s: %v", err)
-			if resp != nil {
-				logMsg += fmt.Sprintf(", status: %d, headers: %v", resp.StatusCode, resp.Header)
-			}
-			log.Error().Err(err).Msg(logMsg)
-			// var statusCode int32 = 500
-			// if resp != nil {
-			// 	statusCode = int32(resp.StatusCode)
-			// }
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to dial WebSocket to K8s: %v", err))
-			return
-		}
-		defer wsConn.Close()
-		defer wsConnections.Delete(req.StreamId)
-
-		log.Debug().Msgf("WebSocket connection established, status: %d", resp.StatusCode)
-		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
-		wsConnections.Store(req.StreamId, wsConn)
-
-		for {
-			msgType, data, err := wsConn.ReadMessage()
-			if err != nil {
-				log.Debug().Err(err).Msg("K8s WS read error, closing")
-				a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
-				break
-			}
-			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, data)
-			_ = msgType
-		}
-	} else {
-		// Non-WebSocket logic remains unchanged
-		host := strings.TrimSuffix(restConfig.Host, "/")
-		url := fmt.Sprintf("%s%s", host, req.Path)
-		bodyReader := bytes.NewReader(req.Body)
-		httpReq, err := http.NewRequest(req.Method, url, bodyReader)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to create request")
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to create request: %v", err))
-			return
-		}
-
-		if contentType, ok := req.Headers["Content-Type"]; ok {
-			httpReq.Header.Set("Content-Type", contentType)
-		} else {
-			httpReq.Header.Set("Content-Type", "application/json")
-		}
-
-		transport, err := rest.TransportFor(restConfig)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to get transport for REST config")
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to get transport for REST config: %v", err))
-			return
-		}
-
-		if t, ok := transport.(*http.Transport); ok {
-			if t.TLSClientConfig == nil {
-				t.TLSClientConfig = &tls.Config{}
-			}
-			t.TLSClientConfig.NextProtos = []string{"h2", "http/1.1"}
-		}
-
-		client := &http.Client{
-			Transport: transport,
-		}
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to execute request: %v", err)
-			a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to execute request: %v", err))
-			return
-		}
-		defer resp.Body.Close()
-
-		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
-
-		buffer := make([]byte, 16384)
-		for {
-			n, err := resp.Body.Read(buffer)
-			if n > 0 {
-				a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Error().Err(err).Msg("Error reading response body")
-				break
-			}
-		}
-
-		a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
+	// httpReq, err := http.NewRequest(req.Method, url, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create request")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to create request: %v", err))
+		return
 	}
+
+	// // Set headers
+	// for k, v := range req.Headers {
+	// 	log.Debug().Msg(fmt.Sprintf("Setting header %s to %s", k, v))
+	// 	httpReq.Header.Set(k, v)
+	// }
+
+	// // Set content type if needed
+	// // httpReq.Header.Set("Content-Type", "application/json")
+
+	// Set Content-Type header from req.Headers if present; else fallback to application/json
+	if contentType, ok := req.Headers["Content-Type"]; ok {
+		log.Debug().Msg(fmt.Sprintf("Setting Content-Type header to %s", contentType))
+		httpReq.Header.Set("Content-Type", contentType)
+	} else {
+		// log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
+
+	// Set up the transport using the REST configuration
+	transport, err := rest.TransportFor(restConfig)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get transport for REST config")
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to get transport for REST config: %v", err))
+		return
+	}
+
+	// Type assert to get TLSClientConfig
+	if t, ok := transport.(*http.Transport); ok {
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = &tls.Config{}
+		}
+		t.TLSClientConfig.NextProtos = []string{"h2", "http/1.1"}
+	}
+
+	// Execute request
+	client := &http.Client{
+		Transport: transport,
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Error().Err(err).Msgf("Failed to execute request: %v", err)
+		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to execute request: %v", err))
+		return
+	}
+
+	// log.Debug().Msgf("Response Status: %s", resp.Status)
+	defer resp.Body.Close()
+
+	// Print all response headers to debug log
+	// for k, v := range resp.Header {
+	// 	log.Debug().Msgf("Response Header: %s: %s", k, v)
+	// }
+
+	// // Send headers
+	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
+
+	// Send status code and headers
+	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
+
+	// readBody, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	log.Error().Err(err).Msg("Error reading response body")
+	// 	return
+	// }
+
+	buffer := make([]byte, 16384)
+	for {
+		n, err := resp.Body.Read(buffer)
+		if n > 0 {
+			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
+		}
+		if err == io.EOF {
+			// log.Debug().Msg("Request completed - EOF")
+			break
+		}
+		if err != nil {
+			log.Error().Err(err).Msg("Error reading response body")
+			break
+		}
+	}
+
+	// log.Debug().Msg("Request completed")
+	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
 }
 
 func (a *Agent) handleProjectsRequest(req *pb.ProjectsRequest) {
@@ -1256,50 +1227,39 @@ func (a *Agent) Run(ctx context.Context) error {
 		case *pb.ServerMessage_HelmDeleteRequest:
 			log.Warn().Msg("Got a helm delete request message")
 			go a.handleHelmDeleteRequest(content.HelmDeleteRequest)
-
 		case *pb.ServerMessage_HelmInstallRequest:
 			log.Warn().Msg("Got a helm install request message")
 			go a.handleHelmInstallRequest(content.HelmInstallRequest)
-
 		case *pb.ServerMessage_HelmValuesRequest:
 			log.Warn().Msg("Got a helm values request message")
 			go a.handleHelmValuesRequest(content.HelmValuesRequest)
-
 		case *pb.ServerMessage_Projects:
 			log.Debug().Msg("Got a projects request message")
 			go a.handleProjectsRequest(content.Projects)
-
 		case *pb.ServerMessage_DbuiRequest:
 			log.Debug().Msgf("Got a DBUI request: %s", content)
 			go a.handleDbUiRequest(content.DbuiRequest)
-
 		case *pb.ServerMessage_Proxy:
-			// proxy := content.Proxy
-			// Remove the problematic condition that interferes with terminal requests
 			if content.Proxy.ProxyType == "k8s" {
+				// log.Debug().Msg("Got a k8s proxy request message")
+				// log.Debug().Msg(fmt.Sprintf("Content: %v", content.Proxy))
 				go a.handleK8sProxyRequest(content.Proxy)
 			} else {
+				log.Debug().Msg("Got a non k8s proxy request message")
 				go a.handleProxyRequest(content.Proxy)
 			}
-
 		case *pb.ServerMessage_Registration:
 			if !content.Registration.Success {
 				// This is used as a way to signal that the server is ending the connection. Let's die.
 				log.Fatal().Msg("Connection killed by server, possibly a new agent connected. Exiting.")
 			}
 			log.Info().Msgf("Registration response: %v", content.Registration.Success)
-
 		case *pb.ServerMessage_Status:
 			log.Info().Msgf("Received server status: CPU: %v, Memory: %v", content.Status.CpuUsage, content.Status.MemoryUsage)
-
-		case *pb.ServerMessage_TerminalRequest:
-			log.Info().Msg("Got a terminal request message")
-			go a.handleTerminalRequest(content.TerminalRequest)
-
+		// Terminal stream
 		case *pb.ServerMessage_TerminalStream:
-			log.Info().Msg("Got terminal stream data (user input)")
-			go a.HandleTerminalStream(content.TerminalStream)
-
+			log.Info().Msgf("Received terminal request from server.")
+			go a.HandleTerminal(content.TerminalStream)
 		default:
 			log.Warn().Msgf("Unknown message type: %T", content)
 		}
@@ -1359,300 +1319,22 @@ func startShell(ctx context.Context, streamID string, stream pb.TunnelService_Co
 	activeShells.Delete(streamID)
 }
 
-func (a *Agent) handleTerminalRequest(req *pb.TerminalRequest) {
-	log.Info().Msgf("Handling terminal request for pod |%v|%s|%s, container: %s",
-		req.SessionId, req.Namespace, req.Pod, req.Container)
+func (a *Agent) HandleTerminal(ts *tunnel.TerminalStream) error {
+	log.Info().Msgf("Starting shell for session: %s", ts.SessionId)
+	ctx, _ := context.WithCancel(context.Background())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Start the shell in background
+	go startShell(ctx, ts.SessionId, a.stream)
 
-	// Store the cancel function for this session
-	activeShells.Store(req.SessionId, cancel)
-
-	// Start the actual terminal session
-	go a.startK8sTerminalSession(ctx, req.SessionId, req.Namespace, req.Pod, req.Container, req.Command)
-}
-
-func (a *Agent) startK8sTerminalSession(ctx context.Context, sessionID, namespace, pod, container, command string) {
-
-	log.Debug().Msgf("Terminal session params - SessionID: %s, Namespace: %s, Pod: %s, Container: %s, Command: '%s'",
-		sessionID, namespace, pod, container, command)
-
-	// The issue might be here - check if command is actually empty:
-	if strings.TrimSpace(command) == "" {
-		command = "/bin/bash"
-	}
-
-	log.Debug().Msgf("Using command: %s", command)
-
-	defer func() {
-		activeShells.Delete(sessionID)
-		activeShells.Delete(sessionID + "_stdin")
-		log.Info().Msgf("Terminal session %s cleaned up", sessionID)
-	}()
-
-	var cmdArray []string
-	if command == "" {
-		cmdArray = []string{"/bin/bash"}
-	} else {
-		// Split command string into array if it contains spaces
-		cmdArray = strings.Fields(command)
-		if len(cmdArray) == 0 {
-			cmdArray = []string{"/bin/bash"}
-		}
-	}
-
-	config, err := k8s.GetConfig()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to get k8s config")
-		a.sendTerminalError(sessionID, "Failed to get k8s config")
-		return
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create k8s client")
-		a.sendTerminalError(sessionID, "Failed to create k8s client")
-		return
-	}
-
-	// Create the exec request with proper parameters
-	req := clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(pod).
-		Namespace(namespace).
-		SubResource("exec").
-		Param("container", container).
-		Param("stdin", "true").
-		Param("stdout", "true").
-		Param("stderr", "true").
-		Param("tty", "true")
-
-	// Add each command element as a separate parameter
-	for _, cmd := range cmdArray {
-		req = req.Param("command", cmd)
-	}
-
-	req = req.VersionedParams(&corev1.PodExecOptions{
-		Container: container,
-		Command:   cmdArray,
-		Stdin:     true,
-		Stdout:    true,
-		Stderr:    true,
-		TTY:       true,
-	}, scheme.ParameterCodec)
-
-	// After creating the exec request, add validation:
-	if pod == "" || namespace == "" {
-		log.Error().Msg("Missing pod or namespace for terminal session")
-		a.sendTerminalError(sessionID, "Pod and namespace are required")
-		return
-	}
-
-	// Create SPDY executor
-	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create SPDY executor")
-		a.sendTerminalError(sessionID, "Failed to create terminal executor")
-		return
-	}
-
-	// Create pipes
-	stdinReader, stdinWriter := io.Pipe()
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
-	// Store the stdin writer for this session
-	activeShells.Store(sessionID+"_stdin", stdinWriter)
-
-	// Handle output from the container
-	go a.handleTerminalOutput(sessionID, stdoutReader, false)
-	go a.handleTerminalOutput(sessionID, stderrReader, true)
-
-	// Channel to track when the stream is done
-	done := make(chan struct{})
-
-	// Start the exec session in a goroutine
-	go func() {
-		defer close(done)
-		defer func() {
-			stdoutWriter.Close()
-			stderrWriter.Close()
-			stdinWriter.Close()
-		}()
-
-		log.Info().Msgf("Starting terminal stream for session %s", sessionID)
-
-		log.Warn().Msgf("TERMINAL AGENT EXEC-2 %v", ctx, stdinReader, stdoutReader, stderrWriter)
-		err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-			Stderr: stderrWriter,
-			Tty:    true,
-		})
-
-		if err != nil {
-			log.Error().Err(err).Msg("Terminal stream error")
-			a.sendTerminalError(sessionID, fmt.Sprintf("Terminal error: %v", err))
-		} else {
-			log.Info().Msgf("Terminal session %s completed successfully", sessionID)
-		}
-	}()
-
-	// Wait for either context cancellation or stream completion
-	select {
-	case <-ctx.Done():
-		log.Info().Msgf("Terminal session %s cancelled by context", sessionID)
-		// Close the pipes to terminate the stream
-		stdinWriter.Close()
-		stdoutWriter.Close()
-		stderrWriter.Close()
-	case <-done:
-		log.Info().Msgf("Terminal session %s completed naturally", sessionID)
-	}
-}
-
-func (a *Agent) handleTerminalOutput(sessionID string, reader io.Reader, isStderr bool) {
-	buffer := make([]byte, 1024)
-
-	for {
-		n, err := reader.Read(buffer)
-		if n > 0 {
-			// Send output to the server
-			err := a.stream.Send(&pb.AgentMessage{
-				Message: &pb.AgentMessage_TerminalStream{
-					TerminalStream: &pb.TerminalStream{
-						SessionId: sessionID,
-						Data:      buffer[:n],
-					},
-				},
-			})
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to send terminal output")
-				return
-			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				log.Error().Err(err).Msg("Terminal output read error")
-			}
-			break
-		}
-	}
-}
-
-func (a *Agent) HandleTerminalStream(ts *pb.TerminalStream) {
-	log.Debug().Msgf("Received terminal input for session: %s, length: %d | %v", ts.SessionId, len(ts.Data), ts.Data)
-
-	if stdin, ok := activeShells.Load(ts.SessionId + "_stdin"); ok {
-		if writer, ok := stdin.(io.Writer); ok {
-			_, err := writer.Write(ts.Data)
-			if err != nil {
-				// Don't log errors for closed pipes - they're expected when sessions end
-				if err != io.ErrClosedPipe {
-					log.Error().Err(err).Msg("Failed to write to terminal stdin")
-				}
-			}
-		}
-	} else {
-		log.Warn().Msgf("No active terminal session found for ID: %s", ts.SessionId)
-	}
-}
-
-func (a *Agent) sendTerminalError(sessionID string, message string) {
 	a.stream.Send(&pb.AgentMessage{
 		Message: &pb.AgentMessage_TerminalStream{
 			TerminalStream: &pb.TerminalStream{
-				SessionId: sessionID,
-				Data:      []byte("ERROR: " + message + "\r\n"),
+				Data:      []byte("Connected to"),
+				SessionId: ts.SessionId,
 			},
 		},
 	})
-}
 
-func (a *Agent) HandleTerminal(ts *tunnel.TerminalStream) error {
-	log.Info().Msgf("Received terminal stream for session: %s", ts.SessionId)
-
-	// Parse the terminal data to check if it's a start request
-	var terminalData map[string]string
-	err := json.Unmarshal(ts.Data, &terminalData)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to parse terminal data")
-		return err
-	}
-
-	if action, ok := terminalData["action"]; ok && action == "start" {
-		log.Info().Msgf("Starting terminal session for pod %s in namespace %s",
-			terminalData["pod"], terminalData["namespace"])
-
-		// Start the shell session
-		ctx, cancel := context.WithCancel(context.Background())
-
-		// Store the cancel function for this session
-		activeShells.Store(ts.SessionId, cancel)
-
-		// Start the actual terminal session using k8s exec
-		go a.startTerminalSession(ctx, ts.SessionId, terminalData)
-
-		a.stream.Send(&pb.AgentMessage{
-			Message: &pb.AgentMessage_TerminalStream{
-				TerminalStream: &pb.TerminalStream{
-					SessionId: ts.SessionId,
-					Data:      []byte("Terminal session started"),
-				},
-			},
-		})
-	} else {
-		// Regular terminal data - pass it to the active shell
-		if stdin, ok := activeShells.Load(ts.SessionId); ok {
-			// This assumes activeShells stores io.Writer for stdin
-			if writer, ok := stdin.(io.Writer); ok {
-				writer.Write(ts.Data)
-			}
-		}
-	}
-
+	log.Info().Msgf("Terminal stream message sent %s", ts.SessionId)
 	return nil
-}
-
-func (a *Agent) startTerminalSession(ctx context.Context, sessionID string, data map[string]string) {
-	namespace := data["namespace"]
-	pod := data["pod"]
-	// container := data["container"]
-	command := data["command"]
-
-	if command == "" {
-		command = "/bin/bash"
-	}
-
-	// Implement the actual k8s exec logic here
-	// This would create a connection to the k8s API and handle the terminal session
-
-	log.Info().Msgf("Starting terminal session for pod %s/%s", namespace, pod)
-
-	// For now, just simulate a basic shell
-	go a.simulateShell(ctx, sessionID)
-}
-
-func (a *Agent) simulateShell(ctx context.Context, sessionID string) {
-	// This is a placeholder - implement actual k8s exec here
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			a.stream.Send(&pb.AgentMessage{
-				Message: &pb.AgentMessage_TerminalStream{
-					TerminalStream: &pb.TerminalStream{
-						SessionId: sessionID,
-						Data:      []byte(fmt.Sprintf("Current time: %s\r\n", time.Now().Format(time.RFC1123))),
-					},
-				},
-			})
-		case <-ctx.Done():
-			log.Info().Msgf("Terminal session %s ended", sessionID)
-			activeShells.Delete(sessionID)
-			return
-		}
-	}
 }
