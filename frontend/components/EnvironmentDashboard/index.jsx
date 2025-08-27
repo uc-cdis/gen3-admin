@@ -402,7 +402,7 @@ export default function EnvironmentDashboardComp({
             accessToken
           ),
           callGoApi(
-            `/k8s/${env}/proxy/api/v1/events`,
+            `/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`,
             "GET",
             null,
             null,
@@ -602,6 +602,92 @@ export default function EnvironmentDashboardComp({
 
       <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
+      <Divider my="lg"/>
+
+      {/* Pod Status Table */}
+      <Group align="flex-start" gap="md" mb="xl" grow>
+        <Card withBorder>
+          <Title order={4} mb="sm">
+            Pod Status
+          </Title>
+          <Text c="dimmed" mb="sm">
+            Current pod status across all namespaces
+          </Text>
+          <ScrollArea h={500}>
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Namespace</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Node</Table.Th>
+                  <Table.Th>Restarts</Table.Th>
+                  <Table.Th>Age</Table.Th>
+                  <Table.Th>CPU Request</Table.Th>
+                  <Table.Th>Memory Request</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {podData.map((pod) => (
+                  <Table.Tr key={`${pod.namespace}-${pod.name}`}>
+                    <Table.Td>{pod.name}</Table.Td>
+                    <Table.Td>{pod.namespace}</Table.Td>
+                    <Table.Td>
+                      <Group gap="sm">
+                        {pod.status === "Running" ? (
+                          <Box
+                            style={{
+                              position: "relative",
+                              width: 16,
+                              height: 16,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <IconCircleFilled
+                              color={colors[status]}
+                              size={10}
+                              style={{ position: "relative", zIndex: 2 }}
+                            />
+                            <Box
+                              style={{
+                                position: "absolute",
+                                borderRadius: "50%",
+                                backgroundColor: colors[status],
+                                width: 16,
+                                height: 16,
+                                animation: "pulse 1.5s infinite",
+                                opacity: 0,
+                                zIndex: 1,
+                              }}
+                            />
+                          </Box>
+                        ) : (
+                          <IconAlertCircle color="red" size={14} />
+                        )}
+                        <Text>{pod.status}</Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>{pod.node}</Table.Td>
+                    <Table.Td>{pod.restarts}</Table.Td>
+                    <Table.Td>{pod.age}</Table.Td>
+                    <Table.Td>
+                      {pod.resourceUsage.cpu.toFixed(2)} cores
+                    </Table.Td>
+                    <Table.Td>
+                      {formatMemoryUsage(pod.resourceUsage.memory)}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Card>
+      </Group>
+
+      <Divider my="lg"/>
+
       {/* Main metrics */}
       <Group align="flex-start" gap="md" mb="xl" grow>
         {dynamicMetrics.map((metric) => (
@@ -633,6 +719,8 @@ export default function EnvironmentDashboardComp({
           </Card>
         ))}
       </Group>
+
+      <Divider my="lg"/>
 
       {/* Metrics Grid */}
       <Group align="flex-start" gap="md" mb="xl" grow>
@@ -700,6 +788,8 @@ export default function EnvironmentDashboardComp({
           />
         </Card>
       </Group>
+
+      <Divider my="lg"/>
 
       <EventsCards
         eventsData={eventsData}
@@ -837,87 +927,7 @@ export default function EnvironmentDashboardComp({
         </Card>
       </Group> */}
 
-      {/* Pod Status Table */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
-        <Card withBorder>
-          <Title order={4} mb="sm">
-            Pod Status
-          </Title>
-          <Text c="dimmed" mb="sm">
-            Current pod status across all namespaces
-          </Text>
-          <ScrollArea h={500}>
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Namespace</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Node</Table.Th>
-                  <Table.Th>Restarts</Table.Th>
-                  <Table.Th>Age</Table.Th>
-                  <Table.Th>CPU Request</Table.Th>
-                  <Table.Th>Memory Request</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {podData.map((pod) => (
-                  <Table.Tr key={`${pod.namespace}-${pod.name}`}>
-                    <Table.Td>{pod.name}</Table.Td>
-                    <Table.Td>{pod.namespace}</Table.Td>
-                    <Table.Td>
-                      <Group gap="sm">
-                        {pod.status === "Running" ? (
-                          <Box
-                            style={{
-                              position: "relative",
-                              width: 16,
-                              height: 16,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <IconCircleFilled
-                              color={colors[status]}
-                              size={10}
-                              style={{ position: "relative", zIndex: 2 }}
-                            />
-                            <Box
-                              style={{
-                                position: "absolute",
-                                borderRadius: "50%",
-                                backgroundColor: colors[status],
-                                width: 16,
-                                height: 16,
-                                animation: "pulse 1.5s infinite",
-                                opacity: 0,
-                                zIndex: 1,
-                              }}
-                            />
-                          </Box>
-                        ) : (
-                          <IconAlertCircle color="red" size={14} />
-                        )}
-                        <Text>{pod.status}</Text>
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>{pod.node}</Table.Td>
-                    <Table.Td>{pod.restarts}</Table.Td>
-                    <Table.Td>{pod.age}</Table.Td>
-                    <Table.Td>
-                      {pod.resourceUsage.cpu.toFixed(2)} cores
-                    </Table.Td>
-                    <Table.Td>
-                      {formatMemoryUsage(pod.resourceUsage.memory)}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
-        </Card>
-      </Group>
+      
 
       {/* Network Traffic */}
       {/* <Group align="flex-start" gap="md" mb="xl" grow>
