@@ -58,10 +58,8 @@ const StepperForm = () => {
           netPolicy: { enabled: false, dbSubnet: '0.0.0.0/0' },
         },
         postgresql: {
-          image: {
-            registry: "quay.io",
-            repository: "uc-cdis/postgresql",
-            tag: "14.5.0-debian-11-r35"
+          persistence: {
+            enabled: true
           }
         },
         revproxy: {
@@ -184,6 +182,7 @@ const StepperForm = () => {
         peregrine: { enabled: false },
         sheepdog: { enabled: false },
         elasticsearch: {
+          masterService: "elasticsearch",
           volumeClaimTemplate: {
             resources: {
               requests: {

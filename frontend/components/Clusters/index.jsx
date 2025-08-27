@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 
-import { Box, Group, Button, Badge, Anchor, TextInput, Text, Drawer, Title, Tooltip, Container, Code, Menu, MenuItem, rem, Modal } from '@mantine/core';
+import { Box, Group, Button, Badge, Anchor, TextInput, Text, Drawer, Title, Tooltip, Container, Code, Menu, MenuItem, rem, Modal, Radio } from '@mantine/core';
 import { IconChevronDown, IconSearch, IconTrash } from '@tabler/icons-react';
 
-import { CopyButton } from '@mantine/core';
+import { CopyButton, Collapse } from '@mantine/core';
 
 import { DataTable } from 'mantine-datatable';
 import { useForm } from '@mantine/form';
@@ -129,7 +129,7 @@ function Clusters() {
     setPage(1);
   }, [searchQuery, clusters]);
 
-  // Query for the api for active clusters/agents 
+  // Query for the api for active clusters/agents
   const fetchClusters = async () => {
     if (!sessionData) {
       console.log("returning")
@@ -179,7 +179,7 @@ function Clusters() {
 
     } catch (error) {
       console.error('Error importing cluster:', error);
-      // Notify with error 
+      // Notify with error
       showNotification({
         title: 'Error',
         message: 'An error occurred while deleting the cluster.' + error.message,
@@ -190,7 +190,8 @@ function Clusters() {
 
   const createCluster = async (data) => {
     try {
-      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName }, null, sessionData.accessToken, 'text');
+      const eks = data.eks === 'true'; // coerce to boolean for the API
+      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName, rolearn: data.roleARN, eks, assumemethod: data.assumeMethod, accesskey: data.accessKey, secretaccesskey: data.secretAccessKey }, null, sessionData.accessToken, 'text');
       setSubmitResponse(responseData);
       fetchClusters();
     } catch (error) {
@@ -200,12 +201,19 @@ function Clusters() {
   };
 
   const form = useForm({
-    mode: 'uncontrolled',
+    // mode: 'uncontrolled',
     defaultValues: {
       clusterName: 'cluster-name',
+      roleARN: '',
+      eks: 'false',
+      assumeMethod: '',
+      accessKey: '',
+      secretAccessKey: '',
     },
   });
-
+  const showEksFollowup = form.values.eks === 'true'
+  const showRoleFollowup = form.values.assumeMethod === 'role'
+  const showUserFollowup = form.values.assumeMethod === 'user'
   return (
     <>
       <Drawer
@@ -226,6 +234,49 @@ function Clusters() {
                 placeholder="Enter cluster name"
                 {...form.getInputProps('clusterName')}
               />
+          <Radio.Group
+            label="EKS?"
+            {...form.getInputProps('eks')}
+            withAsterisk
+          >
+            <Group mt="xs">
+              <Radio value="true" label="True" />
+              <Radio value="false" label="False" />
+            </Group>
+          </Radio.Group>
+        {/* Show the next question only when EKS === true */}
+        <Collapse in={showEksFollowup}>
+          <Radio.Group
+            label="How should the cluster assume AWS permissions?"
+            description="Would you like to use a Role or Access Keys to allow the agent to authenticate?"
+            {...form.getInputProps('assumeMethod')}
+            withAsterisk
+          >
+            <Group mt="xs">
+              <Radio value="user" label="User" />
+              <Radio value="role" label="Role" />
+            </Group>
+          </Radio.Group>
+        </Collapse>
+            {/* Show the next question only when assumeMethod === role */}
+            <Collapse in={showRoleFollowup && showEksFollowup}>
+              <TextInput
+                label="AWS RoleARN"
+                placeholder="arn:aws:iam::<account_id>:role/<role_name>"
+                {...form.getInputProps('roleARN')}
+              />
+            </Collapse>
+              {/* Show the next question only when assumeMethod === user */}
+            <Collapse in={showUserFollowup && showEksFollowup}>
+              <TextInput
+                label="AWS Access Key"
+                {...form.getInputProps('accessKey')}
+              />
+              <TextInput
+                label="AWS Access Secret Key"
+                {...form.getInputProps('secretAccessKey')}
+              />
+            </Collapse>
 
               <Button type="submit" mt="md">
                 Import

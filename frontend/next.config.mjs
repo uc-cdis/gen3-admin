@@ -21,6 +21,10 @@ const rewritesConfig = isDevelopment
       destination: "/api/auth/:path*",
     },
     {
+      source: "/api/:path*/", // Matches paths ending with /
+      destination: "http://localhost:8002/api/:path*/",
+    },
+    {
       source: "/api/:path*", // Matched parameters can be used in the destination
       destination: "http://localhost:8002/api/:path*", // Destination URL can be configured by providing a "destination" property
     },
@@ -34,7 +38,7 @@ export default withBundleAnalyzer({
   // },
   reactStrictMode: false,
   transpilePackages: ["react-hexgrid"],
-
+  skipTrailingSlashRedirect: true,
   rewrites: async () => rewritesConfig,
   experimental: {
     proxyTimeout: 100000000,

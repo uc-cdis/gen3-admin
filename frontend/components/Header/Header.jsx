@@ -159,7 +159,7 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
                   // Fallback to chart name if configmap fetch fails
                   return {
                     value: `${agent.name}/${chart.namespace}`,
-                    label: `${agent.name}/${chart.name}`,
+                    label: `${agent.name}/${chart.namespace}`,
                     status: chart.status || 'unknown',
                     namespace: chart.namespace,
                   };
@@ -207,16 +207,34 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
 
   // Handle environment change and navigation
   const handleEnvironmentChange = (value) => {
+    if (!value) {
+      // Handle clear/empty selection
+      setActiveEnvironments(null);
+      setActiveGlobalEnv(null);
+      return;
+    }
+
+    console.log("env change: ", value);
+
+    const [cluster, namespace] = value.split('/');
+
+    // Validate that we have both cluster and namespace
+    if (!cluster || !namespace) {
+      console.error("Invalid environment value format:", value);
+      return;
+    }
+
+    // Update state
     setActiveEnvironments(value);
     setActiveGlobalEnv(value);
 
-    const [cluster, namespace] = value.split('/');
-    const newPath = `/environments/${cluster}/${namespace}`;
-    router.push(newPath);
-
+    // Update cluster if it changed
     if (cluster !== activeCluster) {
       setActiveCluster(cluster);
     }
+
+    // Navigate to new environment
+    // router.push(`/environments/${cluster}/${namespace}`);
   };
 
   // Handle logout
@@ -233,59 +251,45 @@ export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDeskto
     if (activeGlobalEnv) {
       setActiveEnvironments(activeGlobalEnv);
     }
-  }, [accessToken, activeGlobalEnv]);
+  }, [activeGlobalEnv]);
 
-  // Environment selector component
+  // Simplified Environment selector component
+  // Simplified Environment selector component
   const EnvironmentSelect = () => {
-    const combobox = useCombobox({
-      onDropdownClose: () => combobox.resetSelectedOption(),
-    });
-
-    const options = environments.map((item) => {
-      const statusConfig = getStatusIcon(item.status);
-      const StatusIcon = statusConfig.icon;
-
-      return (
-        <Combobox.Option value={item.value} key={item.value}>
-          <Group justify="space-between" wrap="nowrap" w="100%">
-            <div style={{ fontFamily: 'monospace' }}>{item.label}</div>
-            <Group gap="xs" wrap="nowrap">
-              <Badge size="sm" variant="light" color="gray" radius="xl">
-                {item.namespace}
-              </Badge>
-              <StatusIcon
-                style={{ width: rem(16), height: rem(16) }}
-                color={statusConfig.color}
-              />
-            </Group>
-          </Group>
-        </Combobox.Option>
-      );
-    });
-
     return (
-      <Combobox
-        store={combobox}
-        onOptionSubmit={handleEnvironmentChange}
-        style={{ flex: 1, minWidth: 120 }}
-      >
-        <Combobox.Target>
-          <InputBase
-            component="button"
-            type="button"
-            pointer
-            rightSection={<IconChevronDown style={{ width: rem(18), height: rem(18) }} stroke={1.5} />}
-            onClick={() => combobox.toggleDropdown()}
-            rightSectionPointerEvents="none"
-            style={{ fontFamily: 'monospace' }}
-          >
-            {activeEnvironments || activeGlobalEnv || 'Select Environment'}
-          </InputBase>
-        </Combobox.Target>
-        <Combobox.Dropdown>
-          <Combobox.Options>{options}</Combobox.Options>
-        </Combobox.Dropdown>
-      </Combobox>
+      <Select
+        data={environments.map(item => ({
+          value: item.value,
+          label: item.label
+        }))}
+        value={activeEnvironments || activeGlobalEnv}
+        onChange={handleEnvironmentChange}
+        placeholder="Select Environment"
+        allowDeselect={false}
+        style={{ flex: 1, minWidth: 120, fontFamily: 'monospace' }}
+        searchable
+        clearable
+        renderOption={({ option }) => {
+          const env = environments.find(e => e.value === option.value);
+          const statusConfig = getStatusIcon(env.status);
+          const StatusIcon = statusConfig.icon;
+
+          return (
+            <Group justify="space-between" wrap="nowrap" w="100%">
+              <div style={{ fontFamily: 'monospace' }}>{env.label}</div>
+              <Group gap="xs" wrap="nowrap">
+                <Badge size="sm" variant="light" color="gray" radius="xl">
+                  {env.namespace}
+                </Badge>
+                <StatusIcon
+                  style={{ width: rem(16), height: rem(16) }}
+                  color={statusConfig.color}
+                />
+              </Group>
+            </Group>
+          );
+        }}
+      />
     );
   };
 

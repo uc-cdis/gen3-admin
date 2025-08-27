@@ -51,6 +51,7 @@ import '@mantine/core/styles.layer.css';
 import '@mantine/notifications/styles.css';
 import 'mantine-datatable/styles.layer.css';
 import '@mantine/dates/styles.css';
+import { AuthenticatedLayout } from '@/layout/AuthenticatedLayout';
 
 
 function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
@@ -150,9 +151,18 @@ export default function App({
 
   return (
     <GlobalStateProvider>
-      <SessionProvider session={session}>
+      <SessionProvider
+        session={session}
+        // Enable automatic session polling every 5 seconds
+        refetchInterval={5}
+        // Refetch session when window regains focus
+        refetchOnWindowFocus={true}
+        // Refetch when browser comes back online
+        refetchWhenOffline={false}
+      >
       {/* <KeycloakProvider> */}
         <MantineProvider theme={theme}>
+          <AuthenticatedLayout>
           <Head>
             <title>Gen3 - Admin</title>
             <meta
@@ -165,6 +175,7 @@ export default function App({
 
           <AppContent Component={Component} pageProps={pageProps} />
           {/* <Component {...pageProps} /> */}
+          </AuthenticatedLayout>
         </MantineProvider>
       {/* </KeycloakProvider> */}
       </SessionProvider>

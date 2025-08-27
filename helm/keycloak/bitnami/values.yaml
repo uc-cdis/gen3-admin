@@ -1,0 +1,66 @@
+# Minimal Bitnami Keycloak configuration for production
+
+# Admin credentials - using existing secret
+auth:
+  adminUser: admin
+  existingSecret: keycloak-admin-credentials
+  passwordSecretKey: KEYCLOAK_PASSWORD
+
+# Production mode with proxy headers (no TLS generation needed)
+production: true
+
+# Use proxy headers since TLS is terminated at load balancer
+proxyHeaders: "xforwarded"
+
+extraEnvVars:
+  - name: KEYCLOAK_PROXY_ADDRESS_FORWARDING
+    value: "true"
+  - name: KEYCLOAK_FRONTEND_URL
+    value: "https://keycloak-csoc.planx-pla.net"
+
+
+# Disable TLS generation since load balancer handles it
+tls:
+  enabled: false
+
+# Force HTTP enabled since we're behind a proxy
+httpEnabled: true
+
+# Set hostname settings for proxy setup
+hostnameStrict: false
+
+# Ingress configuration
+ingress:
+  enabled: true
+  ingressClassName: alb
+  hostname: keycloak-csoc.planx-pla.net
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:707767160287:certificate/520ede2f-fc82-4bb9-af96-4b4af7deabbd
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+
+# Multiple replicas for HA
+replicaCount: 2
+
+# Basic resource limits
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# PostgreSQL database
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: ""  # Will be set by deploy script
+    username: keycloak
+    password: ""  # Will be set by deploy script
+    database: keycloak
+
+# Enable metrics
+metrics:
+  enabled: true

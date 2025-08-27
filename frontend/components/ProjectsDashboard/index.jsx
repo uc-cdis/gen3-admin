@@ -127,7 +127,7 @@ const ClusterDashboard = () => {
     if (sessionData?.accessToken) {
       fetchClustersAndCharts(sessionData.accessToken);
     }
-  }, [sessionData]);
+  }, []);
 
   // useEffect(() => {
   //   if (nonGen3) {
@@ -333,7 +333,7 @@ const ClusterDashboard = () => {
                   color="green"
                   onClick={() => {
                     console.log("Syncing app", selectedChart.name, selectedChart.namespace, selectedChart.clusterName);
-                    triggerArgoCDAppSync(selectedChart.name, selectedChart.namespace, selectedChart.clusterName, "")
+                    triggerArgoCDAppSync(selectedChart.name, "argocd", selectedChart.clusterName, "")
                     // callGoApi() here if you want to implement actual sync
                   }}
                 >
