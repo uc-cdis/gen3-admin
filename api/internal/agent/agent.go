@@ -57,25 +57,29 @@ var (
 	validAgentName   = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
+var wsUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
 type Agent struct {
-	Id          string     `json:"id"`
-	Name        string     `json:"name"`
-	Certificate string     `json:"certificate"`
-	Metadata    Metadata   `json:"metadata"`
-	PrivateKey  string     `json:"private_key"`
-	Connected   bool       `json:"connected"`
-	LastSeen    time.Time  `json:"lastSeen"`
-	CpuUsage    float64    `json:"cpuUsage"`
-	MemoryUsage float64    `json:"memoryUsage"`
-	Provider    string     `json:"provider"`
-	K8sVersion  string     `json:"k8sVersion"`
-	PodCapacity int        `json:"podCapacity"`
-	PodCount    int        `json:"podCount"`
-	RoleARN     string     `json:"rolearn"`
-	EKS    	    bool       `json:"eks"`
-	AssumeMethod string    `json:"assumemethod"`
-	AccessKey string       `json:"accesskey"`
-	SecretAccessKey string `json:"secretaccesskey"`
+	Id              string    `json:"id"`
+	Name            string    `json:"name"`
+	Certificate     string    `json:"certificate"`
+	Metadata        Metadata  `json:"metadata"`
+	PrivateKey      string    `json:"private_key"`
+	Connected       bool      `json:"connected"`
+	LastSeen        time.Time `json:"lastSeen"`
+	CpuUsage        float64   `json:"cpuUsage"`
+	MemoryUsage     float64   `json:"memoryUsage"`
+	Provider        string    `json:"provider"`
+	K8sVersion      string    `json:"k8sVersion"`
+	PodCapacity     int       `json:"podCapacity"`
+	PodCount        int       `json:"podCount"`
+	RoleARN         string    `json:"rolearn"`
+	EKS             bool      `json:"eks"`
+	AssumeMethod    string    `json:"assumemethod"`
+	AccessKey       string    `json:"accesskey"`
+	SecretAccessKey string    `json:"secretaccesskey"`
 }
 
 type Metadata struct {
@@ -101,10 +105,10 @@ type AgentConnection struct {
 }
 
 type ServiceAccountData struct {
-	EKS     bool
-	RoleARN string
-	AssumeMethod string
-	AccessKey string
+	EKS             bool
+	RoleARN         string
+	AssumeMethod    string
+	AccessKey       string
 	SecretAccessKey string
 }
 
@@ -173,7 +177,7 @@ func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMetho
 			Certificate: string(agentCertPEM),
 			// PrivateKey:  string(agentKeyPEM),
 			Connected: false,
-			RoleARN:     roleArn,
+			RoleARN:   roleArn,
 		},
 	}
 
@@ -195,7 +199,7 @@ data:
 		base64.StdEncoding.EncodeToString(caCertPem),
 	)
 
-const saTemplate = `
+	const saTemplate = `
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -263,10 +267,10 @@ spec:
             secretName: csoc-tls`
 
 	saData := ServiceAccountData{
-		EKS:     eks,
-		RoleARN: roleArn,
-		AssumeMethod: assumeMethod,
-		AccessKey: accessKey,
+		EKS:             eks,
+		RoleARN:         roleArn,
+		AssumeMethod:    assumeMethod,
+		AccessKey:       accessKey,
 		SecretAccessKey: secretAccessKey,
 	}
 
@@ -430,9 +434,9 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			LastSeen:  time.Now(),
 			// TODO: Get the agent certificate from the registration message
 			// Certificate: string(certificate),
-			RoleARN:   roleArn,
-			AssumeMethod:   assumeMethod,
-			AccessKey: accessKey,
+			RoleARN:         roleArn,
+			AssumeMethod:    assumeMethod,
+			AccessKey:       accessKey,
 			SecretAccessKey: secretAccessKey,
 		},
 	}
@@ -754,71 +758,151 @@ func HandleK8sProxyRequest(c *gin.Context) {
 		}
 		proxyReq.Body = body
 	}
-	// log.Debug().Msgf("Proxy request: %v", proxyReq)
 
-	// Send the request through the gRPC stream
-	err := agent.stream.Send(&pb.ServerMessage{
-		Message: &pb.ServerMessage_Proxy{
-			Proxy: proxyReq,
-		},
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
-		return
-	}
-
-	// Handle the response stream
-	var responseStarted bool
-	for {
-		select {
-		case resp, ok := <-responseChan:
-			if !ok {
-				if !responseStarted {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
-				}
-				log.Debug().Msgf("Response channel closed for stream ID: %s", streamID)
-				return
+	if c.Request.Header.Get("Upgrade") == "websocket" {
+		// NEW: Handle WebSocket upgrade
+		// In the header copying section, specifically preserve Authorization:
+		for k, v := range c.Request.Header {
+			if k == "Authorization" || k == "Content-Type" || k == "Upgrade" || k == "Connection" {
+				proxyReq.Headers[k] = strings.Join(v, ",")
 			}
-			switch resp.Status {
-			case pb.ProxyResponseType_HEADERS:
-				if !responseStarted {
-					responseStarted = true
-					// Set response headers
-					for k, v := range resp.Headers {
-						c.Header(k, v)
-					}
-					// log.Debug().Msgf("Headers sent to HTTP client: %v", resp.Headers)
-					c.Status(int(resp.StatusCode))
-				}
-			case pb.ProxyResponseType_DATA:
-				log.Debug().Msgf("Got data chunk from agent")
-				if !responseStarted {
-					responseStarted = true
-				}
-				// Write response body chunk
-				_, err := c.Writer.Write(resp.Body)
+		}
+		conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to upgrade to WebSocket")
+			return
+		}
+		defer conn.Close()
+
+		// Send initial proxy request to agent
+		err = agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_Proxy{
+				Proxy: proxyReq,
+			},
+		})
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte("Failed to send request to agent"))
+			return
+		}
+
+		// Goroutine to read from client WS and send additional input to agent
+		go func() {
+			for {
+				_, message, err := conn.ReadMessage()
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to write response body chunk")
+					log.Debug().Err(err).Msg("Client WS read error")
 					return
 				}
-			case pb.ProxyResponseType_END:
-				log.Trace().Msg("Proxy response end message")
-				c.Writer.Flush() // Ensure all data is sent
-				c.Abort()
-				return
-			case pb.ProxyResponseType_ERROR:
-				log.Trace().Msg("Proxy response error message")
-				if !responseStarted {
-					responseStarted = true
+				// Send as additional ProxyRequest with only Body (for stdin)
+				err = agent.stream.Send(&pb.ServerMessage{
+					Message: &pb.ServerMessage_Proxy{
+						Proxy: &pb.ProxyRequest{
+							StreamId: streamID,
+							Body:     message,
+						},
+					},
+				})
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to send input to agent")
+					return
 				}
-				c.JSON(http.StatusInternalServerError, gin.H{"error": string(resp.Body)})
-				return
-			default:
-				log.Warn().Msgf("Unknown message type from stream %s: %T", streamID, resp)
 			}
+		}()
 
-		case <-ctx.Done():
+		// Process responses from agent
+		var responseStarted bool
+		for {
+			select {
+			case resp, ok := <-responseChan:
+				if !ok {
+					return
+				}
+				switch resp.Status {
+				case pb.ProxyResponseType_HEADERS:
+					if !responseStarted {
+						responseStarted = true
+						// For WS, check if 101 Switching Protocols
+						if resp.StatusCode != 101 {
+							conn.WriteMessage(websocket.TextMessage, []byte("Failed to upgrade WebSocket"))
+							return
+						}
+						// Headers already handled by upgrade
+					}
+				case pb.ProxyResponseType_DATA:
+					conn.WriteMessage(websocket.BinaryMessage, resp.Body)
+				case pb.ProxyResponseType_END:
+					log.Trace().Msg("Proxy response end message")
+					return
+				case pb.ProxyResponseType_ERROR:
+					conn.WriteMessage(websocket.TextMessage, resp.Body)
+					return
+				default:
+					log.Warn().Msgf("Unknown message type from stream %s: %T", streamID, resp)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	} else {
+		// Existing non-WebSocket logic
+		err := agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_Proxy{
+				Proxy: proxyReq,
+			},
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
 			return
+		}
+
+		var responseStarted bool
+		for {
+			select {
+			case resp, ok := <-responseChan:
+				if !ok {
+					if !responseStarted {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
+					}
+					log.Debug().Msgf("Response channel closed for stream ID: %s", streamID)
+					return
+				}
+				switch resp.Status {
+				case pb.ProxyResponseType_HEADERS:
+					if !responseStarted {
+						responseStarted = true
+						for k, v := range resp.Headers {
+							c.Header(k, v)
+						}
+						c.Status(int(resp.StatusCode))
+					}
+				case pb.ProxyResponseType_DATA:
+					log.Debug().Msgf("Got data chunk from agent")
+					if !responseStarted {
+						responseStarted = true
+					}
+					_, err := c.Writer.Write(resp.Body)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to write response body chunk")
+						return
+					}
+				case pb.ProxyResponseType_END:
+					log.Trace().Msg("Proxy response end message")
+					c.Writer.Flush()
+					c.Abort()
+					return
+				case pb.ProxyResponseType_ERROR:
+					log.Trace().Msg("Proxy response error message")
+					if !responseStarted {
+						responseStarted = true
+					}
+					c.JSON(http.StatusInternalServerError, gin.H{"error": string(resp.Body)})
+					return
+				default:
+					log.Warn().Msgf("Unknown message type from stream %s: %T", streamID, resp)
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
@@ -1026,6 +1110,123 @@ func SetupHTTPServer() {
 	protected.Use(keycloak.AuthMiddleware())
 	// protected.Use(keycloak.SuccessMiddleware())
 	{
+		protected.GET("/api/agents/:agent/terminal", func(c *gin.Context) {
+			agentID := c.Param("agent")
+			namespace := c.Query("namespace")
+			pod := c.Query("pod")
+			container := c.Query("container")
+			command := c.Query("command")
+
+			log.Debug().Msgf("Extracted command from query: '%s'", command)
+
+			// If command is empty, set a default:
+			if strings.TrimSpace(command) == "" {
+				command = "/bin/bash"
+			}
+
+			if namespace == "" || pod == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "namespace and pod are required"})
+				return
+			}
+
+			agentsMutex.RLock()
+			agent, exists := AgentConnections[agentID]
+			agentsMutex.RUnlock()
+
+			if !exists {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+				return
+			}
+
+			upgrader := websocket.Upgrader{
+				CheckOrigin: func(r *http.Request) bool { return true },
+			}
+
+			ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to upgrade to WebSocket")
+				return
+			}
+			defer ws.Close()
+
+			// Generate a unique session ID
+			sessionID := uuid.New().String()
+
+			// Store WebSocket connection in agent
+			agent.mutex.Lock()
+			agent.terminalStreams[sessionID] = ws
+			ctx, cancel := context.WithCancel(c.Request.Context())
+			agent.contexts[sessionID] = ctx
+			agent.cancelFuncs[sessionID] = cancel
+			agent.mutex.Unlock()
+
+			// Send terminal start request to agent
+			err = agent.stream.Send(&pb.ServerMessage{
+				Message: &pb.ServerMessage_TerminalRequest{
+					TerminalRequest: &pb.TerminalRequest{
+						SessionId: sessionID,
+						Namespace: namespace,
+						Pod:       pod,
+						Container: container,
+						Command:   command,
+					},
+				},
+			})
+
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to send terminal request to agent")
+				return
+			}
+
+			// Handle WebSocket messages from frontend -> agent
+			go func() {
+				for {
+					_, msg, err := ws.ReadMessage()
+					if err != nil {
+						log.Warn().Err(err).Msg("WebSocket read error")
+						break
+					}
+
+					// Check if this is a resize message
+					if strings.HasPrefix(string(msg), "resize:") {
+						var resizeData struct {
+							Cols int `json:"cols"`
+							Rows int `json:"rows"`
+						}
+						if err := json.Unmarshal(msg[7:], &resizeData); err == nil {
+							// Handle resize - you might want to send this to the agent too
+							log.Debug().Msgf("Terminal resize: %dx%d", resizeData.Cols, resizeData.Rows)
+							continue
+						}
+					}
+
+					// Send user input to agent
+					err = agent.stream.Send(&pb.ServerMessage{
+						Message: &pb.ServerMessage_TerminalStream{
+							TerminalStream: &pb.TerminalStream{
+								SessionId: sessionID,
+								Data:      msg,
+							},
+						},
+					})
+
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to send terminal data to agent")
+						break
+					}
+				}
+			}()
+
+			// Wait for context cancellation (connection close)
+			<-ctx.Done()
+
+			// Cleanup
+			agent.mutex.Lock()
+			delete(agent.terminalStreams, sessionID)
+			delete(agent.contexts, sessionID)
+			delete(agent.cancelFuncs, sessionID)
+			agent.mutex.Unlock()
+		})
 		protected.Any("/api/k8s/proxy/*path", func(c *gin.Context) {
 			requestPath := strings.TrimPrefix(c.Request.URL.Path, "/api/k8s/proxy")
 			c.Request.URL.Path = requestPath
@@ -1441,7 +1642,8 @@ func SetupHTTPServer() {
 		}
 
 		upgrader := websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			Subprotocols: []string{"channel.k8s.io"},
+			CheckOrigin:  func(r *http.Request) bool { return true },
 		}
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
