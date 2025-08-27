@@ -137,6 +137,105 @@ The platform follows a distributed agent/server architecture enabling centralize
    nodemon --exec go run gen3-agent/agent.go --name <CLUSTER_NAME> --signal SIGTERM
    ```
 
+
+
+
+
+
+
+### Keycloak Setup Guide: Realm, Client, User, Role, and Group
+
+#### Prerequisites
+
+- Keycloak server running at `http://localhost:8080`
+- Admin credentials for Keycloak Admin Console
+
+### Steps
+
+#### 1. Create Realm
+
+- Log in to Admin Console at `http://localhost:8080`.
+- Hover over current realm (e.g., "Master"), click **Create realm**.
+- Name: `csoc-realm`.
+- Click **Create**.
+
+#### 2. Create Client
+
+- In `csoc-realm`, go to **Clients** &gt; **Create client**.
+- **Client ID**: `csoc-client`.
+- **Client Protocol**: `openid-connect`.
+- Click **Next**.
+- Enable **Client authentication**, **Standard flow**, **Direct access grants**.
+- Click **Next**.
+- Set **Valid redirect URIs**: `http://localhost:3000/*`.
+- Set **Web origins**: `http://localhost:3000`.
+- Click **Save**.
+- Go to **Credentials** tab, copy **Client secret** for your app.
+
+#### 3. Create Role
+
+- Go to **Realm roles** &gt; **Create role**.
+- **Role name**: `csoc-role`.
+- Click **Save**.
+
+#### 4. Create User
+
+- Go to **Users** &gt; **Add user**.
+- **Username**: `csoc-user`.
+- **Email**: `john@example.com` (optional: First/Last name, enable **Email Verified**).
+- Click **Save**.
+- Go to **Credentials** tab, click **Set password**.
+- Enter password, disable **Temporary** for permanent password.
+- Click **Save**.
+
+#### 5. Assign Role to User
+
+- In **Users**, select `csoc-user`.
+- Go to **Role mapping** tab.
+- Select `csoc-role` from **Available roles**.
+- Click **Add selected**.
+
+#### 6. Create Group
+
+- Go to **Groups** &gt; **New**.
+- **Group name**: `csoc-group`.
+- Click **Save**.
+
+#### 7. Add User to Group
+
+- In **Users**, select `csoc-user`.
+- Go to **Groups** tab.
+- Select `csoc-group`, click **Join**.
+
+#### 8. Configure Token Mappings
+
+- Go to **Clients** &gt; `csoc-client` &gt; **Mappers** tab.
+- **For Roles**:
+  - Click **Create**.
+  - **Name**: `roles`.
+  - **Mapper Type**: `User Role`.
+  - **Token Claim Name**: `roles`.
+  - **Claim JSON Type**: `String` (or `Array`).
+  - Enable **Add to ID token**, **Add to access token**, **Add to userinfo**.
+  - Enable **Multivalued**.
+  - Click **Save**.
+- **For Groups**:
+  - Click **Create**.
+  - **Name**: `groups`.
+  - **Mapper Type**: `Group Membership`.
+  - **Token Claim Name**: `groups`.
+  - **Full group path**: `OFF`.
+  - Enable **Add to ID token**, **Add to access token**, **Add to userinfo**.
+  - Click **Save**.
+
+
+
+
+
+
+
+
+
 ## Project Structure
 
 ```
