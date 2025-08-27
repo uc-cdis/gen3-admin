@@ -24,16 +24,7 @@ message AgentMessage {
   }
 }
 
-// Add this message definition
-message TerminalRequest {
-  string session_id = 1;
-  string namespace = 2;
-  string pod = 3;
-  string container = 4;
-  string command = 5;
-}
-
-// Update the ServerMessage to include TerminalRequest
+// Message sent by the server
 message ServerMessage {
   oneof message {
     RegistrationResponse registration = 1; // Response to registration
@@ -45,7 +36,6 @@ message ServerMessage {
     HelmInstallRequest helmInstallRequest = 7;          // Helm install request
     TerminalStream terminalStream = 8;
     DbUiRequest dbuiRequest = 9;
-    TerminalRequest terminalRequest = 10;  // Add this line
   }
 }
 

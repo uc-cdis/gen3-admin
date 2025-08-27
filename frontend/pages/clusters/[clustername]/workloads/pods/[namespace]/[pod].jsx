@@ -22,7 +22,7 @@ export default function Detail() {
                 namespace={namespace} 
                 resource={resource} 
                 type="Pod"
-                tabs={["overview", "yaml", "events", "logs", "shell"]}
+                tabs={["overview", "yaml", "events", "logs"]}
                 url={`/api/v1/namespaces/${namespace}/pods/${resource}`} 
                 columnConfig={{
                     layout: {
