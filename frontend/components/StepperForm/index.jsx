@@ -12,6 +12,7 @@ import Editor from "@monaco-editor/react";
 import { useSession } from 'next-auth/react';
 
 import DestinationStep from './steps/DestinationStep';
+import DatabaseStep from './steps/DatabaseStep';
 import HostnameStep from './steps/HostnameStep';
 import ModulesStep from './steps/ModulesStep';
 import AuthStep from './steps/AuthStep';
@@ -56,6 +57,10 @@ const StepperForm = () => {
           revproxyArn: '',
           frontendRoot: 'gen3ff',
           netPolicy: { enabled: false, dbSubnet: '0.0.0.0/0' },
+          postgres: { dbCreate: true, master:
+            { username: "postgres", password: "", host: "", port: "5432" }
+          },
+          pdb: false,
         },
         postgresql: {
           persistence: {
@@ -262,7 +267,7 @@ const StepperForm = () => {
     // { label: 'Cloud', content: <CloudStep /> },
     { label: 'Destination', content: <DestinationStep form={form} clusters={clusters} fetchClusters={fetchClusters} /> },
     { label: 'Hostname', content: <HostnameStep form={form} certs={certs} fetchCerts={fetchCerts} /> },
-    { label: 'Database', content: <>Database Configurations will show up here.</> },
+    { label: 'Database', content: <DatabaseStep form={form} /> },
     { label: 'Modules', content: <ModulesStep form={form} /> },
     { label: 'Configuration', content: <ConfigStep form={form} /> },
     // { label: 'Authentication', content: <AuthStep form={form} /> },
