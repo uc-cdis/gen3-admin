@@ -43,7 +43,7 @@ import callK8sApi from "@/lib/k8s";
 
 import JobsPage from '@/components/CronJobsPage/Overview';
 
-
+import LogViewer from '@/components/LokiLogViewer'
 
 export default function EnvironmentDashboardComp({
   env,
@@ -90,7 +90,7 @@ export default function EnvironmentDashboardComp({
     if (namespace && accessToken) {
       fetchHostname();
     }
-  }, [namespace, env, accessToken, sessionData?.error]);
+  }, [namespace, env]);
 
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
@@ -434,8 +434,6 @@ export default function EnvironmentDashboardComp({
         );
         const processedPods = processPodData(filteredPodsResponse);
 
-        console.log("eventsData", eventsData);
-
         setEventsData(eventsData);
         setMetricsData(processedMetrics);
         setNodeStatusData(processedNodes);
@@ -474,13 +472,6 @@ export default function EnvironmentDashboardComp({
     }
   };
 
-  // useEffect(() => {
-  //   if (sessionData?.error === 'RefreshAccessTokenError') {
-  //     console.log('Session error detected, signing out:', sessionData.error);
-  //     signOut({ callbackUrl: '/' });
-  //     return;
-  //   }
-  // }, [error])
 
   useEffect(() => {
     if (sessionData?.error) {
@@ -494,9 +485,8 @@ export default function EnvironmentDashboardComp({
       const interval = setInterval(fetchDashboardData, 30000);
       return () => clearInterval(interval);
     }
-  }, [env, namespace, accessToken, sessionData?.error]);
+  }, [env, namespace]);
 
-  // [env, namespace, accessToken, sessionData?.error]
 
   // Dynamic metrics cards
   const dynamicMetrics = [
@@ -547,6 +537,135 @@ export default function EnvironmentDashboardComp({
       icon: IconDeviceSdCard,
     },
   ];
+
+  const PodMemoryBarChart = ({ podData }) => {
+    // Sort pods by memory usage (descending)
+    const sortedPods = [...podData].sort((a, b) => b.resourceUsage.memory - a.resourceUsage.memory);
+    
+    const chartData = sortedPods.map(pod => ({
+      pod: pod.name,
+      memory: pod.resourceUsage.memory / (1024 * 1024 * 1024), // Convert to GB
+      formattedMemory: formatMemoryUsage(pod.resourceUsage.memory),
+      status: pod.status,
+      // Add truncated version for display
+      podShort: pod.name.length > 20 ? `${pod.name.substring(0, 18)}...` : pod.name
+    }));
+
+    return (
+      <Card withBorder>
+        <Title order={4} mb="sm">Memory Usage per Pod</Title>
+        <Text c="dimmed" mb="sm">Memory allocation by pod (GiB)</Text>
+        <ScrollArea h={350} w="100%" type="always">
+          <Box style={{ minWidth: 400 }}>
+            <BarChart
+              h={300}
+              data={chartData}
+              dataKey="pod"
+              series={[
+                { 
+                  name: 'memory', 
+                  color: 'blue',
+                  label: (value) => `${value.toFixed(2)} GB`
+                }
+              ]}
+              orientation="vertical"
+              tickLine="y"
+              withXAxis={false}
+              withLegend={false}
+              barProps={{ radius: 4 }}
+              margin={{ left: 150, right: 20, top: 20, bottom: 20 }}
+              yAxisProps={{
+                width: 140,
+                tickMargin: 10,
+                // Return string instead of React component
+                tickFormatter: (value) => {
+                  const pod = chartData.find(p => p.pod === value);
+                  return pod?.podShort || value;
+                }
+              }}
+              tooltipProps={{
+                content: ({ payload }) => {
+                  if (!payload?.length) return null;
+                  const data = payload[0].payload;
+                  return (
+                    <Paper p="sm" shadow="md">
+                      <Text size="sm" fw={500}>{data.pod}</Text>
+                      <Text size="sm">Memory: {data.formattedMemory}</Text>
+                      <Text size="sm">Status: {data.status}</Text>
+                    </Paper>
+                  );
+                }
+              }}
+            />
+          </Box>
+        </ScrollArea>
+      </Card>
+    );
+  };
+
+  const PodCpuBarChart = ({ podData }) => {
+    // Sort pods by CPU usage (descending)
+    const sortedPods = [...podData].sort((a, b) => b.resourceUsage.cpu - a.resourceUsage.cpu);
+    
+    const chartData = sortedPods.map(pod => ({
+      pod: pod.name,
+      cpu: pod.resourceUsage.cpu,
+      status: pod.status,
+      // Add truncated version for display
+      podShort: pod.name.length > 20 ? `${pod.name.substring(0, 18)}...` : pod.name
+    }));
+
+    return (
+      <Card withBorder>
+        <Title order={4} mb="sm">CPU Usage per Pod</Title>
+        <Text c="dimmed" mb="sm">CPU allocation by pod (cores)</Text>
+        <ScrollArea h={350} w="100%" type="always">
+          <Box style={{ minWidth: 400 }}>
+            <BarChart
+              h={300}
+              data={chartData}
+              dataKey="pod"
+              series={[
+                { 
+                  name: 'cpu', 
+                  color: 'green',
+                  label: (value) => `${value.toFixed(2)} cores`
+                }
+              ]}
+              orientation="vertical"
+              tickLine="y"
+              withXAxis={false}
+              withLegend={false}
+              barProps={{ radius: 4 }}
+              margin={{ left: 150, right: 20, top: 20, bottom: 20 }}
+              yAxisProps={{
+                width: 140,
+                tickMargin: 10,
+                // Return string instead of React component
+                tickFormatter: (value) => {
+                  const pod = chartData.find(p => p.pod === value);
+                  return pod?.podShort || value;
+                }
+              }}
+              tooltipProps={{
+                content: ({ payload }) => {
+                  if (!payload?.length) return null;
+                  const data = payload[0].payload;
+                  return (
+                    <Paper p="sm" shadow="md">
+                      <Text size="sm" fw={500}>{data.pod}</Text>
+                      <Text size="sm">CPU: {data.cpu.toFixed(2)} cores</Text>
+                      <Text size="sm">Status: {data.status}</Text>
+                    </Paper>
+                  );
+                }
+              }}
+            />
+          </Box>
+        </ScrollArea>
+      </Card>
+    );
+  };
 
   return (
     <Container size="xl" mt="xl" pos="relative">
@@ -599,6 +718,44 @@ export default function EnvironmentDashboardComp({
           </Text>
         </Card>
       )}
+
+      <Divider my="lg"/>
+
+      {/* Main metrics */}
+      <Group align="flex-start" gap="md" mb="xl" grow>
+        {dynamicMetrics.map((metric) => (
+          <Card
+            key={metric.title}
+            shadow="sm"
+            padding="lg"
+            radius="md"
+            withBorder
+            style={{ flex: 1, minWidth: 280 }}
+          >
+            <Stack gap="sm">
+              <Group justify="space-between" align="flex-start">
+                <div>
+                  <Text size="sm" c="dimmed" fw={500}>
+                    {metric.title}
+                  </Text>
+                  <Text size="xl" fw={700} mt={4}>
+                    {metric.value}
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {metric.subtitle}
+                  </Text>
+                </div>
+                <metric.icon size={20} color="#868E96" />
+              </Group>
+              <Progress value={metric.progress} size="sm" radius="xs" mt={8} />
+            </Stack>
+          </Card>
+        ))}
+      </Group>
+
+      <LogViewer hostname={hostname} />
+
+      <Divider my="lg"/>
 
       <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
@@ -686,107 +843,13 @@ export default function EnvironmentDashboardComp({
         </Card>
       </Group>
 
-      <Divider my="lg"/>
-
-      {/* Main metrics */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
-        {dynamicMetrics.map((metric) => (
-          <Card
-            key={metric.title}
-            shadow="sm"
-            padding="lg"
-            radius="md"
-            withBorder
-            style={{ flex: 1, minWidth: 280 }}
-          >
-            <Stack gap="sm">
-              <Group justify="space-between" align="flex-start">
-                <div>
-                  <Text size="sm" c="dimmed" fw={500}>
-                    {metric.title}
-                  </Text>
-                  <Text size="xl" fw={700} mt={4}>
-                    {metric.value}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={2}>
-                    {metric.subtitle}
-                  </Text>
-                </div>
-                <metric.icon size={20} color="#868E96" />
-              </Group>
-              <Progress value={metric.progress} size="sm" radius="xs" mt={8} />
-            </Stack>
-          </Card>
-        ))}
-      </Group>
 
       <Divider my="lg"/>
 
-      {/* Metrics Grid */}
+      {/* Pod Resource Usage Charts */}
       <Group align="flex-start" gap="md" mb="xl" grow>
-        <Card withBorder>
-          <Title order={4} mb="sm">
-            CPU Usage (Last 24 points)
-          </Title>
-          <Text c="dimmed" mb="sm">
-            Cluster-wide CPU utilization
-          </Text>
-          <AreaChart
-            h={200}
-            data={cpuData}
-            dataKey="time"
-            series={[
-              {
-                name: "usage",
-                color: "blue",
-                type: "area",
-                areaProps: { fillOpacity: 1 },
-              },
-            ]}
-            curveType="monotone"
-            withYAxis={false}
-            withGradient
-            referenceLines={
-              metricsData
-                ? [
-                    {
-                      y: metricsData.cluster.cpuPercentage,
-                      label: `Current (${metricsData.cluster.cpuPercentage}%)`,
-                      color: "red",
-                    },
-                  ]
-                : []
-            }
-          />
-        </Card>
-
-        <Card withBorder>
-          <Title order={4} mb="sm">
-            Memory Usage (Last 24 points)
-          </Title>
-          <Text c="dimmed" mb="sm">
-            Cluster-wide memory utilization
-          </Text>
-          <AreaChart
-            h={200}
-            data={memoryData}
-            dataKey="time"
-            series={[{ name: "usage", color: "green" }]}
-            curveType="linear"
-            withYAxis={false}
-            referenceLines={
-              metricsData
-                ? [
-                    {
-                      y: metricsData.cluster.memoryPercentage,
-                      label: `Current (${metricsData.cluster.memoryPercentage}%)`,
-                      color: "red",
-                    },
-                  ]
-                : []
-            }
-          />
-        </Card>
+        <PodMemoryBarChart podData={podData} />
+        <PodCpuBarChart podData={podData} />
       </Group>
 
       <Divider my="lg"/>
@@ -927,7 +990,7 @@ export default function EnvironmentDashboardComp({
         </Card>
       </Group> */}
 
-      
+
 
       {/* Network Traffic */}
       {/* <Group align="flex-start" gap="md" mb="xl" grow>

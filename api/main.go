@@ -5,12 +5,9 @@ package main
 import (
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/uc-cdis/gen3-admin/internal/agent"
+	"github.com/uc-cdis/gen3-admin/internal/server"
 
 	"github.com/joho/godotenv"
-
-	_ "net/http/pprof"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -33,7 +30,7 @@ func main() {
 	}
 
 	// initialize agents from certs
-	agent.InitializeAgentsFromCerts()
+	server.InitializeAgentsFromCerts()
 	// db, err := initializeDatabase()
 	// if err != nil {
 	// 	log.Fatal().Err(err).Msg("Error initializing database")
@@ -43,7 +40,7 @@ func main() {
 	// ctx, cancel := context.WithCancel(context.Background())
 	// defer cancel()
 
-	agent.SetupGRCPServer()
-	agent.SetupHTTPServer()
+	server.SetupGRCPServer()
+	server.SetupHTTPServer()
 
 }
