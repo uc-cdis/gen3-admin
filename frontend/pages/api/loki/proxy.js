@@ -8,6 +8,7 @@ export const config = {
 
 const LOKI_BASE_URL = 'https://loki.planx-pla.net';
 // const LOKI_BASE_URL = 'http://monitoring-loki-gateway.monitoring';
+// const LOKI_BASE_URL = 'http://localhost:8085'
 
 export default async function handler(req) {
   try {

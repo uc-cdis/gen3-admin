@@ -5,6 +5,7 @@ import { IconHome, IconSettings, IconServer, IconKey, IconFile, IconGauge, IconS
 
 import '@mantine/spotlight/styles.css';
 
+import { useGlobalState } from '@/contexts/global';
 
 import { useRouter } from 'next/router';
 
@@ -12,7 +13,7 @@ export default function SpotlightComponent() {
 
     const router = useRouter(); // Initialize the router from Next.js
 
-    const activeCluster  = "kind"
+    const { activeCluster } = useGlobalState();
 
     const actions = [
         {
@@ -92,7 +93,7 @@ export default function SpotlightComponent() {
             onClick: () => router.push(`/clusters/${activeCluster}/cluster/nodes`),
             leftSection: <IconServer size={18} />,
         },
-        { 
+        {
             id: 'namespaces',
             label: 'Namespaces',
             description: 'View and manage namespaces within the cluster',
@@ -205,7 +206,7 @@ export default function SpotlightComponent() {
             searchProps={{
                 leftSection: <IconSearch style={{ width: rem(20), height: rem(20) }} stroke={1.5} />,
                 placeholder: 'Search...',
-              }}      
+              }}
             shortcut="mod+k"
             nothingFound="Nothing found..."
         >

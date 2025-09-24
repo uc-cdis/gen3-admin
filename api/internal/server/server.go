@@ -1,4 +1,4 @@
-package agent
+package server
 
 import (
 	"bytes"
@@ -58,24 +58,24 @@ var (
 )
 
 type Agent struct {
-	Id          string     `json:"id"`
-	Name        string     `json:"name"`
-	Certificate string     `json:"certificate"`
-	Metadata    Metadata   `json:"metadata"`
-	PrivateKey  string     `json:"private_key"`
-	Connected   bool       `json:"connected"`
-	LastSeen    time.Time  `json:"lastSeen"`
-	CpuUsage    float64    `json:"cpuUsage"`
-	MemoryUsage float64    `json:"memoryUsage"`
-	Provider    string     `json:"provider"`
-	K8sVersion  string     `json:"k8sVersion"`
-	PodCapacity int        `json:"podCapacity"`
-	PodCount    int        `json:"podCount"`
-	RoleARN     string     `json:"rolearn"`
-	EKS    	    bool       `json:"eks"`
-	AssumeMethod string    `json:"assumemethod"`
-	AccessKey string       `json:"accesskey"`
-	SecretAccessKey string `json:"secretaccesskey"`
+	Id              string    `json:"id"`
+	Name            string    `json:"name"`
+	Certificate     string    `json:"certificate"`
+	Metadata        Metadata  `json:"metadata"`
+	PrivateKey      string    `json:"private_key"`
+	Connected       bool      `json:"connected"`
+	LastSeen        time.Time `json:"lastSeen"`
+	CpuUsage        float64   `json:"cpuUsage"`
+	MemoryUsage     float64   `json:"memoryUsage"`
+	Provider        string    `json:"provider"`
+	K8sVersion      string    `json:"k8sVersion"`
+	PodCapacity     int       `json:"podCapacity"`
+	PodCount        int       `json:"podCount"`
+	RoleARN         string    `json:"rolearn"`
+	EKS             bool      `json:"eks"`
+	AssumeMethod    string    `json:"assumemethod"`
+	AccessKey       string    `json:"accesskey"`
+	SecretAccessKey string    `json:"secretaccesskey"`
 }
 
 type Metadata struct {
@@ -101,10 +101,10 @@ type AgentConnection struct {
 }
 
 type ServiceAccountData struct {
-	EKS     bool
-	RoleARN string
-	AssumeMethod string
-	AccessKey string
+	EKS             bool
+	RoleARN         string
+	AssumeMethod    string
+	AccessKey       string
 	SecretAccessKey string
 }
 
@@ -173,7 +173,7 @@ func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMetho
 			Certificate: string(agentCertPEM),
 			// PrivateKey:  string(agentKeyPEM),
 			Connected: false,
-			RoleARN:     roleArn,
+			RoleARN:   roleArn,
 		},
 	}
 
@@ -195,7 +195,7 @@ data:
 		base64.StdEncoding.EncodeToString(caCertPem),
 	)
 
-const saTemplate = `
+	const saTemplate = `
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -263,10 +263,10 @@ spec:
             secretName: csoc-tls`
 
 	saData := ServiceAccountData{
-		EKS:     eks,
-		RoleARN: roleArn,
-		AssumeMethod: assumeMethod,
-		AccessKey: accessKey,
+		EKS:             eks,
+		RoleARN:         roleArn,
+		AssumeMethod:    assumeMethod,
+		AccessKey:       accessKey,
 		SecretAccessKey: secretAccessKey,
 	}
 
@@ -430,9 +430,9 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			LastSeen:  time.Now(),
 			// TODO: Get the agent certificate from the registration message
 			// Certificate: string(certificate),
-			RoleARN:   roleArn,
-			AssumeMethod:   assumeMethod,
-			AccessKey: accessKey,
+			RoleARN:         roleArn,
+			AssumeMethod:    assumeMethod,
+			AccessKey:       accessKey,
 			SecretAccessKey: secretAccessKey,
 		},
 	}
@@ -518,7 +518,7 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			agent.mutex.Unlock()
 		case *pb.AgentMessage_TerminalStream:
 			termResp := msg.TerminalStream
-			log.Debug().Msgf("Received terminal stream from agent %s: %v", agentName, termResp.Data)
+			log.Debug().Msgf("Received terminal stream from server %s: %v", agentName, termResp.Data)
 			agent.mutex.Lock()
 			webSocket, exists := agent.terminalStreams[termResp.SessionId]
 			agent.mutex.Unlock()
@@ -583,19 +583,94 @@ func CreateAgentHandler(c *gin.Context) {
 func GetAgentsHandler(c *gin.Context) {
 	w := c.Writer
 
+	// Get user info from context (set by AuthMiddleware)
+	userInfoInterface, exists := c.Get("userInfo")
+	if !exists {
+		log.Error().Msg("User info not found in context")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User info not available"})
+		return
+	}
+
+	userInfo, ok := userInfoInterface.(map[string]interface{})
+	if !ok {
+		log.Error().Msg("Invalid user info format")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user info"})
+		return
+	}
+
+	// Extract groups from user info
+	groupsInterface, ok := userInfo["groups"].([]interface{})
+	if !ok {
+		log.Error().Msg("User groups missing or invalid")
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: missing groups"})
+		return
+	}
+
+	// Convert groups to string slice and clean them
+	var userGroups []string
+	for _, g := range groupsInterface {
+		if groupStr, ok := g.(string); ok {
+			cleanGroup := strings.TrimPrefix(groupStr, "/")
+			userGroups = append(userGroups, cleanGroup)
+		}
+	}
+
+	// Check if user is superadmin
+	isSuperAdmin := false
+	for _, group := range userGroups {
+		if group == "superadmin" {
+			isSuperAdmin = true
+			break
+		}
+	}
+
 	agentsMutex.RLock()
 	defer agentsMutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	// return an array of agents
 	returnAgents := make([]Agent, 0)
+
 	for name, agent := range AgentConnections {
-		log.Debug().Msgf("Agent %s", name)
-		agent.agent.Name = name
-		agent.agent.Metadata.Name = name
-		agent.agent.Metadata.Namespace = "default"
-		returnAgents = append(returnAgents, agent.agent)
+		// If user is superadmin, include all agents
+		if isSuperAdmin {
+			log.Debug().Msgf("Superadmin access: including agent %s", name)
+			agent.agent.Name = name
+			agent.agent.Metadata.Name = name
+			agent.agent.Metadata.Namespace = "default"
+			returnAgents = append(returnAgents, agent.agent)
+			continue
+		}
+
+		// Check if user has read or write access to this specific agent
+		readGroup := fmt.Sprintf("%s-read", name)
+		writeGroup := fmt.Sprintf("%s-write", name)
+
+		hasAccess := false
+		for _, group := range userGroups {
+			if group == readGroup || group == writeGroup {
+				hasAccess = true
+				break
+			}
+		}
+
+		if hasAccess {
+			log.Debug().Msgf("User has access to agent %s", name)
+			agent.agent.Name = name
+			agent.agent.Metadata.Name = name
+			agent.agent.Metadata.Namespace = "default"
+			returnAgents = append(returnAgents, agent.agent)
+		} else {
+			log.Debug().Msgf("User does not have access to agent %s", name)
+		}
 	}
+
+	log.Info().
+		Str("user", fmt.Sprintf("%v", userInfo["username"])).
+		Int("total_agents", len(AgentConnections)).
+		Int("accessible_agents", len(returnAgents)).
+		Bool("is_superadmin", isSuperAdmin).
+		Msg("Filtered agents based on user permissions")
+
 	json.NewEncoder(w).Encode(returnAgents)
 }
 
@@ -1042,10 +1117,11 @@ func SetupHTTPServer() {
 			log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
 			HandleHTTPProxyRequest(c)
 		})
+		protected.GET("/api/agents", GetAgentsHandler)
 	}
 
 	r.POST("/api/agents", CreateAgentHandler)
-	r.GET("/api/agents", GetAgentsHandler)
+
 	r.DELETE("/api/agents/:agent", DeleteAgentHandler)
 
 	r.GET("/api/agents/:agent/helm/list", func(c *gin.Context) {

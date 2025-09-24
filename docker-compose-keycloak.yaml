@@ -1,0 +1,83 @@
+# version: '3.8'
+
+services:
+  keycloak-db:
+    image: postgres:15
+    container_name: keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - keycloak-network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.1
+    container_name: keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-db
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - 8080:8080
+    depends_on:
+      - keycloak-db
+    networks:
+      - keycloak-network
+    command: >
+      start-dev
+
+  # agent:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.agent
+  #   restart: always
+  #   environment:
+  #     KUBECONFIG: /root/.kube/config
+  #   volumes:
+  #     - ./api/certs:/app/gen3-agent/certs
+  #     - /Users/qureshi/.kube/local.yaml:/root/.kube/config
+  #   command:
+  #     - ./gen3-agent
+  #     - --name
+  #     - kind
+  #     - --server-address
+  #     - api:50051
+  # api:
+  #   environment:
+  #     KUBECONFIG: /root/.kube/config
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.api
+  #   ports:
+  #     - "8002:8002"
+  #     - "50051:50051"
+  #   volumes:
+  #     - ./api/certs:/go/src/gen3-admin-api/certs
+  #     - ./api/.env:/go/src/gen3-admin-api/.env
+  #     - /Users/qureshi/.kube/local.yaml:/root/.kube/config
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.frontend
+  #   ports:
+  #     - "3002:3000"
+  #   # command:
+  #   #   - npm
+  #   #   - run
+  #   #   - start
+  #   network_mode: host
+  #   # volumes:
+  #     # - ./gen3-admin-frontend:/app/frontend
+
+volumes:
+  keycloak-db-data:
+
+networks:
+  keycloak-network:

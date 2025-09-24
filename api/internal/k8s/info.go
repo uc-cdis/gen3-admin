@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/uc-cdis/gen3-admin/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -15,12 +16,7 @@ type Info struct {
 }
 
 func GetInfo() (*Info, error) {
-	config, err := GetConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, _, err := config.K8sClient()
 	if err != nil {
 		return nil, err
 	}

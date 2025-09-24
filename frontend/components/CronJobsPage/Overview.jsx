@@ -50,7 +50,7 @@ const Page = ({ namespace, hideSelect = false, cluster }) => {
   useEffect(() => {
     if (!sessionData) return;
     fetchNamespaces();
-  }, [sessionData]);
+  }, []);
 
   const fetchNamespaces = async () => {
     try {
@@ -87,7 +87,7 @@ const Page = ({ namespace, hideSelect = false, cluster }) => {
     if (sessionData && selectedNamespace) {
       updateJobs();
     }
-  }, [sessionData, selectedNamespace, namespace, cluster, accessToken]);
+  }, [selectedNamespace, namespace, cluster, accessToken]);
 
   const toggleRow = (index) => {
     const jobName = jobs[index].metadata.name;

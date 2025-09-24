@@ -43,7 +43,7 @@ import callK8sApi from "@/lib/k8s";
 
 import JobsPage from '@/components/CronJobsPage/Overview';
 
-
+import LogViewer from '@/components/LokiLogViewer'
 
 export default function EnvironmentDashboardComp({
   env,
@@ -90,7 +90,7 @@ export default function EnvironmentDashboardComp({
     if (namespace && accessToken) {
       fetchHostname();
     }
-  }, [namespace, env, accessToken, sessionData?.error]);
+  }, [namespace, env]);
 
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
@@ -474,13 +474,6 @@ export default function EnvironmentDashboardComp({
     }
   };
 
-  // useEffect(() => {
-  //   if (sessionData?.error === 'RefreshAccessTokenError') {
-  //     console.log('Session error detected, signing out:', sessionData.error);
-  //     signOut({ callbackUrl: '/' });
-  //     return;
-  //   }
-  // }, [error])
 
   useEffect(() => {
     if (sessionData?.error) {
@@ -494,9 +487,8 @@ export default function EnvironmentDashboardComp({
       const interval = setInterval(fetchDashboardData, 30000);
       return () => clearInterval(interval);
     }
-  }, [env, namespace, accessToken, sessionData?.error]);
+  }, [env, namespace]);
 
-  // [env, namespace, accessToken, sessionData?.error]
 
   // Dynamic metrics cards
   const dynamicMetrics = [
@@ -600,6 +592,44 @@ export default function EnvironmentDashboardComp({
         </Card>
       )}
 
+      <Divider my="lg"/>
+
+      {/* Main metrics */}
+      <Group align="flex-start" gap="md" mb="xl" grow>
+        {dynamicMetrics.map((metric) => (
+          <Card
+            key={metric.title}
+            shadow="sm"
+            padding="lg"
+            radius="md"
+            withBorder
+            style={{ flex: 1, minWidth: 280 }}
+          >
+            <Stack gap="sm">
+              <Group justify="space-between" align="flex-start">
+                <div>
+                  <Text size="sm" c="dimmed" fw={500}>
+                    {metric.title}
+                  </Text>
+                  <Text size="xl" fw={700} mt={4}>
+                    {metric.value}
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {metric.subtitle}
+                  </Text>
+                </div>
+                <metric.icon size={20} color="#868E96" />
+              </Group>
+              <Progress value={metric.progress} size="sm" radius="xs" mt={8} />
+            </Stack>
+          </Card>
+        ))}
+      </Group>
+
+      <LogViewer hostname={hostname} />
+
+      <Divider my="lg"/>
+
       <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
       <Divider my="lg"/>
@@ -686,39 +716,6 @@ export default function EnvironmentDashboardComp({
         </Card>
       </Group>
 
-      <Divider my="lg"/>
-
-      {/* Main metrics */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
-        {dynamicMetrics.map((metric) => (
-          <Card
-            key={metric.title}
-            shadow="sm"
-            padding="lg"
-            radius="md"
-            withBorder
-            style={{ flex: 1, minWidth: 280 }}
-          >
-            <Stack gap="sm">
-              <Group justify="space-between" align="flex-start">
-                <div>
-                  <Text size="sm" c="dimmed" fw={500}>
-                    {metric.title}
-                  </Text>
-                  <Text size="xl" fw={700} mt={4}>
-                    {metric.value}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={2}>
-                    {metric.subtitle}
-                  </Text>
-                </div>
-                <metric.icon size={20} color="#868E96" />
-              </Group>
-              <Progress value={metric.progress} size="sm" radius="xs" mt={8} />
-            </Stack>
-          </Card>
-        ))}
-      </Group>
 
       <Divider my="lg"/>
 
@@ -927,7 +924,7 @@ export default function EnvironmentDashboardComp({
         </Card>
       </Group> */}
 
-      
+
 
       {/* Network Traffic */}
       {/* <Group align="flex-start" gap="md" mb="xl" grow>
