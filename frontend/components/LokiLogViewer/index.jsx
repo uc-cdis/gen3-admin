@@ -552,7 +552,7 @@ const LogViewer = ({
     setError(null);
 
     try {
-      const query = `{hostname="${selectedHostname}", app="revproxy"} |= "gen3log" | json | http_useragent !~ "Uptime-Kuma.*" | __error__="" | http_useragent != "ELB-HealthChecker/2.0" | http_useragent != "kube-probe/1.31+"`;
+      const query = `{hostname="${selectedHostname}", app="revproxy"} |= "gen3log" | json | http_useragent !~ "Uptime-Kuma.*" | __error__="" | http_useragent != "ELB-HealthChecker/2.0" | http_useragent != "kube-probe/1.31+" | http_request != "/metrics"`;
 
       const startNs = startDate.getTime() * 1e6;
       const endNs = endDate.getTime() * 1e6;

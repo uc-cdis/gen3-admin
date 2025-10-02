@@ -299,6 +299,7 @@ export function NavBar() {
                 { label: 'Infrastructure heatmap', link: `/cloud/instancemap`, icon: IconChartBar },
                 { label: 'Data Buckets', link: `/cloud/buckets`, icon: IconChartBar },
                 { label: 'IAC Demo', link: `/cloud/provision`, icon: IconChartBar },
+                { label: 'IAC Terraform New', link: `/cloud/terraform`, icon: IconChartBar },
                 { label: 'Spend', link: `/cloud/spend`, icon: IconChartBar },
             ],
         }

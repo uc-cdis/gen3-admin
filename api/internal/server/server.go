@@ -37,6 +37,7 @@ import (
 	"github.com/uc-cdis/gen3-admin/internal/logger"
 	"github.com/uc-cdis/gen3-admin/internal/middleware/keycloak"
 	"github.com/uc-cdis/gen3-admin/internal/runner"
+	"github.com/uc-cdis/gen3-admin/internal/terraform"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
 	"github.com/uc-cdis/gen3-admin/internal/utils"
 	routes "github.com/uc-cdis/gen3-admin/pkg"
@@ -1499,6 +1500,14 @@ func SetupHTTPServer() {
 	r.GET("/api/runner/executions/:id/stream", runner.HandleStreamExecution(store))
 	r.DELETE("/api/runner/executions/:id", runner.HandleTerminate(store))
 	r.GET("/api/runner/executions", runner.HandleListExecutions(store))
+
+	// Add Terraform-specific endpoints
+	r.POST("/api/terraform/execute", terraform.HandleTerraformExecute())
+	r.GET("/api/terraform/executions/:id", terraform.HandleGetTerraformExecution())
+	r.GET("/api/terraform/executions/:id/stream", terraform.HandleStreamTerraformExecution())
+	r.DELETE("/api/terraform/executions/:id", terraform.HandleTerminateTerraform())
+	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
+	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
 
 	// AWS routes
 	r.GET("/api/aws/instances", aws.ListEC2Instances)

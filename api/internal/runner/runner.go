@@ -37,12 +37,12 @@ type Execution struct {
 	StartTime   time.Time       `json:"start_time"`
 	EndTime     *time.Time      `json:"end_time,omitempty"`
 	cmd         *exec.Cmd
-	mu          sync.Mutex
+	Mu          sync.Mutex
 }
 
 type ExecutionStore struct {
 	executions map[string]*Execution
-	mu         sync.RWMutex
+	Mu         sync.RWMutex
 }
 
 func NewExecutionStore() *ExecutionStore {
@@ -52,21 +52,21 @@ func NewExecutionStore() *ExecutionStore {
 }
 
 func (s *ExecutionStore) Add(exec *Execution) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	s.executions[exec.ID] = exec
 }
 
 func (s *ExecutionStore) Get(id string) (*Execution, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
 	exec, exists := s.executions[id]
 	return exec, exists
 }
 
 func (s *ExecutionStore) List() []*Execution {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
 	execs := make([]*Execution, 0, len(s.executions))
 	for _, exec := range s.executions {
 		execs = append(execs, exec)
@@ -76,21 +76,35 @@ func (s *ExecutionStore) List() []*Execution {
 
 // Execution helper methods
 func (e *Execution) appendOutput(line string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.Output = append(e.Output, line)
+}
+
+// Add this method to runner/runner.go
+func (e *Execution) GetOutputSafe(lastIndex int) ([]string, int, ExecutionStatus) {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+
+	newOutput := []string{}
+	currentLen := len(e.Output)
+	for i := lastIndex; i < currentLen; i++ {
+		newOutput = append(newOutput, e.Output[i])
+	}
+
+	return newOutput, currentLen, e.Status
 }
 
 // Set erroroutput
 func (e *Execution) appendErrorOutput(line string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.ErrorOutput = append(e.ErrorOutput, line)
 }
 
 func (e *Execution) setError(err error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.Status = StatusError
 	e.Error = err.Error()
 	now := time.Now()
@@ -98,23 +112,23 @@ func (e *Execution) setError(err error) {
 }
 
 func (e *Execution) setCmd(cmd *exec.Cmd) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.cmd = cmd
 }
 
 func (e *Execution) complete() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.Status = StatusComplete
 	now := time.Now()
 	e.EndTime = &now
 }
 
 // Add this method to the Execution struct
-func (e *Execution) terminate() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *Execution) Terminate() error {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 
 	if e.Status != StatusRunning {
 		return fmt.Errorf("execution not running")
@@ -187,7 +201,7 @@ func Runner(c *gin.Context) {
 	}
 }
 
-func executeCommand(ex *Execution) {
+func ExecuteCommand(ex *Execution) {
 	// ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -261,7 +275,7 @@ func HandleExecute(store *ExecutionStore) gin.HandlerFunc {
 		store.Add(execution)
 
 		// Start command execution in goroutine
-		go executeCommand(execution)
+		go ExecuteCommand(execution)
 
 		// Return the execution ID immediately
 		c.JSON(202, gin.H{
@@ -313,7 +327,7 @@ func HandleStreamExecution(store *ExecutionStore) gin.HandlerFunc {
 		// Stream existing output
 		lastIndex := 0
 		for {
-			exec.mu.Lock()
+			exec.Mu.Lock()
 
 			// First check if process has ended
 			if exec.Status != StatusRunning {
@@ -330,7 +344,7 @@ func HandleStreamExecution(store *ExecutionStore) gin.HandlerFunc {
 					c.SSEvent("done", "completed")
 				}
 				c.Writer.Flush()
-				exec.mu.Unlock()
+				exec.Mu.Unlock()
 				return // End the connection
 			}
 
@@ -348,10 +362,10 @@ func HandleStreamExecution(store *ExecutionStore) gin.HandlerFunc {
 					c.SSEvent("error", exec.Error)
 				}
 				c.SSEvent("done", exec.Status)
-				exec.mu.Unlock()
+				exec.Mu.Unlock()
 				return
 			}
-			exec.mu.Unlock()
+			exec.Mu.Unlock()
 
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -374,7 +388,7 @@ func HandleTerminate(store *ExecutionStore) gin.HandlerFunc {
 			return
 		}
 
-		if err := exec.terminate(); err != nil {
+		if err := exec.Terminate(); err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
