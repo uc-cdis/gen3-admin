@@ -748,6 +748,116 @@ export default function Gen3TerraformUI() {
 
           <Stepper.Step label="Execute" description="Run Terraform" icon={<IconPlayerPlay size={18} />}>
             <Stack gap="md" mt="xl">
+                            <Accordion>
+                <Accordion.Item value="config">
+                  <Accordion.Control>
+                    <Group>
+                      <Title order={4}>View Configuration</Title>
+                      <Badge color="blue" size="sm">Terraform Variables</Badge>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Paper p="md" withBorder style={{ backgroundColor: '#1a1b1e' }}>
+                      <ScrollArea h={400}>
+                        <Code block style={{
+                          whiteSpace: 'pre-wrap',
+                          fontSize: '12px',
+                          backgroundColor: 'transparent',
+                          color: '#c1c2c5',
+                          fontFamily: 'monospace'
+                        }}>
+                          {(() => {
+                            const formatValue = (value) => {
+                              if (typeof value === 'string') return `"${value}"`;
+                              if (typeof value === 'boolean') return value.toString();
+                              if (Array.isArray(value)) {
+                                if (value.length === 0) return '[]';
+                                return `[\n  ${value.map(v => `"${v}"`).join(',\n  ')}\n]`;
+                              }
+                              if (typeof value === 'object' && value !== null) {
+                                const entries = Object.entries(value);
+                                if (entries.length === 0) return '{}';
+                                return `{\n  ${entries.map(([k, v]) => `${k} = "${v}"`).join('\n  ')}\n}`;
+                              }
+                              return String(value);
+                            };
+
+                            let output = '# Required Variables\n';
+                            output += `vpc_name = ${formatValue(config.vpc_name)}\n`;
+                            output += `aws_region = ${formatValue(config.aws_region)}\n`;
+                            output += `availability_zones = ${formatValue(config.availability_zones)}\n`;
+                            output += `hostname = ${formatValue(config.hostname)}\n`;
+                            output += `revproxy_arn = ${formatValue(config.revproxy_arn)}\n`;
+                            output += `user_yaml_bucket_name = ${formatValue(config.user_yaml_bucket_name)}\n`;
+
+                            output += '\n# Optional Variables\n';
+                            output += `kubernetes_namespace = ${formatValue(config.kubernetes_namespace)}\n`;
+                            output += `es_linked_role = ${formatValue(config.es_linked_role)}\n`;
+                            output += `create_gitops_infra = ${formatValue(config.create_gitops_infra)}\n`;
+                            output += `deploy_cognito = ${formatValue(config.deploy_cognito)}\n`;
+
+                            output += '\n# Default Tags\n';
+                            output += `default_tags = ${formatValue(config.default_tags)}`;
+
+                            return output;
+                          })()}
+                        </Code>
+                      </ScrollArea>
+                    </Paper>
+                    <Group justify="flex-end" mt="xs">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        leftSection={<IconDownload size={14} />}
+                        onClick={() => {
+                          const formatValue = (value) => {
+                            if (typeof value === 'string') return `"${value}"`;
+                            if (typeof value === 'boolean') return value.toString();
+                            if (Array.isArray(value)) {
+                              if (value.length === 0) return '[]';
+                              return `[\n  ${value.map(v => `"${v}"`).join(',\n  ')}\n]`;
+                            }
+                            if (typeof value === 'object' && value !== null) {
+                              const entries = Object.entries(value);
+                              if (entries.length === 0) return '{}';
+                              return `{\n  ${entries.map(([k, v]) => `${k} = "${v}"`).join('\n  ')}\n}`;
+                            }
+                            return String(value);
+                          };
+
+                          let output = '# Required Variables\n';
+                          output += `vpc_name = ${formatValue(config.vpc_name)}\n`;
+                          output += `aws_region = ${formatValue(config.aws_region)}\n`;
+                          output += `availability_zones = ${formatValue(config.availability_zones)}\n`;
+                          output += `hostname = ${formatValue(config.hostname)}\n`;
+                          output += `revproxy_arn = ${formatValue(config.revproxy_arn)}\n`;
+                          output += `user_yaml_bucket_name = ${formatValue(config.user_yaml_bucket_name)}\n`;
+
+                          output += '\n# Optional Variables\n';
+                          output += `kubernetes_namespace = ${formatValue(config.kubernetes_namespace)}\n`;
+                          output += `es_linked_role = ${formatValue(config.es_linked_role)}\n`;
+                          output += `create_gitops_infra = ${formatValue(config.create_gitops_infra)}\n`;
+                          output += `deploy_cognito = ${formatValue(config.deploy_cognito)}\n`;
+
+                          output += '\n# Default Tags\n';
+                          output += `default_tags = ${formatValue(config.default_tags)}`;
+
+                          const blob = new Blob([output], { type: 'text/plain' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'terraform.tfvars';
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Download Config
+                      </Button>
+                    </Group>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+
               <Group grow>
                 <Button
                   leftSection={<IconPlayerPlay size={16} />}
