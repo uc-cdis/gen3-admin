@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -59,6 +60,8 @@ type TerraformRequest struct {
 	// Docker specific
 	DockerImage   string `json:"docker_image,omitempty"`
 	DockerNetwork string `json:"docker_network,omitempty"`
+	DockerTFVars  string `json:"tfvars,omitempty"`
+	DockerTFVarsFileName string `json:"tfvars_file_name,omitempty"`
 
 	// Kubernetes specific
 	Namespace      string            `json:"namespace,omitempty"`
@@ -163,12 +166,12 @@ docker run \
   --label %s=%s \
   --label %s=%s \
   -v %s/.aws:/root/.aws:ro \
-  -v %s:/workspace \
-  -w /workspace \
+  -v %s:/workspace/gen3-terraform:ro \
+  -w /workspace/examples/gen3-deployment \
   %s \
   %s \
   %s \
-  %s
+  plan.sh
 `,
 		validationCmd,
 		containerName,
@@ -407,6 +410,29 @@ func HandleTerraformExecute() gin.HandlerFunc {
 		if err := c.BindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
+		}
+
+		if strings.TrimSpace(req.WorkDir) == "" {
+			req.WorkDir = "/tmp/gen3-terraform"
+		}
+		if err := os.MkdirAll(req.WorkDir, 0o755); err != nil {
+			c.JSON(500, gin.H{"error":"failed to create work dir"})
+			return
+		}
+
+		// write tfvars if sent from frontend
+		if strings.TrimSpace(req.DockerTFVars) != "" {
+			name := req.DockerTFVarsFileName
+			if name == "" {
+				name = "terraform.tfvars"
+			}
+			tfvarsPath := filepath.Join(req.WorkDir, name)
+			if err := os.WriteFile(tfvarsPath, []byte(req.DockerTFVars), 0o640); err != nil {
+				c.JSON(500, gin.H{"error":"failed to write tfvars"})
+				return
+			}
+			// tell the arg builder to use it
+			req.VarFiles = append(req.VarFiles, name)
 		}
 
 		executionID := uuid.New().String()

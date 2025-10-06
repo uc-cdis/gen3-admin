@@ -323,6 +323,7 @@ export default function Gen3TerraformUI() {
     setExecution(null);
 
     try {
+      const tfvars = buildTfvars(config);
       const response = await fetch('/api/terraform/execute', {
         method: 'POST',
         headers: {
@@ -333,13 +334,15 @@ export default function Gen3TerraformUI() {
           work_dir: workDir,
           runtime: runtime,
           auto_approve: operation === 'apply' || operation === 'destroy',
-          docker_image: 'hashicorp/terraform:latest',
+          docker_image: 'docker.io/library/gen3-terraform:elise',
           docker_network: 'bridge',
           namespace: namespace,
           pod_image: 'hashicorp/terraform:latest',
           secret_name: secretName,
           state_bucket: stateBucket,
           state_region: stateRegion,
+          tfvars,
+          tfvars_file_name: 'terraform.tfvars'
         }),
       });
 
@@ -426,6 +429,41 @@ export default function Gen3TerraformUI() {
     if (executionLogs.length > 0) return <IconCheck color="green" />;
     return <IconClock color="gray" />;
   };
+
+  function buildTfvars(cfg) {
+    const q = (v) => `"${v}"`;
+    const fmt = (v) => {
+      if (typeof v === 'string') return q(v);
+      if (typeof v === 'boolean') return String(v);
+      if (Array.isArray(v)) return v.length ? `[\n  ${v.map(q).join(',\n  ')}\n]` : '[]';
+      if (v && typeof v === 'object') {
+        const entries = Object.entries(v);
+        return entries.length
+          ? `{\n  ${entries.map(([k, val]) => `${k} = ${q(val)}`).join('\n  ')}\n}`
+          : '{}';
+      }
+      return String(v ?? '');
+    };
+
+    let out = '# Required Variables\n';
+    out += `vpc_name = ${fmt(cfg.vpc_name)}\n`;
+    out += `aws_region = ${fmt(cfg.aws_region)}\n`;
+    out += `availability_zones = ${fmt(cfg.availability_zones)}\n`;
+    out += `hostname = ${fmt(cfg.hostname)}\n`;
+    out += `revproxy_arn = ${fmt(cfg.revproxy_arn)}\n`;
+    out += `user_yaml_bucket_name = ${fmt(cfg.user_yaml_bucket_name)}\n`;
+
+    out += '\n# Optional Variables\n';
+    out += `kubernetes_namespace = ${fmt(cfg.kubernetes_namespace)}\n`;
+    out += `es_linked_role = ${fmt(cfg.es_linked_role)}\n`;
+    out += `create_gitops_infra = ${fmt(cfg.create_gitops_infra)}\n`;
+    out += `deploy_cognito = ${fmt(cfg.deploy_cognito)}\n`;
+
+    out += '\n# Default Tags\n';
+    out += `default_tags = ${fmt(cfg.default_tags)}\n`;
+
+    return out;
+  }
 
   return (
     <Container size="xl" py="md">
