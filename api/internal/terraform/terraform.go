@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -58,9 +58,9 @@ type TerraformRequest struct {
 	StateRegion string `json:"state_region,omitempty"`
 
 	// Docker specific
-	DockerImage   string `json:"docker_image,omitempty"`
-	DockerNetwork string `json:"docker_network,omitempty"`
-	DockerTFVars  string `json:"tfvars,omitempty"`
+	DockerImage          string `json:"docker_image,omitempty"`
+	DockerNetwork        string `json:"docker_network,omitempty"`
+	DockerTFVars         string `json:"tfvars,omitempty"`
 	DockerTFVarsFileName string `json:"tfvars_file_name,omitempty"`
 
 	// Kubernetes specific
@@ -140,6 +140,8 @@ echo "=== Validation passed ==="
 	tfArgs := buildTerraformArgs(req)
 	tfCommand := strings.Join(tfArgs, " ")
 
+	println("[DEBUG]: TFcommand: ", tfCommand)
+
 	envFlags := ""
 	if req.StateBucket != "" {
 		envFlags += fmt.Sprintf("-e TF_STATE_BUCKET=%s -e TF_STATE_REGION=%s ", req.StateBucket, req.StateRegion)
@@ -166,13 +168,15 @@ docker run \
   --label %s=%s \
   --label %s=%s \
   -v %s/.aws:/root/.aws:ro \
-  -v %s:/workspace/gen3-terraform:ro \
-  -w /workspace/examples/gen3-deployment \
+  -v %s:/workspace/gen3-terraform:rw \
+  -v %s/.terraform:/workspace/gen3-deployment/.terraform:rw \
+  -w /workspace/gen3-deployment \
   %s \
   %s \
   %s \
-  plan.sh
-`,
+  "%s"
+  `,
+		//   plan.sh
 		validationCmd,
 		containerName,
 		LabelManagedBy, ManagedByValue,
@@ -181,12 +185,14 @@ docker run \
 		LabelExecutionID, executionID,
 		homeDir,
 		req.WorkDir,
+		req.WorkDir,
 		envFlags,
 		networkFlag,
 		image,
 		tfCommand,
 	)
 
+	print(script)
 	return "sh", []string{"-c", script}
 }
 
@@ -234,22 +240,31 @@ func buildKubectlCommand(req *TerraformRequest, executionID string) (*exec.Cmd, 
 }
 
 func buildTerraformArgs(req *TerraformRequest) []string {
-	args := []string{string(req.Operation)}
+	var args []string
+
+	// // If it's not the official Terraform image, prepend "terraform"
+	if req.DockerImage != "hashicorp/terraform:latest" {
+		args = append(args, "terraform")
+	}
+
+	// Add init, &&, terraform <operation>
+	// args = append(args, "init", "&&", "terraform", string(req.Operation))
+	args = append(args, string(req.Operation))
 
 	switch req.Operation {
 	case OpInit:
 		// Add any init-specific flags
 	case OpPlan:
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file="+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
 		}
-		args = append(args, "-out=tfplan")
+		args = append(args, "-out=/workspace/gen3-terraform/tfplan")
 	case OpApply:
 		if req.AutoApprove {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file="+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
 		}
 	case OpDestroy:
 		if req.AutoApprove {
@@ -263,6 +278,8 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 	case OpValidate:
 		// No additional args needed
 	}
+
+	fmt.Printf("[DEBUG] args: %#v\n", args)
 
 	return args
 }
@@ -416,7 +433,7 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			req.WorkDir = "/tmp/gen3-terraform"
 		}
 		if err := os.MkdirAll(req.WorkDir, 0o755); err != nil {
-			c.JSON(500, gin.H{"error":"failed to create work dir"})
+			c.JSON(500, gin.H{"error": "failed to create work dir"})
 			return
 		}
 
@@ -428,7 +445,7 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			}
 			tfvarsPath := filepath.Join(req.WorkDir, name)
 			if err := os.WriteFile(tfvarsPath, []byte(req.DockerTFVars), 0o640); err != nil {
-				c.JSON(500, gin.H{"error":"failed to write tfvars"})
+				c.JSON(500, gin.H{"error": "failed to write tfvars"})
 				return
 			}
 			// tell the arg builder to use it
@@ -461,14 +478,51 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			return
 		}
 
+		type ExecResult struct {
+			Err    error
+			Stdout string
+			Stderr string
+		}
+
+		errCh := make(chan ExecResult, 1)
+
+		// Prepare output buffers
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
 		go func() {
-			if err := cmd.Run(); err != nil {
-				log.Error().Err(err).Str("execution_id", executionID).Msg("Execution failed")
+			err := cmd.Run()
+			errCh <- ExecResult{
+				Err:    err,
+				Stdout: stdoutBuf.String(),
+				Stderr: stderrBuf.String(),
 			}
 		}()
 
-		// Wait for execution to be visible
+		// Wait for execution to be visible or early failure
 		for i := 0; i < 10; i++ {
+			select {
+			case res := <-errCh:
+				if res.Err != nil {
+					log.Error().
+						Err(res.Err).
+						Str("execution_id", executionID).
+						Str("stderr", res.Stderr).
+						Msg("Execution failed early")
+
+					c.JSON(500, gin.H{
+						"id":      executionID,
+						"message": "Terraform execution failed to start",
+						"error":   res.Err.Error(),
+						"stderr":  res.Stderr,
+					})
+					return
+				}
+			default:
+				// keep waiting
+			}
+
 			time.Sleep(500 * time.Millisecond)
 
 			var execs []*TerraformExecution
@@ -490,11 +544,25 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			}
 		}
 
-		c.JSON(202, gin.H{
-			"id":      executionID,
-			"message": fmt.Sprintf("Terraform %s execution started (background)", req.Operation),
-			"runtime": req.Runtime,
-		})
+		// timeout or late failure
+		res := <-errCh
+		if res.Err != nil {
+			log.Error().
+				Err(res.Err).
+				Str("stderr", res.Stderr).
+				Str("execution_id", executionID).
+				Msg("Execution failed")
+
+			c.JSON(500, gin.H{
+				"error":   res.Err.Error(),
+				"stderr":  res.Stderr,
+				"stdout":  res.Stdout,
+				"runtime": req.Runtime,
+			})
+		} else {
+			c.JSON(504, gin.H{"error": "Execution not visible after timeout"})
+		}
+
 	}
 }
 

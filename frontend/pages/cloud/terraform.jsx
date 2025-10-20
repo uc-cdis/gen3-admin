@@ -334,7 +334,9 @@ export default function Gen3TerraformUI() {
           work_dir: workDir,
           runtime: runtime,
           auto_approve: operation === 'apply' || operation === 'destroy',
-          docker_image: 'docker.io/library/gen3-terraform:elise',
+          // docker_image: 'docker.io/library/gen3-terraform:elise',
+          // docker_image: 'hashicorp/terraform:latest',
+          docker_image: 'gen3-terraform:latest',
           docker_network: 'bridge',
           namespace: namespace,
           pod_image: 'hashicorp/terraform:latest',
@@ -352,7 +354,7 @@ export default function Gen3TerraformUI() {
         setExecution({ id: data.id, operation });
         streamLogs(data.id);
       } else {
-        setExecutionLogs([`Error: ${data.error}`]);
+        setExecutionLogs([`Error: ${data.error}.\n\nDetails: \n${data.stderr}`]);
         setIsExecuting(false);
       }
     } catch (error) {
