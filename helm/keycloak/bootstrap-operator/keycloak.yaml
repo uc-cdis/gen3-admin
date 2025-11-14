@@ -49,9 +49,9 @@ spec:
       key: password
 
   http:
-    httpEnabled: false
-    httpsPort: 8443
-    tlsSecret: keycloak-tls
+    httpEnabled: true
+    # httpsPort: 8443
+    # tlsSecret: keycloak-tls
 
   hostname:
     hostname: test.keycloak.org
@@ -79,13 +79,41 @@ metadata:
   name: csoc-realm
   namespace: keycloak
 spec:
-  keycloakCRName: csoc         # Name of your Keycloak resource
+  keycloakCRName: keycloak       # Name of your Keycloak CR
   realm:
     id: csoc-realm
     realm: csoc-realm
     enabled: true
----
 
+    identityProviders:
+      - alias: google
+        displayName: Google
+        providerId: google
+        enabled: true
+        trustEmail: true
+        storeToken: false
+        firstBrokerLoginFlowAlias: "first broker login"
+
+        config:
+          clientId: "${googleClientId}"
+          clientSecret: "${googleClientSecret}"
+          authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth"
+          tokenUrl: "https://oauth2.googleapis.com/token"
+          userInfoUrl: "https://openidconnect.googleapis.com/v1/userinfo"
+          defaultScope: "openid email profile"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: google-idp-secret
+  namespace: keycloak
+type: Opaque
+stringData:
+  clientId: "<GOOGLE_CLIENT_ID>"
+  clientSecret: "<GOOGLE_CLIENT_SECRET>"
+
+---
 
 
 apiVersion: cert-manager.io/v1
@@ -110,3 +138,5 @@ spec:
   commonName: test.keycloak.org
   dnsNames:
     - test.keycloak.org
+
+---
