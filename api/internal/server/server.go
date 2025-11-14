@@ -1099,8 +1099,14 @@ func SetupHTTPServer() {
 	}
 
 	protected := r.Group("/")
-	protected.Use(keycloak.AuthMiddleware())
-	// protected.Use(keycloak.SuccessMiddleware())
+	mockAuth := os.Getenv("MOCK_AUTH") == "true"
+	if mockAuth {
+		log.Warn().Msg("⚠️  MOCK_AUTH mode enabled — no real authentication is being applied! This should *NEVER* be used in production.")
+		protected.Use(keycloak.SuccessMiddleware())
+	} else {
+		protected.Use(keycloak.AuthMiddleware())
+	}
+
 	{
 		protected.Any("/api/k8s/proxy/*path", func(c *gin.Context) {
 			requestPath := strings.TrimPrefix(c.Request.URL.Path, "/api/k8s/proxy")
@@ -1510,6 +1516,7 @@ func SetupHTTPServer() {
 	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
 
 	// AWS routes
+	r.GET("/api/aws/identity", aws.GetCallerIdentity)
 	r.GET("/api/aws/instances", aws.ListEC2Instances)
 	r.GET("api/aws/s3", aws.ListS3Buckets)
 

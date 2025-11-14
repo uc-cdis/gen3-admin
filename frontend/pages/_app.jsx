@@ -75,27 +75,27 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
   //   );
   // }
 
+  const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
+
+  const appShellProps = {
+    header: { height: 60 },
+    withBorder: true,
+    padding: "md",
+  };
+
+  // Add navbar ONLY if bootstrap is NOT enabled
+  if (!bootstrapEnabled) {
+    appShellProps.navbar = {
+      width: 300,
+      breakpoint: "sm",
+      collapsed: { mobile: !mobileOpened, desktop: !desktopOpened },
+    };
+  }
+
 
   return (
-    <AppShell
-      header={{ height: 60 }}
-      // layout='alt'
-      withBorder={true}
-      navbar={{
-        width: 300,
-        breakpoint: 'sm',
-        collapsed: { mobile: !mobileOpened, desktop: !desktopOpened },
-      }}
-      padding="md"
-    >
-      {/* <AppShell.Header>
-        <Group grow preventGrowOverflow={false} wrap="nowrap" h="100%" px="md" bg="var(--mantine-color-blue-light)">
-          <Box w={10}>
-            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" width={100} />
-            <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
-          </Box>
 
-        </Group> */}
+    <AppShell {...appShellProps} >
 
       <AppShell.Header>
         <Group
@@ -136,7 +136,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
           </AppShell.Footer> */}
         </Center>
       </Container>
-    </AppShell>
+    </AppShell >
   );
 }
 
@@ -160,24 +160,24 @@ export default function App({
         // Refetch when browser comes back online
         refetchWhenOffline={false}
       >
-      {/* <KeycloakProvider> */}
+        {/* <KeycloakProvider> */}
         <MantineProvider theme={theme}>
           <AuthenticatedLayout>
-          <Head>
-            <title>Gen3 - Admin</title>
-            <meta
-              name="viewport"
-              content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
-            />
-            <link rel="shortcut icon" href="/favicon.svg" />
-          </Head>
-          <SpotLight />
+            <Head>
+              <title>Gen3 - Admin</title>
+              <meta
+                name="viewport"
+                content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
+              />
+              <link rel="shortcut icon" href="/favicon.svg" />
+            </Head>
+            <SpotLight />
 
-          <AppContent Component={Component} pageProps={pageProps} />
-          {/* <Component {...pageProps} /> */}
+            <AppContent Component={Component} pageProps={pageProps} />
+            {/* <Component {...pageProps} /> */}
           </AuthenticatedLayout>
         </MantineProvider>
-      {/* </KeycloakProvider> */}
+        {/* </KeycloakProvider> */}
       </SessionProvider>
     </GlobalStateProvider>
   );

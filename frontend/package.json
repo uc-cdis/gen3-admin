@@ -49,6 +49,7 @@
     "react-initials-avatar": "^1.1.2",
     "react-virtualized-auto-sizer": "^1.0.25",
     "react-window": "^1.8.11",
+    "reactflow": "^11.11.4",
     "recharts": "^2.15.4",
     "xterm": "^5.3.0",
     "yaml": "^2.5.1"

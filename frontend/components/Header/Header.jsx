@@ -60,6 +60,15 @@ const STATUS_CONFIG = {
 const getStatusIcon = (status) => STATUS_CONFIG[status] || STATUS_CONFIG['unknown'];
 
 export function Header({ mobileOpened, toggleMobile, desktopOpened, toggleDesktop }) {
+
+  const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
+
+  if (bootstrapEnabled) return (
+    <>
+    Gen3 CSOC Bootstrapping
+    </>
+  );
+
   const [userMenuOpened, setUserMenuOpened] = useState(false);
   const [clusters, setClusters] = useState([]);
   const [environments, setEnvironments] = useState([]);

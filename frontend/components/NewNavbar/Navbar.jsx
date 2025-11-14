@@ -137,6 +137,10 @@ function LinksGroup({ label, links, icon: Icon }) {
 
 export function NavBar() {
     const router = useRouter()
+    const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
+
+    if (bootstrapEnabled) return null;
+
 
 
     // const [activeCluster, setActiveCluster] = useState(0);
@@ -310,8 +314,8 @@ export function NavBar() {
     if (!activeCluster || activeCluster === '') {
         return (
             <>
-            Active Cluster: {activeCluster}
-            Please select a cluster
+                Active Cluster: {activeCluster}
+                Please select a cluster
             </>
         )
     } else {
