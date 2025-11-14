@@ -23,6 +23,7 @@ spec:
   monitoring:
     enablePodMonitor: true
 ---
+
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -33,7 +34,7 @@ spec:
 
   bootstrapAdmin:
     user:
-      secret: keycloak-bootstrap-admin
+      secret: keycloak-admin-credentials
 
 
   db:
@@ -71,3 +72,41 @@ type: Opaque
 stringData:
   username: admin
   password: change_me
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: csoc-realm
+  namespace: keycloak
+spec:
+  keycloakCRName: csoc         # Name of your Keycloak resource
+  realm:
+    id: csoc-realm
+    realm: csoc-realm
+    enabled: true
+---
+
+
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-selfsigned-cert
+  namespace: keycloak
+spec:
+  secretName: keycloak-tls
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  commonName: test.keycloak.org
+  dnsNames:
+    - test.keycloak.org
