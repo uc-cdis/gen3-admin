@@ -1,7 +1,7 @@
 ARG AZLINUX_BASE_VERSION=master
 
 # For local development
-FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION} 
+FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION}
 
 
 ENV NODE_VERSION=20.17.0
@@ -11,8 +11,11 @@ ENV NODE_VERSION=20.17.0
 
 # Install packages via yum
 RUN yum install -y unzip nodejs
-    
-WORKDIR /frontend 
+
+WORKDIR /frontend
+
+ARG NEXT_PUBLIC_BOOTSTRAP_MODE
+ENV NEXT_PUBLIC_BOOTSTRAP_MODE=${NEXT_PUBLIC_BOOTSTRAP_MODE}
 
 COPY ./frontend/package.json ./frontend/package-lock.json /frontend/
 RUN npm install
@@ -43,5 +46,5 @@ RUN npm run build
 
 EXPOSE 3000
 
-# CMD ["node", ".next/standalone/server.js"] 
+# CMD ["node", ".next/standalone/server.js"]
 CMD ["npm", "start"]

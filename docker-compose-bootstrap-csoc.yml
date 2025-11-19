@@ -1,0 +1,31 @@
+
+services:
+  api:
+    # network_mode: host
+    environment:
+      PORT: "8002"
+      MOCK_AUTH: "true"
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8002:8002"
+      - "50051:50051"
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
+    ports:
+      - "3000:3000"
+    environment:
+      NEXTAUTH_SECRET: $(openssl rand -hex 32)
+      MOCK_AUTH: "true"
+    depends_on:
+      - api
+    command:
+      - npm
+      - run
+      - start
+    # network_mode: host
