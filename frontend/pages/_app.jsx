@@ -26,7 +26,7 @@ import { IconHeart, IconSettings, IconHome } from '@tabler/icons-react';
 import Breadcrumbs from '@/components/BreadCrumbs'
 
 // Next-auth attempt
-import { SessionProvider } from "next-auth/react"
+import { SessionProvider, signIn, useSession } from "next-auth/react"
 // import { useSession, signIn, signOut } from "next-auth/react"
 
 // import TrackerProvider from '@/contexts/openreplay'
@@ -42,7 +42,7 @@ import { GlobalStateProvider } from '@/contexts/global';
 // import { AuthProvider } from '@/contexts/auth'
 
 import AuthContext from '@/contexts/auth';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState, useRef } from 'react';
 
 import Login from '../components/Login'; // You'll need to create this component
 
@@ -52,6 +52,65 @@ import '@mantine/notifications/styles.css';
 import 'mantine-datatable/styles.layer.css';
 import '@mantine/dates/styles.css';
 import { AuthenticatedLayout } from '@/layout/AuthenticatedLayout';
+
+const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
+
+
+function BootstrapAuthGate({ children }) {
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const loginTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (!bootstrapEnabled) return;
+
+    console.log("---------- BOOTSTRAP EFFECT RUN ----------");
+    console.log("[bootstrap] BOOTSTRAP_MODE:", bootstrapEnabled);
+    console.log("[bootstrap] current route:", router.pathname);
+    console.log("[bootstrap] session value:", session);
+    console.log("[bootstrap] status:", status);
+
+    // Status Loading
+    if (status === "loading") {
+      console.log("[bootstrap] status=loading (checking cookies)");
+      return;
+    }
+
+    // Already authenticated
+    if (status === "authenticated" && session) {
+      console.log("[bootstrap] session detected! Authenticated user:", session.user);
+      return;
+    }
+
+    // status "unauthenticated" → trigger auto-login
+    if (!loginTriggeredRef.current) {
+      console.log("[bootstrap] User unauthenticated in bootstrap mode. Triggering auto sign-in!");
+      loginTriggeredRef.current = true;
+      (async () => {
+        const result = await signIn("mock-provider", {
+          redirect: false
+        });
+        console.log("[bootstrap] signIn() result:", result);
+        if (!(result?.ok || result?.status === 200)) {
+          console.error("[bootstrap] Auto mock sign-in FAILED!", result);
+        } else {
+          console.log("[bootstrap] Auto mock sign-in SUCCEEDED (waiting for session update)");
+        }
+      })();
+    } else {
+      console.log("[bootstrap] Auto sign-in already triggered, waiting for session update …");
+    }
+  }, [session, status, router]);
+
+  // When in bootstrap mode:
+  // - While loading or auto-login in progress, render nothing to avoid normal auth redirect.
+  if (bootstrapEnabled) {
+    if (status === "loading") return null;
+    if (status === "unauthenticated" && !loginTriggeredRef.current) return null;
+  }
+
+  return children;
+}
 
 
 function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
@@ -146,8 +205,6 @@ export default function App({
   pageProps: { session, ...pageProps },
 }) {
 
-  const router = useRouter()
-
 
   return (
     <GlobalStateProvider>
@@ -161,22 +218,24 @@ export default function App({
         refetchWhenOffline={false}
       >
         {/* <KeycloakProvider> */}
-        <MantineProvider theme={theme}>
-          <AuthenticatedLayout>
-            <Head>
-              <title>Gen3 - Admin</title>
-              <meta
-                name="viewport"
-                content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
-              />
-              <link rel="shortcut icon" href="/favicon.svg" />
-            </Head>
-            <SpotLight />
+        <BootstrapAuthGate>
+          <MantineProvider theme={theme}>
+            <AuthenticatedLayout>
+              <Head>
+                <title>Gen3 - Admin</title>
+                <meta
+                  name="viewport"
+                  content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
+                />
+                <link rel="shortcut icon" href="/favicon.svg" />
+              </Head>
+              <SpotLight />
 
-            <AppContent Component={Component} pageProps={pageProps} />
-            {/* <Component {...pageProps} /> */}
-          </AuthenticatedLayout>
-        </MantineProvider>
+              <AppContent Component={Component} pageProps={pageProps} />
+              {/* <Component {...pageProps} /> */}
+            </AuthenticatedLayout>
+          </MantineProvider>
+        </BootstrapAuthGate>
         {/* </KeycloakProvider> */}
       </SessionProvider>
     </GlobalStateProvider>
