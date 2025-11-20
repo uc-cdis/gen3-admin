@@ -64,12 +64,6 @@ function BootstrapAuthGate({ children }) {
   useEffect(() => {
     if (!bootstrapEnabled) return;
 
-    console.log("---------- BOOTSTRAP EFFECT RUN ----------");
-    console.log("[bootstrap] BOOTSTRAP_MODE:", bootstrapEnabled);
-    console.log("[bootstrap] current route:", router.pathname);
-    console.log("[bootstrap] session value:", session);
-    console.log("[bootstrap] status:", status);
-
     // Status Loading
     if (status === "loading") {
       console.log("[bootstrap] status=loading (checking cookies)");

@@ -17,6 +17,9 @@ WORKDIR /frontend
 ARG NEXT_PUBLIC_BOOTSTRAP_MODE
 ENV NEXT_PUBLIC_BOOTSTRAP_MODE=${NEXT_PUBLIC_BOOTSTRAP_MODE}
 
+ARG API_BASE_URL
+ENV API_BASE_URL=${API_BASE_URL}
+
 COPY ./frontend/package.json ./frontend/package-lock.json /frontend/
 RUN npm install
 

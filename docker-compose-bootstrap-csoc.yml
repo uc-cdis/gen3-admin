@@ -5,27 +5,36 @@ services:
     environment:
       PORT: "8002"
       MOCK_AUTH: "true"
+      AWS_PROFILE: "csoc"
+      KUBECONFIG: /root/.kube/config
     build:
       context: .
       dockerfile: Dockerfile.api
     ports:
       - "8002:8002"
       - "50051:50051"
+    volumes:
+      - ~/.aws:/root/.aws
+      - ~/.kube/config:/root/.kube/config
+      - ./api/certs:/go/src/gen3-admin-api/certs
+      - ~/.minikube:/Users/elisecastle/.minikube
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
+        API_BASE_URL: "http://api:8002"
     ports:
       - "3000:3000"
     environment:
-      NEXTAUTH_SECRET: $(openssl rand -hex 32)
+      NEXTAUTH_SECRET: "6bcc8d24207ff145da5740b0ec0ed231563404b4e65325d1ac22b8b68142634f" #pragma: allowlist secret
       MOCK_AUTH: "true"
+      NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
+      API_BASE_URL: "http://api:8002"
     depends_on:
       - api
     command:
       - npm
       - run
       - start
-    # network_mode: host
