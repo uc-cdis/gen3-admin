@@ -5,16 +5,21 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 
-const isDevelopment = process.env.NODE_ENV !== "production";
+const isDevelopment =
+  process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true" || process.env.NODE_ENV !== "production";
+
+const API_BASE_URL =
+  process.env.API_BASE_URL || "http://localhost:8002";
+
 const rewritesConfig = isDevelopment
   ? [
     {
       source: "/admin-api-go/:path*", // Matched parameters can be used in the destination
-      destination: "http://localhost:8002/:path*", // Destination URL can be configured by providing a "destination" property
+      destination: `${API_BASE_URL}/:path*`, // Destination URL can be configured by providing a "destination" property
     },
     {
       source: "/admin-api/:path*", // Matched parameters can be used in the destination
-      destination: "http://localhost:8002/:path*", // Destination URL can be configured by providing a "destination" property
+      destination: `${API_BASE_URL}/:path*`, // Destination URL can be configured by providing a "destination" property
     },
     {
       source: "/api/auth/:path*",
@@ -22,11 +27,11 @@ const rewritesConfig = isDevelopment
     },
     {
       source: "/api/:path*/", // Matches paths ending with /
-      destination: "http://localhost:8002/api/:path*/",
+      destination: `${API_BASE_URL}/api/:path*/`,
     },
     {
       source: "/api/:path*", // Matched parameters can be used in the destination
-      destination: "http://localhost:8002/api/:path*", // Destination URL can be configured by providing a "destination" property
+      destination: `${API_BASE_URL}/api/:path*`, // Destination URL can be configured by providing a "destination" property
     },
   ]
   : [];
