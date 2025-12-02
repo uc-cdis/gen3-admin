@@ -61,9 +61,9 @@ const TerraformContext = createContext({
   executionHistory: [],
   isExecuting: false,
   executionLogs: [],
-  execute: () => {},
-  terminate: () => {},
-  refresh: () => {}
+  execute: () => { },
+  terminate: () => { },
+  refresh: () => { }
 });
 
 // ============================================================================
@@ -71,6 +71,56 @@ const TerraformContext = createContext({
 // ============================================================================
 
 function TerraformLogsViewer({ logs, isExecuting, logsEndRef }) {
+  const parseAnsiColors = (text) => {
+    const ansiColorMap = {
+      '30': '#2e3440', '31': '#bf616a', '32': '#a3be8c', '33': '#ebcb8b',
+      '34': '#81a1c1', '35': '#b48ead', '36': '#88c0d0', '37': '#e5e9f0',
+      '90': '#4c566a', '91': '#bf616a', '92': '#a3be8c', '93': '#ebcb8b',
+      '94': '#81a1c1', '95': '#b48ead', '96': '#8fbcbb', '97': '#eceff4',
+      '1': 'bold', '0': 'reset'
+    };
+
+    const parts = [];
+    let currentIndex = 0;
+    let currentColor = '#c1c2c5';
+    let isBold = false;
+
+    const ansiRegex = /\[(\d+)m/g;
+    let match;
+
+    while ((match = ansiRegex.exec(text)) !== null) {
+      if (match.index > currentIndex) {
+        parts.push({
+          text: text.slice(currentIndex, match.index),
+          color: currentColor,
+          bold: isBold
+        });
+      }
+
+      const code = match[1];
+      if (code === '0') {
+        currentColor = '#c1c2c5';
+        isBold = false;
+      } else if (code === '1') {
+        isBold = true;
+      } else if (ansiColorMap[code]) {
+        currentColor = ansiColorMap[code];
+      }
+
+      currentIndex = match.index + match[0].length;
+    }
+
+    if (currentIndex < text.length) {
+      parts.push({
+        text: text.slice(currentIndex),
+        color: currentColor,
+        bold: isBold
+      });
+    }
+
+    return parts;
+  };
+
   return (
     <Paper p="md" withBorder style={{ backgroundColor: '#1a1b1e', minHeight: '300px' }}>
       <Group justify="space-between" mb="xs">
@@ -89,9 +139,27 @@ function TerraformLogsViewer({ logs, isExecuting, logsEndRef }) {
             whiteSpace: 'pre-wrap',
             fontSize: '11px',
             backgroundColor: 'transparent',
-            color: '#c1c2c5'
+            color: '#c1c2c5',
+            lineHeight: '1.5'
           }}>
-            {logs.join('\n')}
+            {logs.map((log, idx) => {
+              const parts = parseAnsiColors(log);
+              return (
+                <div key={idx}>
+                  {parts.map((part, i) => (
+                    <span
+                      key={i}
+                      style={{
+                        color: part.color,
+                        fontWeight: part.bold ? 'bold' : 'normal'
+                      }}
+                    >
+                      {part.text}
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
           </Code>
           <div ref={logsEndRef} />
         </div>
@@ -344,7 +412,7 @@ function ExecutionHistory({ onViewLogs }) {
 
 function buildTfvars(config) {
   if (!config) return '';
-  
+
   const formatValue = (value) => {
     if (typeof value === 'string') return `"${value}"`;
     if (typeof value === 'boolean') return value.toString();
@@ -389,32 +457,32 @@ export default function TerraformExecutor({
   mode = 'guided',              // 'guided' | 'embedded'
   autoExecute = false,
   operations = ['init', 'validate', 'plan', 'apply', 'destroy'],
-  
+
   // UI options
   showHistory = true,
   showConfig = true,
   showOperationButtons = true,
   title = 'Terraform Executor',
-  
+
   // AWS Context (passed from parent)
   awsContext = {},
-  
+
   // Terraform configuration
   tfvars = null,                // Pre-built tfvars string
   config = null,                // Config object to build tfvars from
   workDir = '/tmp/gen3-terraform',
   dockerImage = 'gen3-terraform:latest',
-  
+
   // State configuration
   stateBucket = '',
   stateRegion = 'us-east-1',
   stateKey = 'terraform.tfstate',
-  
+
   // Callbacks
-  onComplete = () => {},
-  onError = () => {},
-  onProgress = () => {},
-  
+  onComplete = () => { },
+  onError = () => { },
+  onProgress = () => { },
+
   // Initial values for guided mode
   initialConfig = null
 }) {
@@ -582,11 +650,11 @@ export default function TerraformExecutor({
     try {
       // Use passed tfvars or build from config
       const finalTfvars = tfvars || buildTfvars(config || localConfig);
-      
+
       // Determine state bucket - use awsContext if provided, otherwise local
       const finalStateBucket = awsContext.stateBucket || localStateBucket;
       const finalStateRegion = awsContext.stateRegion || localStateRegion;
-      
+
       const response = await fetch('/api/terraform/execute', {
         method: 'POST',
         headers: {
@@ -602,7 +670,7 @@ export default function TerraformExecutor({
           namespace: namespace,
           pod_image: dockerImage,
           secret_name: secretName,
-          state_bucket:  "", //finalStateBucket,
+          state_bucket: "", //finalStateBucket,
           state_region: finalStateRegion,
           state_key: stateKey,
           tfvars: finalTfvars,
@@ -733,9 +801,9 @@ export default function TerraformExecutor({
       <TerraformContext.Provider value={contextValue}>
         <Stack gap="md">
           {showConfig && (
-            <TerraformConfigViewer 
-              tfvars={tfvars} 
-              config={config || localConfig} 
+            <TerraformConfigViewer
+              tfvars={tfvars}
+              config={config || localConfig}
             />
           )}
 

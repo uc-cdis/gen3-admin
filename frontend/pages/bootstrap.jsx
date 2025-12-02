@@ -620,10 +620,15 @@ export default function Gen3BootstrapStepper() {
         );
 
       case 3:
+        const availability_zones = [
+          `${selectedRegion}a`,
+          `${selectedRegion}b`,
+          `${selectedRegion}c`
+        ];
         const csocConfig = {
           vpc_name: csocName || 'csoc-vpc',
           aws_region: selectedRegion,
-          availability_zones: [], // You might want to auto-select AZs based on region
+          availability_zones: availability_zones,
           hostname: domainName,
           revproxy_arn: '', // You'd need to collect this or create cert
           user_yaml_bucket_name: `${csocName}-user-yaml`,
@@ -641,7 +646,7 @@ export default function Gen3BootstrapStepper() {
           <TerraformExecutor
             mode="embedded"
             autoExecute={true}
-            operations={['init', 'validate', 'plan', 'apply']}
+            operations={['plan', 'init', 'validate', 'plan', 'apply']}
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}
