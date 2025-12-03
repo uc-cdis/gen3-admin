@@ -220,9 +220,9 @@ function TerraformConfigViewer({ tfvars, config }) {
 
 function TerraformOperationButtons({ operations, disabled, onExecute }) {
   const buttonConfig = {
-    init: { color: 'gray', variant: 'light', label: 'Init' },
-    validate: { color: 'gray', variant: 'light', label: 'Validate' },
-    plan: { color: 'blue', variant: 'filled', label: 'Plan' },
+    init: { color: 'blue', variant: 'light', label: 'Init' },
+    validate: { color: 'blue', variant: 'light', label: 'Validate' },
+    plan: { color: 'yellow', variant: 'filled', label: 'Plan' },
     apply: { color: 'green', variant: 'filled', label: 'Apply' },
     destroy: { color: 'red', variant: 'filled', label: 'Destroy' }
   };
@@ -230,7 +230,8 @@ function TerraformOperationButtons({ operations, disabled, onExecute }) {
   return (
     <Group grow>
       {operations.map(op => {
-        const config = buttonConfig[op] || buttonConfig.plan;
+        console.log("op", op)
+        const config = buttonConfig[op] || buttonConfig[op?.split(' ')[0]] || buttonConfig.plan;
         return (
           <Button
             key={op}

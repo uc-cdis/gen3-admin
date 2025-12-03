@@ -119,8 +119,10 @@ func ensureTerraformNamespace(namespace string) error {
 }
 
 func buildDockerCommand(req *TerraformRequest, executionID string) (string, []string) {
-	containerName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(req.Operation)), executionID[:8])
+	op := strings.Split(string(req.Operation), " ")[0]
+	containerName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(op)), executionID[:8])
 	homeDir, _ := os.UserHomeDir()
+	// homeDir, _ := "~"
 
 	validationCmd := ""
 	if req.StateBucket != "" {
@@ -168,20 +170,20 @@ docker run \
   --label %s=%s \
   --label %s=%s \
   -v %s/.aws:/root/.aws:ro \
-  -v %s:/workspace/gen3-terraform:rw \
-  -v %s/.terraform:/workspace/gen3-deployment/.terraform:rw \
-  -w /workspace/gen3-deployment \
+  -v %s:/workspace/csoc:rw \
+  -v %s-vars/terraform.tfvars:/workspace/gen3-terraform/terraform.tfvars:rw \
+  -w /workspace/csoc \
   %s \
   %s \
   %s \
-  "%s"
+  -- "%s"
   `,
 		//   plan.sh
 		validationCmd,
 		containerName,
 		LabelManagedBy, ManagedByValue,
 		LabelComponent, ComponentValue,
-		LabelOperation, string(req.Operation),
+		LabelOperation, string(op),
 		LabelExecutionID, executionID,
 		homeDir,
 		req.WorkDir,
@@ -436,6 +438,10 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to create work dir"})
 			return
 		}
+		if err := os.MkdirAll(req.WorkDir+"-vars", 0o755); err != nil {
+			c.JSON(500, gin.H{"error": "failed to create work dir"})
+			return
+		}
 
 		// write tfvars if sent from frontend
 		if strings.TrimSpace(req.DockerTFVars) != "" {
@@ -443,8 +449,11 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			if name == "" {
 				name = "terraform.tfvars"
 			}
-			tfvarsPath := filepath.Join(req.WorkDir, name)
+			tfvarsPath := filepath.Join(req.WorkDir+"-vars", name)
 			if err := os.WriteFile(tfvarsPath, []byte(req.DockerTFVars), 0o640); err != nil {
+				log.Error().
+					Err(err).
+					Msg("failed to write tfvars")
 				c.JSON(500, gin.H{"error": "failed to write tfvars"})
 				return
 			}
@@ -757,14 +766,22 @@ func HandleStreamTerraformExecution() gin.HandlerFunc {
 
 		go func() {
 			defer func() { done <- true }()
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
+
+			buf := make([]byte, 1024)
+
+			for {
 				select {
 				case <-ctx.Done():
 					return
 				default:
-					c.SSEvent("message", scanner.Text())
-					c.Writer.Flush()
+					n, err := stdout.Read(buf)
+					if n > 0 {
+						c.SSEvent("message", string(buf[:n]))
+						c.Writer.Flush()
+					}
+					if err != nil {
+						return
+					}
 				}
 			}
 		}()

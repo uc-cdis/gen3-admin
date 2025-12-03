@@ -27,7 +27,7 @@ export default function Gen3BootstrapStepper() {
   const [csocName, setCsocName] = useState('');
   const [domainName, setDomainName] = useState('');
   const [validatingDomain, setValidatingDomain] = useState(false);
-  const [domainValidation, setDomainValidation] = useState(null);
+  const [domainValidation, setDomainValidation] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [vpcCidr, setVpcCidr] = useState('10.0.0.0/16');
 
@@ -646,7 +646,7 @@ export default function Gen3BootstrapStepper() {
           <TerraformExecutor
             mode="embedded"
             autoExecute={true}
-            operations={['plan', 'init', 'validate', 'plan', 'apply']}
+            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'",  'plan', 'apply']}
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}
