@@ -703,7 +703,12 @@ export default function TerraformExecutor({
 
   const streamLogs = async (executionId) => {
     try {
-      const response = await fetch(`/api/terraform/executions/${executionId}/stream`);
+      const isDevelopment =
+        process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true" || process.env.NODE_ENV !== "production";
+      const baseUrl = isDevelopment ? "http://localhost:8002/api" : "/api";
+
+
+      const response = await fetch(`${baseUrl}/terraform/executions/${executionId}/stream`);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';

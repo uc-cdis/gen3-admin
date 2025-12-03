@@ -122,34 +122,47 @@ func buildDockerCommand(req *TerraformRequest, executionID string) (string, []st
 	op := strings.Split(string(req.Operation), " ")[0]
 	containerName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(op)), executionID[:8])
 	homeDir, _ := os.UserHomeDir()
-	// homeDir, _ := "~"
 
+	// Get AWS_PROFILE from environment
+	awsProfile := os.Getenv("AWS_PROFILE")
+	awsProfileFlag := ""
+	if awsProfile != "" {
+		awsProfileFlag = fmt.Sprintf("-e AWS_PROFILE=%s", awsProfile)
+	}
+
+	// Validation command
 	validationCmd := ""
 	if req.StateBucket != "" {
 		validationCmd = fmt.Sprintf(`
 echo "=== Running credential validation ==="
 docker run --rm \
   -v %s/.aws:/root/.aws:ro \
+  %s \
   -e TF_STATE_BUCKET=%s \
   -e TF_STATE_REGION=%s \
   amazon/aws-cli:latest \
   sh -c '%s' || exit $?
 
 echo "=== Validation passed ==="
-`, homeDir, req.StateBucket, req.StateRegion, buildValidationScript(req.StateBucket, req.StateRegion))
+`, homeDir, awsProfileFlag, req.StateBucket, req.StateRegion, buildValidationScript(req.StateBucket, req.StateRegion))
 	}
 
 	tfArgs := buildTerraformArgs(req)
 	tfCommand := strings.Join(tfArgs, " ")
-
 	println("[DEBUG]: TFcommand: ", tfCommand)
 
+	// Build environment flags for main Terraform container
 	envFlags := ""
 	if req.StateBucket != "" {
 		envFlags += fmt.Sprintf("-e TF_STATE_BUCKET=%s -e TF_STATE_REGION=%s ", req.StateBucket, req.StateRegion)
 	}
 	for key, value := range req.Vars {
 		envFlags += fmt.Sprintf("-e TF_VAR_%s=%s ", key, value)
+	}
+
+	// Pass AWS_PROFILE if set
+	if awsProfile != "" {
+		envFlags += fmt.Sprintf("-e AWS_PROFILE=%s ", awsProfile)
 	}
 
 	networkFlag := ""
@@ -178,7 +191,6 @@ docker run \
   %s \
   -- "%s"
   `,
-		//   plan.sh
 		validationCmd,
 		containerName,
 		LabelManagedBy, ManagedByValue,

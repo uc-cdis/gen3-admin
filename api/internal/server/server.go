@@ -26,7 +26,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -1071,6 +1073,9 @@ func SetupHTTPServer() {
 	r.Use(logger.DefaultStructuredLogger()) // adds our new middleware
 	r.Use(gin.Recovery())
 
+	// Wide open CORS
+	r.Use(cors.Default()) // All origins allowed by default
+
 	r.RedirectTrailingSlash = false
 	// Add to your main function
 	go func() {
@@ -1517,6 +1522,8 @@ func SetupHTTPServer() {
 
 	// AWS routes
 	r.GET("/api/aws/identity", aws.GetCallerIdentity)
+	r.GET("/api/aws/profiles", aws.ListAWSProfilesHandler)
+	r.POST("/api/aws/set-profile", aws.SetAWSProfileHandler)
 	r.GET("/api/aws/instances", aws.ListEC2Instances)
 	r.GET("api/aws/s3", aws.ListS3Buckets)
 

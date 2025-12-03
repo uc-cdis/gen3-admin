@@ -11,7 +11,6 @@ export default function Gen3BootstrapStepper() {
 
   const [selectedRegion, setSelectedRegion] = useState('us-east-1');
   const [credentialSource, setCredentialSource] = useState('auto');
-  const [selectedProfile, setSelectedProfile] = useState('');
   const [availableProfiles, setAvailableProfiles] = useState([]);
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [profilesError, setProfilesError] = useState(null);
@@ -43,24 +42,30 @@ export default function Gen3BootstrapStepper() {
     setProfilesError(null);
 
     try {
-      // Mock for now - will call real API
-      const profiles = ['default', 'production', 'staging'];
+      // Call the real API endpoint
+      const response = await fetch('/api/aws/profiles');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profiles: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const profiles = data.profiles || [];
+
+      // Format for your select component
       const formattedProfiles = profiles.map(profile => ({
         value: profile,
-        label: profile
+        label: profile,
       }));
 
       setAvailableProfiles(formattedProfiles);
-
-      if (profiles.includes('default')) {
-        setSelectedProfile('default');
-      }
     } catch (err) {
+      console.error('Error loading AWS profiles:', err);
       setProfilesError(err.message || 'Failed to load AWS profiles');
     } finally {
       setLoadingProfiles(false);
     }
   };
+
 
   const handleValidateDomain = async () => {
     setValidatingDomain(true);
@@ -134,7 +139,7 @@ export default function Gen3BootstrapStepper() {
     }
   };
 
-  const { identity, loading, error } = useAwsIdentity();
+  const { identity, selectProfile, selectedProfile, loading, error } = useAwsIdentity();
 
   const nextStep = () => setActive((current) => (current < 3 ? current + 1 : current));
   const prevStep = () => setActive((current) => (current > 0 ? current - 1 : current));
@@ -303,7 +308,7 @@ export default function Gen3BootstrapStepper() {
                       placeholder="Select a profile"
                       data={availableProfiles}
                       value={selectedProfile}
-                      onChange={setSelectedProfile}
+                      onChange={selectProfile}
                       searchable
                       required
                     />
@@ -646,7 +651,7 @@ export default function Gen3BootstrapStepper() {
           <TerraformExecutor
             mode="embedded"
             autoExecute={true}
-            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'",  'plan', 'apply']}
+            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'", 'plan', 'apply']}
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}
