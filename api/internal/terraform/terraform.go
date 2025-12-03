@@ -285,7 +285,7 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file="+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
 		}
 	case OpOutput:
 		args = append(args, "-json")

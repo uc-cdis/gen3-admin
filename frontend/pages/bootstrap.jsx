@@ -651,7 +651,7 @@ export default function Gen3BootstrapStepper() {
           <TerraformExecutor
             mode="embedded"
             autoExecute={true}
-            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'", 'plan', 'apply']}
+            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'", 'plan', 'apply', 'destroy']}
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}

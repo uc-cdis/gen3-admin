@@ -134,7 +134,7 @@ function TerraformLogsViewer({ logs, isExecuting, logsEndRef }) {
           {isExecuting ? 'Waiting for logs...' : 'No logs yet. Click a Terraform operation to start.'}
         </Text>
       ) : (
-        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+        <div ref={logsEndRef} style={{ maxHeight: '400px', overflow: 'auto' }}>
           <Code block style={{
             whiteSpace: 'pre-wrap',
             fontSize: '11px',
@@ -161,7 +161,7 @@ function TerraformLogsViewer({ logs, isExecuting, logsEndRef }) {
               );
             })}
           </Code>
-          <div ref={logsEndRef} />
+          <div  />
         </div>
       )}
     </Paper>
@@ -532,12 +532,10 @@ export default function TerraformExecutor({
   const logsEndRef = useRef(null);
 
   // ========== Effects ==========
-  const scrollToBottom = () => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollTop = logsEndRef.current.scrollHeight;
+    }
   }, [executionLogs]);
 
   // Auto-execute on mount if enabled
