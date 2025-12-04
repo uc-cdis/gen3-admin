@@ -43,7 +43,7 @@
     "next-auth": "^4.24.7",
     "posthog-js": "^1.140.1",
     "react": "^19.1.2",
-    "react-dom": "^19.1.0",
+    "react-dom": "^19.1.2",
     "react-hexagon": "^1.1.3",
     "react-hexgrid": "^2.0.1",
     "react-initials-avatar": "^1.1.2",
