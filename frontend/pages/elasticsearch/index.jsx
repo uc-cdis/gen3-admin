@@ -99,7 +99,7 @@ export default function Elasticsearch() {
 
     try {
       // Construct the proxy URL
-      const proxyPath = `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/elasticsearch:9200/proxy${values.url}`;
+      const proxyPath = `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/gen3-elasticsearch-master:9200/proxy${values.url}`;
 
       let requestBody = null;
       if (['POST', 'PUT', 'PATCH'].includes(values.method) && values.body) {

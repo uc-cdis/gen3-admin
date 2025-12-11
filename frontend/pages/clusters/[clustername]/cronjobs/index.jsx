@@ -12,10 +12,10 @@ export default function Jobs() {
 
     return (
         <>
-            <Container fluid my={20}>
+            {/* <Container fluid my={20}>
                 <Title>CronJobs Dashboard</Title>
                 <Text>{namespace}</Text>
-            </Container>
+            </Container> */}
             <JobsPage namespace={namespace} hideSelect={true} />
         </>
     );

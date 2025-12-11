@@ -140,7 +140,8 @@ function TerraformLogsViewer({ logs, isExecuting, logsEndRef }) {
             fontSize: '11px',
             backgroundColor: 'transparent',
             color: '#c1c2c5',
-            lineHeight: '1.5'
+            lineHeight: '1.5',
+            maxWidth: "800px"
           }}>
             {logs.map((log, idx) => {
               const parts = parseAnsiColors(log);

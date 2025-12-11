@@ -151,6 +151,66 @@ export default function Databases() {
         }
     };
 
+    // delete pod and wait until it's actually gone
+    const killPgwebPod = async (dbName) => {
+        if (!clusterName || !namespace || !dbName) return;
+
+        const url = `/api/k8s/${clusterName}/proxy/api/v1/namespaces/${namespace}/pods/pgweb-${dbName}`;
+        const pollInterval = 1000; // 1s
+        const maxWaitMs = 30_000;  // 30s timeout
+
+        setPgwebStatus('deleting');
+        setPgwebError(null);
+
+        try {
+            // Send deletion request with foreground propagation
+            const deleteRes = await fetch(`${url}?gracePeriodSeconds=0`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    kind: "DeleteOptions",
+                    apiVersion: "v1",
+                    propagationPolicy: "Foreground"
+                })
+            });
+
+            if (!deleteRes.ok) {
+                throw new Error(`Failed to delete pod: ${deleteRes.statusText}`);
+            }
+
+            // Wait for real deletion
+            const start = Date.now();
+            while (true) {
+                const checkRes = await fetch(url);
+
+                if (checkRes.status === 404) {
+                    // Pod really gone
+                    setPgwebStatus('deleted');
+                    setSelectedDatabase(null);
+                    return;
+                }
+
+                if (!checkRes.ok) {
+                    throw new Error(`Error polling pod status: ${checkRes.statusText}`);
+                }
+
+                if (Date.now() - start > maxWaitMs) {
+                    throw new Error("Timed out waiting for pod deletion");
+                }
+
+                await new Promise(r => setTimeout(r, pollInterval));
+            }
+
+        } catch (err) {
+            setPgwebStatus('error');
+            setPgwebError(err.message);
+        }
+    };
+
+
+
     // Function to check if proxy endpoint is ready
     const checkProxyHealth = async (dbName) => {
         const proxyUrl = `/api/k8s/${clusterName}/proxy/api/v1/namespaces/${namespace}/services/pgweb-${dbName}-service:8081/proxy/`;
@@ -291,12 +351,22 @@ export default function Databases() {
                     <Group
                         justify="space-between">
 
-                        <Button
-                            onClick={() => setModalOpened(true)}
-                            mb="md"
-                        >
-                            Open Fullscreen
-                        </Button>
+                        <Group>
+
+                            <Button
+                                onClick={() => setModalOpened(true)}
+                                m="md"
+                            >
+                                Open Fullscreen
+                            </Button>
+                            <Button
+                                color="red"
+                                m="md"
+                                onClick={() => killPgwebPod(selectedDatabase?.replace('-dbcreds', ''))}
+                            >
+                                Exit
+                            </Button>
+                        </Group>
                         <Link href={pgwebUrl} target="_blank">
                             Direct Link
                         </Link>
@@ -312,6 +382,20 @@ export default function Databases() {
                         }
                     </Alert>
                 )}
+
+
+                {/* PgWeb Status - Deleting */}
+                {pgwebStatus === 'deleting' && (
+                    <Alert
+                        icon={<LoadingOverlay visible />}
+                        title="Deleting PgWeb Pod"
+                        color="red"
+                        mt="md"
+                    >
+                        Removing the PgWeb pod… Please wait until deletion is fully completed.
+                    </Alert>
+                )}
+
 
                 {pgwebStatus === 'error' && (
                     <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mt="md">
