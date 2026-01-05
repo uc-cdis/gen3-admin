@@ -19,6 +19,7 @@ import {
   ThemeIcon,
   Flex,
   Paper,
+  Anchor,
 } from "@mantine/core";
 import {
   IconCircleFilled,
@@ -500,10 +501,10 @@ export default function EnvironmentDashboardComp({
         : "0 not ready",
       progress: metricsData
         ? Math.round(
-            (nodeStatusData.filter((n) => n.status === "Ready").length /
-              nodeStatusData.length) *
-              100
-          )
+          (nodeStatusData.filter((n) => n.status === "Ready").length /
+            nodeStatusData.length) *
+          100
+        )
         : 0,
       icon: IconServer,
     },
@@ -541,7 +542,7 @@ export default function EnvironmentDashboardComp({
   const PodMemoryBarChart = ({ podData }) => {
     // Sort pods by memory usage (descending)
     const sortedPods = [...podData].sort((a, b) => b.resourceUsage.memory - a.resourceUsage.memory);
-    
+
     const chartData = sortedPods.map(pod => ({
       pod: pod.name,
       memory: pod.resourceUsage.memory / (1024 * 1024 * 1024), // Convert to GB
@@ -562,8 +563,8 @@ export default function EnvironmentDashboardComp({
               data={chartData}
               dataKey="pod"
               series={[
-                { 
-                  name: 'memory', 
+                {
+                  name: 'memory',
                   color: 'blue',
                   label: (value) => `${value.toFixed(2)} GB`
                 }
@@ -606,7 +607,7 @@ export default function EnvironmentDashboardComp({
   const PodCpuBarChart = ({ podData }) => {
     // Sort pods by CPU usage (descending)
     const sortedPods = [...podData].sort((a, b) => b.resourceUsage.cpu - a.resourceUsage.cpu);
-    
+
     const chartData = sortedPods.map(pod => ({
       pod: pod.name,
       cpu: pod.resourceUsage.cpu,
@@ -626,8 +627,8 @@ export default function EnvironmentDashboardComp({
               data={chartData}
               dataKey="pod"
               series={[
-                { 
-                  name: 'cpu', 
+                {
+                  name: 'cpu',
                   color: 'green',
                   label: (value) => `${value.toFixed(2)} cores`
                 }
@@ -719,7 +720,7 @@ export default function EnvironmentDashboardComp({
         </Card>
       )}
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Main metrics */}
       <Group align="flex-start" gap="md" mb="xl" grow>
@@ -755,11 +756,11 @@ export default function EnvironmentDashboardComp({
 
       <LogViewer hostname={hostname} />
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Pod Status Table */}
       <Group align="flex-start" gap="md" mb="xl" grow>
@@ -768,7 +769,7 @@ export default function EnvironmentDashboardComp({
             Pod Status
           </Title>
           <Text c="dimmed" mb="sm">
-            Current pod status across all namespaces
+            Current Status of All Pods in the {namespace} Namespace
           </Text>
           <ScrollArea h={500}>
             <Table striped highlightOnHover>
@@ -787,7 +788,7 @@ export default function EnvironmentDashboardComp({
               <Table.Tbody>
                 {podData.map((pod) => (
                   <Table.Tr key={`${pod.namespace}-${pod.name}`}>
-                    <Table.Td>{pod.name}</Table.Td>
+                    <Table.Td><Anchor href={`/clusters/${env}/workloads/pods/${namespace}/${pod.name}`}>{pod.name}</Anchor></Table.Td>
                     <Table.Td>{pod.namespace}</Table.Td>
                     <Table.Td>
                       <Group gap="sm">
@@ -844,7 +845,7 @@ export default function EnvironmentDashboardComp({
       </Group>
 
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Pod Resource Usage Charts */}
       <Group align="flex-start" gap="md" mb="xl" grow>
@@ -852,7 +853,7 @@ export default function EnvironmentDashboardComp({
         <PodCpuBarChart podData={podData} />
       </Group>
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       <EventsCards
         eventsData={eventsData}

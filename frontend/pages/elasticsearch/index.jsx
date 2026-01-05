@@ -159,13 +159,13 @@ export default function Elasticsearch() {
 
   const fetchIndices = async () => {
     if (!cluster || !namespace) return;
-    
+
     setLoadingIndices(true);
     try {
       const proxyPath = `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/gen3-elasticsearch-master:9200/proxy/_cat/indices?format=json`;
       const response = await callGoApi(proxyPath, 'GET', null, null, accessToken, "text");
       const parsed = typeof response === 'string' ? JSON.parse(response) : response;
-      
+
       if (Array.isArray(parsed)) {
         const indexList = parsed
           .map(idx => ({
@@ -177,7 +177,7 @@ export default function Elasticsearch() {
           }))
           .filter(idx => !idx.value.startsWith('.'))
           .sort((a, b) => a.value.localeCompare(b.value));
-        
+
         setIndices(indexList);
       }
     } catch (error) {
@@ -248,7 +248,7 @@ export default function Elasticsearch() {
     } catch (error) {
       console.error('Elasticsearch request failed:', error);
       setError(error.message || 'Request failed');
-      
+
       const historyEntry = {
         id: Date.now(),
         timestamp: new Date().toLocaleTimeString(),
@@ -290,6 +290,12 @@ export default function Elasticsearch() {
     });
   };
 
+  const handleViewUnassignedShards = () => {
+    form.setFieldValue('url', '/_cat/shards?v&h=index,shard,prirep,state,unassigned.reason&s=state');
+    form.setFieldValue('method', 'GET');
+  };
+
+
   const applyTemplate = (template) => {
     form.setFieldValue('body', template.body);
     setShowTemplates(false);
@@ -298,7 +304,7 @@ export default function Elasticsearch() {
   const applyIndexToUrl = (index) => {
     setSelectedIndex(index);
     const currentUrl = form.values.url;
-    
+
     if (currentUrl.includes('your-index')) {
       form.setFieldValue('url', currentUrl.replace('your-index', index));
     } else if (currentUrl.startsWith('/') && !currentUrl.startsWith('/_')) {
@@ -353,7 +359,7 @@ export default function Elasticsearch() {
             <Text size="sm" c="dimmed">{namespace}</Text>
           </Group>
         </div>
-        
+
         <Button
           leftIcon={<IconRefresh size={16} />}
           variant="light"
@@ -383,9 +389,9 @@ export default function Elasticsearch() {
                 size={60}
                 thickness={6}
                 sections={[
-                  { 
-                    value: clusterHealth.status === 'green' ? 100 : clusterHealth.status === 'yellow' ? 75 : 50, 
-                    color: getStatusColor(clusterHealth.status) 
+                  {
+                    value: clusterHealth.status === 'green' ? 100 : clusterHealth.status === 'yellow' ? 75 : 50,
+                    color: getStatusColor(clusterHealth.status)
                   }
                 ]}
               />
@@ -430,7 +436,12 @@ export default function Elasticsearch() {
             </Group>
           </Card>
 
-          <Card withBorder padding="lg">
+          <Card
+            withBorder
+            padding="lg"
+            style={{ cursor: clusterHealth.unassigned_shards > 0 ? 'pointer' : 'default' }}
+            onClick={clusterHealth.unassigned_shards > 0 ? handleViewUnassignedShards : undefined}
+          >
             <Group position="apart">
               <div>
                 <Text size="xs" color="dimmed" weight={500} transform="uppercase">
@@ -440,7 +451,7 @@ export default function Elasticsearch() {
                   {clusterHealth.unassigned_shards}
                 </Text>
                 <Text size="xs" color="dimmed" mt={2}>
-                  shards
+                  {clusterHealth.unassigned_shards > 0 ? 'Click to view' : 'shards'}
                 </Text>
               </div>
               <ThemeIcon size={50} radius="md" variant="light" color={clusterHealth.unassigned_shards > 0 ? 'orange' : 'green'}>
@@ -448,6 +459,7 @@ export default function Elasticsearch() {
               </ThemeIcon>
             </Group>
           </Card>
+
         </SimpleGrid>
       )}
 
@@ -472,8 +484,8 @@ export default function Elasticsearch() {
                     <Stack spacing="sm">
                       <Group position="apart">
                         <Text size="sm" weight={600}>Index Operations</Text>
-                        <ActionIcon 
-                          size="sm" 
+                        <ActionIcon
+                          size="sm"
                           variant="light"
                           loading={loadingIndices}
                           onClick={fetchIndices}
@@ -481,7 +493,7 @@ export default function Elasticsearch() {
                           <IconRefresh size={14} />
                         </ActionIcon>
                       </Group>
-                      
+
                       <Select
                         placeholder="Select an index"
                         data={indices}
@@ -700,17 +712,17 @@ export default function Elasticsearch() {
                         </Badge>
                       )}
                       {response && (
-                        <Badge 
+                        <Badge
                           color={getStatusColor(
-                            typeof response === 'object' && response.status 
-                              ? response.status 
+                            typeof response === 'object' && response.status
+                              ? response.status
                               : 'success'
-                          )} 
+                          )}
                           variant="light"
                           size="lg"
                         >
-                          {typeof response === 'object' && response.status 
-                            ? response.status 
+                          {typeof response === 'object' && response.status
+                            ? response.status
                             : 'Success'}
                         </Badge>
                       )}

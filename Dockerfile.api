@@ -21,9 +21,11 @@ CMD ["/go/bin/csoc"]
 
 FROM quay.io/cdis/golang-build-base:master AS final
 
+# need it for bootstrap
+RUN yum install -y docker
+
 WORKDIR /go/src/api
 
 COPY --from=go-builder /go/bin/csoc /go/bin/csoc
 
 CMD ["/go/bin/csoc"]
-
