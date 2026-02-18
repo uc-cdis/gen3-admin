@@ -132,13 +132,12 @@ function Clusters() {
   // Query for the api for active clusters/agents
   const fetchClusters = async () => {
     if (!sessionData) {
-      console.log("returning")
+      console.log("No session data, returning early")
       // Use this token for your API calls
       return;
     }
     setClusterLoading(true)
     try {
-      console.log("sessionData", sessionData)
       const data = await callGoApi('/agents', 'GET', null, null, sessionData?.accessToken)
       setClusters(data);
       setError(false)

@@ -941,7 +941,7 @@ export default function TerraformExecutor({
 
                 <PasswordInput
                   label="AWS Access Key ID"
-                  placeholder="AKIAIOSFODNN7EXAMPLE"
+                  placeholder="AKIAIOSFODNN7EXAMPLE" /* pragma: allowlist secret */
                   value={awsAccessKeyId}
                   onChange={(e) => setAwsAccessKeyId(e.target.value)}
                   required
@@ -949,7 +949,7 @@ export default function TerraformExecutor({
 
                 <PasswordInput
                   label="AWS Secret Access Key"
-                  placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                  placeholder="/bPxRfiCYEXAMPLEKEY"
                   value={awsSecretAccessKey}
                   onChange={(e) => setAwsSecretAccessKey(e.target.value)}
                   required

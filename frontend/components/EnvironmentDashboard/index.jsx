@@ -46,6 +46,8 @@ import JobsPage from '@/components/CronJobsPage/Overview';
 
 import LogViewer from '@/components/LokiLogViewer'
 
+import CoreServicesOverview from '@/components/CoreServicesOverview'
+
 export default function EnvironmentDashboardComp({
   env,
   namespace,
@@ -723,7 +725,7 @@ export default function EnvironmentDashboardComp({
       <Divider my="lg" />
 
       {/* Main metrics */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         {dynamicMetrics.map((metric) => (
           <Card
             key={metric.title}
@@ -752,7 +754,13 @@ export default function EnvironmentDashboardComp({
             </Stack>
           </Card>
         ))}
-      </Group>
+      </Group> */}
+
+      <CoreServicesOverview
+        env={env}
+        namespace={namespace}
+        accessToken={accessToken}
+      />
 
       <LogViewer hostname={hostname} />
 
