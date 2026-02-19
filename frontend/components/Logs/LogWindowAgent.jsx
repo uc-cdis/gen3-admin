@@ -11,7 +11,7 @@ import { useViewportSize } from '@mantine/hooks';
 
 import { useSession } from "next-auth/react";
 
-export default function LogWindow({ namespace, pod, cluster, containers, heightProp }) {
+export default function LogWindow({ namespace, pod, cluster, containers }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(false);
     const [wrap, setWrap] = useState(false);
@@ -22,8 +22,7 @@ export default function LogWindow({ namespace, pod, cluster, containers, heightP
 
     const { height, width } = useViewportSize();
 
-    const editorHeight =
-        heightProp ?? Math.max(height - 250, 300);
+    const editorHeight = Math.max(height - 250, 300);
 
 
     const { data: sessionData } = useSession();

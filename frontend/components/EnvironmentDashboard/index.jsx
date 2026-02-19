@@ -2,6 +2,7 @@ import { AreaChart, BarChart } from "@mantine/charts";
 import { useActiveEnvManager, useActiveEnvAppName } from '@/contexts/global';
 import { syncArgoCD, waitForArgoSync } from '@/lib/argocd';
 import { notifications } from '@mantine/notifications';
+import { useRef } from "react";
 
 
 import {
@@ -122,6 +123,16 @@ export default function EnvironmentDashboardComp({
   const [metricsData, setMetricsData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+
+
+  const [rawNodes, setRawNodes] = useState(null);
+  const [rawNamespaces, setRawNamespaces] = useState(null);
+  const [rawPods, setRawPods] = useState(null);
+  const [rawMetrics, setRawMetrics] = useState(null);
+  const [rawEvents, setRawEvents] = useState(null);
+
+  const requestIdRef = useRef(0);
+
 
   const colors = {
     healthy: "green",
@@ -377,134 +388,83 @@ export default function EnvironmentDashboardComp({
     };
   };
 
-  // Data fetching
   const fetchDashboardData = async () => {
-    try {
-      if (env && namespace) {
-        setIsLoading(true);
-        setError(null);
-        console.log("env", env);
+    if (!env || !namespace || !accessToken) return;
 
-        const [
-          nodesResponse,
-          namespaceResponse,
-          metricsResponse,
-          podsResponse,
-          eventsData,
-        ] = await Promise.all([
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/nodes`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/namespaces`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/pods`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-        ]);
+    const requestId = ++requestIdRef.current;
 
-        // Filter pods to only include those in the specified namespace
-        const filteredPodsResponse = {
-          ...podsResponse,
-          items:
-            podsResponse.items?.filter(
-              (pod) => pod.metadata?.namespace === namespace
-            ) || [],
-        };
+    setIsLoading(true);
+    setError(null);
 
-        const processedMetrics = processMetricsData(
-          metricsResponse,
-          nodesResponse,
-          filteredPodsResponse
-        );
-        const processedNodes = processNodesData(
-          nodesResponse,
-          processedMetrics?.nodes
-        );
-        const processedNamespaces = processNamespaceData(
-          namespaceResponse,
-          filteredPodsResponse
-        );
-        const processedPods = processPodData(filteredPodsResponse);
-
-        setEventsData(eventsData);
-        setMetricsData(processedMetrics);
-        setNodeStatusData(processedNodes);
-        setNamespaceStatusData(processedNamespaces);
-        setPodData(processedPods);
-
-        // Update charts with current metrics
-        const now = new Date();
-        setCpuData((prev) => {
-          const newData = [
-            ...prev,
-            {
-              time: now.toLocaleTimeString(),
-              usage: processedMetrics.cluster.cpuPercentage,
-            },
-          ];
-          return newData.slice(-24);
-        });
-
-        setMemoryData((prev) => {
-          const newData = [
-            ...prev,
-            {
-              time: now.toLocaleTimeString(),
-              usage: processedMetrics.cluster.memoryPercentage,
-            },
-          ];
-          return newData.slice(-24);
-        });
+    const safeSet = (setter) => (data) => {
+      if (requestIdRef.current === requestId) {
+        setter(data);
       }
-    } catch (err) {
-      console.error("Error fetching dashboard data:", err);
-      setError("Failed to load dashboard data. Please try again.");
-    } finally {
-      setIsLoading(false);
+    };
+
+    const requests = {
+      nodes: callGoApi(`/k8s/${env}/proxy/api/v1/nodes`, "GET", null, null, accessToken),
+      namespaces: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces`, "GET", null, null, accessToken),
+      metrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`, "GET", null, null, accessToken),
+      pods: callGoApi(`/k8s/${env}/proxy/api/v1/pods`, "GET", null, null, accessToken),
+      events: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`, "GET", null, null, accessToken),
+    };
+
+    const results = await Promise.allSettled(Object.values(requests));
+    const keys = Object.keys(requests);
+
+    results.forEach((result, i) => {
+      const key = keys[i];
+
+      if (result.status === "fulfilled") {
+        if (key === "nodes") safeSet(setRawNodes)(result.value);
+        if (key === "namespaces") safeSet(setRawNamespaces)(result.value);
+        if (key === "metrics") safeSet(setRawMetrics)(result.value);
+        if (key === "pods") safeSet(setRawPods)(result.value);
+        if (key === "events") safeSet(setRawEvents)(result.value);
+      } else {
+        console.error(`${key} failed`, result.reason);
+      }
+    });
+
+    const failures = results.filter(r => r.status === "rejected").length;
+    if (failures) {
+      setError(`${failures} data sources failed to load`);
     }
+
+    setIsLoading(false);
   };
 
 
   useEffect(() => {
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:', sessionData.error);
-      signOut({ callbackUrl: '/' });
-      return;
-    }
+    if (!rawNodes || !rawPods || !rawMetrics || !rawNamespaces) return;
 
-    if (accessToken && env && namespace) {
-      fetchDashboardData();
-      const interval = setInterval(fetchDashboardData, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [env, namespace]);
+    const filteredPods = {
+      ...rawPods,
+      items: rawPods.items?.filter(p => p.metadata?.namespace === namespace) || [],
+    };
+
+    const processedMetrics = processMetricsData(rawMetrics, rawNodes, filteredPods);
+    const processedNodes = processNodesData(rawNodes, processedMetrics?.nodes);
+    const processedNamespaces = processNamespaceData(rawNamespaces, filteredPods);
+    const processedPods = processPodData(filteredPods);
+
+    setMetricsData(processedMetrics);
+    setNodeStatusData(processedNodes);
+    setNamespaceStatusData(processedNamespaces);
+    setPodData(processedPods);
+
+    const now = new Date();
+
+    setCpuData((prev) =>
+      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.cpuPercentage }].slice(-24)
+    );
+
+    setMemoryData((prev) =>
+      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
+    );
+  }, [rawNodes, rawPods, rawMetrics, rawNamespaces, namespace]);
+
 
 
   // Dynamic metrics cards
