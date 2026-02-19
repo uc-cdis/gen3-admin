@@ -1,4 +1,9 @@
 import { AreaChart, BarChart } from "@mantine/charts";
+import { useActiveEnvManager, useActiveEnvAppName } from '@/contexts/global';
+import { syncArgoCD, waitForArgoSync } from '@/lib/argocd';
+import { notifications } from '@mantine/notifications';
+
+
 import {
   Badge,
   Container,
@@ -47,6 +52,7 @@ import JobsPage from '@/components/CronJobsPage/Overview';
 import LogViewer from '@/components/LokiLogViewer'
 
 import CoreServicesOverview from '@/components/CoreServicesOverview'
+import { active } from "d3";
 
 export default function EnvironmentDashboardComp({
   env,
@@ -60,6 +66,16 @@ export default function EnvironmentDashboardComp({
 
   const [hostname, setHostname] = useState(hostnameProp)
   const [loading, setLoading] = useState(false)
+
+  const [activeEnvManager] = useActiveEnvManager();
+  const [activeEnvAppName] = useActiveEnvAppName();
+
+  console.log("argocd??", activeEnvManager)
+  const isArgoEnv = activeEnvManager === 'argocd';
+
+  const [syncingArgo, setSyncingArgo] = useState(false);
+  const [argoStatus, setArgoStatus] = useState(null);
+
 
 
   useEffect(() => {
@@ -606,6 +622,7 @@ export default function EnvironmentDashboardComp({
     );
   };
 
+
   const PodCpuBarChart = ({ podData }) => {
     // Sort pods by CPU usage (descending)
     const sortedPods = [...podData].sort((a, b) => b.resourceUsage.cpu - a.resourceUsage.cpu);
@@ -681,6 +698,66 @@ export default function EnvironmentDashboardComp({
           <Button onClick={fetchDashboardData} loading={isLoading}>
             <IconRefresh />
           </Button>
+          {isArgoEnv && (
+            <Group>
+              <Button
+                loading={syncingArgo}
+                leftSection={<img src="/images/icons/argocd.png" width={18} />}
+                onClick={async () => {
+                  setSyncingArgo(true);
+                  setArgoStatus('Starting sync...');
+
+                  try {
+                    await syncArgoCD({
+                      cluster: env,
+                      appName: activeEnvAppName,
+                      accessToken,
+                    });
+
+                    notifications.show({
+                      title: 'Sync started',
+                      message: 'Waiting for ArgoCD to finish syncing...',
+                      color: 'blue',
+                    });
+
+                    const finalStatus = await waitForArgoSync({
+                      cluster: env,
+                      appName: activeEnvAppName,
+                      accessToken,
+                      onUpdate: (status) => {
+                        setArgoStatus(
+                          `${status.sync.status} / ${status.health.status} (${status.operationState?.phase || 'Running'})`
+                        );
+                      },
+                    });
+
+                    notifications.show({
+                      title: 'Sync complete',
+                      message: `Status: ${finalStatus.sync.status}, Health: ${finalStatus.health.status}`,
+                      color: 'green',
+                    });
+                  } catch (err) {
+                    notifications.show({
+                      title: 'Sync failed',
+                      message: err?.message || 'ArgoCD sync failed',
+                      color: 'red',
+                    });
+                  } finally {
+                    setSyncingArgo(false);
+                  }
+                }}
+              >
+                Sync ArgoCD
+              </Button>
+              {argoStatus && (
+                <Text size="xs" c="dimmed">
+                  ArgoCD: {argoStatus}
+                </Text>
+              )}
+
+            </Group>
+          )}
+
           {/* <Card radius="md">
             <Group gap="sm">
               <Box style={{ position: "relative", width: 16, height: 16, display:'flex', alignItems: 'center', justifyContent:'center' }}>
@@ -714,13 +791,15 @@ export default function EnvironmentDashboardComp({
         </Badge>
       </Group>
 
-      {error && (
-        <Card withBorder mb="md" bg="red.1">
-          <Text c="red" fw={500}>
-            {error}
-          </Text>
-        </Card>
-      )}
+      {
+        error && (
+          <Card withBorder mb="md" bg="red.1">
+            <Text c="red" fw={500}>
+              {error}
+            </Text>
+          </Card>
+        )
+      }
 
       <Divider my="lg" />
 
@@ -1036,6 +1115,6 @@ export default function EnvironmentDashboardComp({
           }
         }
       `}</style>
-    </Container>
+    </Container >
   );
 }

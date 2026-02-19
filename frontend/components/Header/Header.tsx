@@ -39,11 +39,15 @@ import { callGoApi } from '@/lib/k8s';
 import callK8sApi from '@/lib/k8s';
 import classes from './Header.module.css';
 
+type EnvManager = 'helm' | 'argocd';
+
 type EnvItem = {
   value: string;
   label: string;
   status: string;
   namespace: string;
+  manager: EnvManager;
+  appName: string;
 };
 
 const STATUS_CONFIG: Record<
@@ -87,7 +91,7 @@ export function Header({
 
   const router = useRouter();
   const currentPath = usePathname();
-  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv } = useGlobalState();
+  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName, activeEnvAppName } = useGlobalState();
 
   // 👇 Pause refresh while dropdown is open
   const { data: sessionData } = useSession();
@@ -95,73 +99,77 @@ export function Header({
   const accessToken = (sessionData as any)?.accessToken;
 
   const fetchEnvironments = async () => {
-  if (!accessToken) return;
-  setEnvironmentsLoading(true);
+    if (!accessToken) return;
+    setEnvironmentsLoading(true);
 
-  try {
-    const agentsResponse = await callGoApi('/agents', 'GET', null, null, accessToken);
-    const connectedAgents = agentsResponse.filter((c: any) => c.connected);
+    try {
+      const agentsResponse = await callGoApi('/agents', 'GET', null, null, accessToken);
+      const connectedAgents = agentsResponse.filter((c: any) => c.connected);
 
-    const environmentsData = await Promise.all(
-      connectedAgents.map(async (agent: any) => {
-        try {
-          const chartsResponse = await callGoApi(
-            `/agents/${agent.name}/helm/list`,
-            'GET',
-            null,
-            null,
-            accessToken
-          );
+      const environmentsData = await Promise.all(
+        connectedAgents.map(async (agent: any) => {
+          try {
+            const chartsResponse = await callGoApi(
+              `/agents/${agent.name}/helm/list`,
+              'GET',
+              null,
+              null,
+              accessToken
+            );
 
-          const gen3Charts = chartsResponse.filter(
-            (chart: any) =>
-              chart.chart?.toLowerCase().includes('gen3') ||
-              chart.name?.toLowerCase().includes('gen3')
-          );
+            const gen3Charts = chartsResponse.filter(
+              (chart: any) =>
+                chart.chart?.toLowerCase().includes('gen3') ||
+                chart.name?.toLowerCase().includes('gen3')
+            );
 
-          return await Promise.all(
-            gen3Charts.map(async (chart: any) => {
-              try {
-                const configMapResponse = await callK8sApi(
-                  `/api/v1/namespaces/${chart.namespace}/configmaps/manifest-global`,
-                  'GET',
-                  null,
-                  null,
-                  agent.name,
-                  accessToken
-                );
+            return await Promise.all(
+              gen3Charts.map(async (chart: any) => {
+                try {
+                  const configMapResponse = await callK8sApi(
+                    `/api/v1/namespaces/${chart.namespace}/configmaps/manifest-global`,
+                    'GET',
+                    null,
+                    null,
+                    agent.name,
+                    accessToken
+                  );
 
-                const hostname =
-                  configMapResponse?.data?.hostname || chart.name;
+                  const hostname =
+                    configMapResponse?.data?.hostname || chart.name;
 
-                return {
-                  value: `${agent.name}/${chart.namespace}/${chart.name}`,
-                  label: `${hostname}`,
-                  status: chart.status || 'unknown',
-                  namespace: chart.namespace,
-                };
-              } catch {
-                return {
-                  value: `${agent.name}/${chart.namespace}/${chart.name}`,
-                  label: `${agent.name}/${chart.name}`,
-                  status: chart.status || 'unknown',
-                  namespace: chart.namespace,
-                };
-              }
-            })
-          );
-        } catch (err) {
-          console.error(`Error fetching charts for ${agent.name}`, err);
-          return [];
-        }
-      })
-    );
+                  return {
+                    value: `${agent.name}/${chart.namespace}/${chart.name}`,
+                    label: `${hostname}`,
+                    status: chart.status || 'unknown',
+                    namespace: chart.namespace,
+                    manager: chart.helm === 'true' ? 'helm' : 'argocd',
+                    appName: chart.name,
+                  };
+                } catch {
+                  return {
+                    value: `${agent.name}/${chart.namespace}/${chart.name}`,
+                    label: `${agent.name}/${chart.name}`,
+                    status: chart.status || 'unknown',
+                    namespace: chart.namespace,
+                    manager: chart.helm === 'true' ? 'helm' : 'argocd',
+                    appName: chart.name,
+                  };
+                }
+              })
+            );
+          } catch (err) {
+            console.error(`Error fetching charts for ${agent.name}`, err);
+            return [];
+          }
+        })
+      );
 
-    setEnvironments(environmentsData.flat());
-  } finally {
-    setEnvironmentsLoading(false);
-  }
-};
+      setEnvironments(environmentsData.flat());
+    } finally {
+      setEnvironmentsLoading(false);
+    }
+  };
 
 
   useEffect(() => {
@@ -177,8 +185,18 @@ export function Header({
 
   const handleEnvironmentChange = (value: string | null) => {
     if (!value) return;
+    const selectedEnv = environments.find((e) => e.value === value);
+    if (!selectedEnv) return;
+
+
     setActiveEnvironments(value);
     setActiveGlobalEnv(value);
+
+
+    setActiveEnvManager(selectedEnv.manager);
+    setActiveEnvAppName(selectedEnv.appName);
+    console.log("ACtiveEnvName", activeEnvAppName)
+
 
     const [cluster, namespace] = value.split('/');
     if (cluster !== activeCluster) setActiveCluster(cluster);
