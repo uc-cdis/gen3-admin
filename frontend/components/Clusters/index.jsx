@@ -414,7 +414,7 @@ function Clusters() {
             {
               accessor: 'name',
               title: 'Agent Name',
-              render: ({ name, connected }) => connected ? (<Link passHref legacyBehavior href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
+              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
             },
             {
               accessor: 'provider',

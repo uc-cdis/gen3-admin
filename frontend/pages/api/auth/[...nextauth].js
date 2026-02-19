@@ -57,19 +57,17 @@ if (ENABLE_MOCK_AUTH) {
     CredentialsProvider({
       id: "mock-provider",
       name: "Mock Provider",
-      credentials: {
-        username: { label: "Username", type: "text" },
-        password: { label: "Password", type: "password" },
-      },
       async authorize() {
+        console.log("MOCK AUTHORIZE CALLED");
+
         return {
           id: "1",
           name: "John Doe",
           email: "johndoe@example.com",
           image: "https://via.placeholder.com/150",
-          accessToken: "fake-access-token",
-          refreshToken: "fake-refresh-token",
-          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          accessToken: `fake-access-token-${Date.now()}`,
+          refreshToken: `fake-refresh-token-${Date.now()}`,
+          expiresAt: Date.now() + 60 * 60 * 1000,
           provider: "mock-provider",
         };
       },
@@ -88,6 +86,17 @@ const authOptions = {
         const expiresAt = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 3600 * 1000;
+
+
+        const accessToken =
+          account.provider === "mock-provider"
+            ? user.accessToken
+            : account.access_token;
+
+        const refreshToken =
+          account.provider === "mock-provider"
+            ? user.refreshToken
+            : account.refresh_token;
 
         if (account.provider === "keycloak" && account.access_token) {
           pendingCookies = [];
@@ -111,8 +120,8 @@ const authOptions = {
 
         return {
           ...token,
-          accessToken: account.access_token,
-          refreshToken: account.refresh_token,
+          accessToken,
+          refreshToken,
           accessTokenExpires: expiresAt,
           provider: account.provider,
           roles: user.roles || [],

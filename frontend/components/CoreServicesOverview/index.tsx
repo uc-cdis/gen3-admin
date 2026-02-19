@@ -11,7 +11,8 @@ import {
   Title,
   Modal,
   Button,
-  Table,
+  Divider,
+  ScrollArea,
 } from "@mantine/core";
 import { useEffect, useState } from "react";
 import callK8sApi from "@/lib/k8s";
@@ -24,15 +25,32 @@ type Service = {
   ready: number;
 };
 
+type ContainerStatus = {
+  name: string;
+  ready: boolean;
+  state: string;
+  reason?: string;
+  restartCount: number;
+  isInit?: boolean;
+};
+
 type Pod = {
   name: string;
   phase: string;
-  containers: string[];
+  containers: ContainerStatus[];
+};
+
+type PodEvent = {
+  reason: string;
+  message: string;
+  type: string;
+  lastTimestamp: string;
 };
 
 function computeStatus(desired: number, ready: number) {
   if (ready === 0) return { status: "down", color: "red", label: "Down" };
-  if (ready < desired) return { status: "degraded", color: "yellow", label: "Degraded" };
+  if (ready < desired)
+    return { status: "degraded", color: "yellow", label: "Degraded" };
   return { status: "healthy", color: "green", label: "Healthy" };
 }
 
@@ -54,15 +72,19 @@ export default function CoreServicesOverview({
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Pods modal
   const [podsOpened, setPodsOpened] = useState(false);
   const [podsLoading, setPodsLoading] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [pods, setPods] = useState<Pod[]>([]);
 
-  // Logs modal
   const [logsOpened, setLogsOpened] = useState(false);
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
+  const [selectedContainer, setSelectedContainer] = useState<string | null>(
+    null
+  );
+
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [podEvents, setPodEvents] = useState<Record<string, PodEvent[]>>({});
 
   useEffect(() => {
     if (!env || !namespace || !accessToken) return;
@@ -71,8 +93,22 @@ export default function CoreServicesOverview({
       setLoading(true);
       try {
         const [deploymentsRes, statefulSetsRes] = await Promise.all([
-          callK8sApi(`/apis/apps/v1/namespaces/${namespace}/deployments`, "GET", null, null, env, accessToken),
-          callK8sApi(`/apis/apps/v1/namespaces/${namespace}/statefulsets`, "GET", null, null, env, accessToken),
+          callK8sApi(
+            `/apis/apps/v1/namespaces/${namespace}/deployments`,
+            "GET",
+            null,
+            null,
+            env,
+            accessToken
+          ),
+          callK8sApi(
+            `/apis/apps/v1/namespaces/${namespace}/statefulsets`,
+            "GET",
+            null,
+            null,
+            env,
+            accessToken
+          ),
         ]);
 
         const deployments =
@@ -92,8 +128,6 @@ export default function CoreServicesOverview({
           })) ?? [];
 
         setServices([...deployments, ...statefulSets]);
-      } catch (err) {
-        console.error("Failed to fetch services:", err);
       } finally {
         setLoading(false);
       }
@@ -101,6 +135,42 @@ export default function CoreServicesOverview({
 
     fetchServices();
   }, [env, namespace, accessToken]);
+
+  const fetchPodEvents = async (podName: string) => {
+    setEventsLoading(true);
+    try {
+      const res = await callK8sApi(
+        `/api/v1/namespaces/${namespace}/events?fieldSelector=involvedObject.name=${podName}`,
+        "GET",
+        null,
+        null,
+        env,
+        accessToken
+      );
+
+      const events =
+        res?.items?.map((e: any) => ({
+          reason: e.reason,
+          message: e.message,
+          type: e.type,
+          lastTimestamp:
+            e.lastTimestamp ||
+            e.eventTime ||
+            e.metadata.creationTimestamp,
+        })) ?? [];
+
+      setPodEvents((prev) => ({
+        ...prev,
+        [podName]: events.sort(
+          (a: any, b: any) =>
+            new Date(b.lastTimestamp).getTime() -
+            new Date(a.lastTimestamp).getTime()
+        ),
+      }));
+    } finally {
+      setEventsLoading(false);
+    }
+  };
 
   const openPodsModal = async (svc: Service) => {
     setSelectedService(svc);
@@ -114,17 +184,22 @@ export default function CoreServicesOverview({
           ? `/apis/apps/v1/namespaces/${namespace}/deployments/${svc.name}`
           : `/apis/apps/v1/namespaces/${namespace}/statefulsets/${svc.name}`;
 
-      const workload = await callK8sApi(resourcePath, "GET", null, null, env, accessToken);
+      const workload = await callK8sApi(
+        resourcePath,
+        "GET",
+        null,
+        null,
+        env,
+        accessToken
+      );
+
       const matchLabels = workload?.spec?.selector?.matchLabels;
-
-      if (!matchLabels) {
-        throw new Error("No selector on workload");
-      }
-
-      const labelSelector = buildLabelSelector(matchLabels);
+      if (!matchLabels) throw new Error("No selector");
 
       const podsRes = await callK8sApi(
-        `/api/v1/namespaces/${namespace}/pods?labelSelector=${encodeURIComponent(labelSelector)}`,
+        `/api/v1/namespaces/${namespace}/pods?labelSelector=${encodeURIComponent(
+          buildLabelSelector(matchLabels)
+        )}`,
         "GET",
         null,
         null,
@@ -133,24 +208,65 @@ export default function CoreServicesOverview({
       );
 
       const parsed: Pod[] =
-        podsRes?.items?.map((p: any) => ({
-          name: p.metadata.name,
-          phase: p.status.phase,
-          containers: p.spec?.containers?.map((c: any) => c.name) ?? [],
-        })) ?? [];
+        podsRes?.items?.map((p: any) => {
+          const initStatuses =
+            p.status?.initContainerStatuses?.map((c: any) => {
+              const stateObj = c.state || {};
+              const state = stateObj.running
+                ? "Running"
+                : stateObj.waiting
+                ? "Waiting"
+                : stateObj.terminated
+                ? "Terminated"
+                : "Unknown";
+
+              return {
+                name: c.name,
+                ready: c.ready ?? false,
+                state,
+                reason:
+                  stateObj.waiting?.reason ||
+                  stateObj.terminated?.reason,
+                restartCount: c.restartCount ?? 0,
+                isInit: true,
+              };
+            }) ?? [];
+
+          const mainStatuses =
+            p.status?.containerStatuses?.map((c: any) => {
+              const stateObj = c.state || {};
+              const state = stateObj.running
+                ? "Running"
+                : stateObj.waiting
+                ? "Waiting"
+                : stateObj.terminated
+                ? "Terminated"
+                : "Unknown";
+
+              return {
+                name: c.name,
+                ready: c.ready,
+                state,
+                reason:
+                  stateObj.waiting?.reason ||
+                  stateObj.terminated?.reason,
+                restartCount: c.restartCount ?? 0,
+                isInit: false,
+              };
+            }) ?? [];
+
+          return {
+            name: p.metadata.name,
+            phase: p.status.phase,
+            containers: [...initStatuses, ...mainStatuses],
+          };
+        }) ?? [];
 
       setPods(parsed);
-    } catch (e) {
-      console.error("Failed to load pods:", e);
-      setPods([]);
+      parsed.forEach((p) => fetchPodEvents(p.name));
     } finally {
       setPodsLoading(false);
     }
-  };
-
-  const openLogsModal = (pod: Pod) => {
-    setSelectedPod(pod);
-    setLogsOpened(true);
   };
 
   return (
@@ -164,7 +280,6 @@ export default function CoreServicesOverview({
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
           {services.map((svc) => {
             const health = computeStatus(svc.desired, svc.ready);
-
             return (
               <Card
                 key={`${svc.kind}-${svc.name}`}
@@ -181,11 +296,9 @@ export default function CoreServicesOverview({
                       {health.label}
                     </Badge>
                   </Group>
-
                   <Text size="sm" c="dimmed">
                     {svc.kind}
                   </Text>
-
                   <Text size="sm">
                     {svc.ready} / {svc.desired} replicas ready
                   </Text>
@@ -196,68 +309,136 @@ export default function CoreServicesOverview({
         </SimpleGrid>
       </Card>
 
-      {/* Pods modal */}
       <Modal
         opened={podsOpened}
         onClose={() => setPodsOpened(false)}
-        size="lg"
+        size="95vw"
         title={selectedService?.name}
         keepMounted
       >
-        <Stack>
-          <Title order={5}>Pods</Title>
-
+        <ScrollArea h="75vh">
           {podsLoading && <Loader size="sm" />}
-
           {!podsLoading && pods.length === 0 && (
             <Text size="sm" c="dimmed">
-              No pods found for this service.
+              No pods found
             </Text>
           )}
 
-          {pods.length > 0 && (
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Pod</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Containers</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {pods.map((pod) => (
-                  <Table.Tr key={pod.name}>
-                    <Table.Td>{pod.name}</Table.Td>
-                    <Table.Td>{pod.phase}</Table.Td>
-                    <Table.Td>{pod.containers.length}</Table.Td>
-                    <Table.Td>
-                      <Button size="xs" onClick={() => openLogsModal(pod)}>
-                        Logs
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
+          {pods.map((pod) => (
+            <Card key={pod.name} withBorder radius="sm" mb="sm">
+              <Group justify="space-between">
+                <Group>
+                  <Text fw={600}>{pod.name}</Text>
+                  <Badge
+                    color={
+                      pod.phase === "Running"
+                        ? "green"
+                        : pod.phase === "Pending"
+                        ? "yellow"
+                        : "red"
+                    }
+                  >
+                    {pod.phase}
+                  </Badge>
+                </Group>
+
+                <Button
+                  size="xs"
+                  variant="light"
+                  loading={eventsLoading}
+                  onClick={() => fetchPodEvents(pod.name)}
+                >
+                  Refresh Events
+                </Button>
+              </Group>
+
+              <Divider my="sm" />
+
+              <Stack gap={6}>
+                {pod.containers.map((c) => (
+                  <Group key={c.name} gap="xs">
+                    {c.isInit && (
+                      <Badge size="xs" color="gray">
+                        init
+                      </Badge>
+                    )}
+                    <Badge size="xs" color={c.ready ? "green" : "red"}>
+                      {c.ready ? "Ready" : "Not Ready"}
+                    </Badge>
+                    <Text size="xs">{c.name}</Text>
+                    <Badge
+                      size="xs"
+                      variant="outline"
+                      color={c.state === "Running" ? "green" : "orange"}
+                    >
+                      {c.state}
+                    </Badge>
+                    {c.reason && (
+                      <Text size="xs" c="red">
+                        {c.reason}
+                      </Text>
+                    )}
+                    {c.restartCount > 0 && (
+                      <Text size="xs" c="dimmed">
+                        🔁 {c.restartCount}
+                      </Text>
+                    )}
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={() => {
+                        setSelectedPod(pod);
+                        setSelectedContainer(c.name);
+                        setLogsOpened(true);
+                      }}
+                    >
+                      Logs
+                    </Button>
+                  </Group>
                 ))}
-              </Table.Tbody>
-            </Table>
-          )}
-        </Stack>
+              </Stack>
+
+              <Divider my="sm" />
+
+              <Stack gap={4}>
+                {(podEvents[pod.name] || []).slice(0, 6).map((e, i) => (
+                  <Group key={i} gap="xs">
+                    <Badge size="xs" color={e.type === "Warning" ? "red" : "blue"}>
+                      {e.reason}
+                    </Badge>
+                    <Text size="xs" c="dimmed">
+                      {e.message}
+                    </Text>
+                  </Group>
+                ))}
+                {!podEvents[pod.name]?.length && (
+                  <Text size="xs" c="dimmed">
+                    No events
+                  </Text>
+                )}
+              </Stack>
+            </Card>
+          ))}
+        </ScrollArea>
       </Modal>
 
-      {/* Logs modal */}
       <Modal
         opened={logsOpened}
         onClose={() => setLogsOpened(false)}
         size="95vw"
-        title={selectedPod ? `Logs — ${selectedPod.name}` : "Logs"}
+        title={
+          selectedPod
+            ? `Logs — ${selectedPod.name}${selectedContainer ? ` / ${selectedContainer}` : ""}`
+            : "Logs"
+        }
         keepMounted
       >
-        {selectedPod && (
+        {selectedPod && selectedContainer && (
           <LogWindow
             namespace={namespace}
             pod={selectedPod.name}
             cluster={env}
-            containers={selectedPod.containers}
+            containers={[selectedContainer]}
           />
         )}
       </Modal>
