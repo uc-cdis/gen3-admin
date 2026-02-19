@@ -17,6 +17,11 @@ import {
 import { useEffect, useState } from "react";
 import callK8sApi from "@/lib/k8s";
 import LogWindow from "@/components/Logs/LogWindowAgent";
+import dynamic from 'next/dynamic'
+
+const TerminalComponent = dynamic(() => import('@/components/Shell/Terminal'), {
+    ssr: false
+})
 
 type Service = {
   name: string;
@@ -78,10 +83,10 @@ export default function CoreServicesOverview({
   const [pods, setPods] = useState<Pod[]>([]);
 
   const [logsOpened, setLogsOpened] = useState(false);
+  const [shellOpened, setShellOpened] = useState(false);
+
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
-  const [selectedContainer, setSelectedContainer] = useState<string | null>(
-    null
-  );
+  const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
 
   const [eventsLoading, setEventsLoading] = useState(false);
   const [podEvents, setPodEvents] = useState<Record<string, PodEvent[]>>({});
@@ -271,6 +276,7 @@ export default function CoreServicesOverview({
 
   return (
     <>
+      {/* SERVICES */}
       <Card withBorder radius="md" p="lg">
         <Group justify="space-between" mb="md">
           <Title order={4}>Services</Title>
@@ -309,6 +315,7 @@ export default function CoreServicesOverview({
         </SimpleGrid>
       </Card>
 
+      {/* PODS MODAL */}
       <Modal
         opened={podsOpened}
         onClose={() => setPodsOpened(false)}
@@ -318,11 +325,6 @@ export default function CoreServicesOverview({
       >
         <ScrollArea h="75vh">
           {podsLoading && <Loader size="sm" />}
-          {!podsLoading && pods.length === 0 && (
-            <Text size="sm" c="dimmed">
-              No pods found
-            </Text>
-          )}
 
           {pods.map((pod) => (
             <Card key={pod.name} withBorder radius="sm" mb="sm">
@@ -354,6 +356,7 @@ export default function CoreServicesOverview({
 
               <Divider my="sm" />
 
+              {/* CONTAINERS */}
               <Stack gap={6}>
                 {pod.containers.map((c) => (
                   <Group key={c.name} gap="xs">
@@ -383,6 +386,7 @@ export default function CoreServicesOverview({
                         🔁 {c.restartCount}
                       </Text>
                     )}
+
                     <Button
                       size="xs"
                       variant="subtle"
@@ -394,12 +398,27 @@ export default function CoreServicesOverview({
                     >
                       Logs
                     </Button>
+
+                    {!c.isInit && (
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        onClick={() => {
+                          setSelectedPod(pod);
+                          setSelectedContainer(c.name);
+                          setShellOpened(true);
+                        }}
+                      >
+                        Shell
+                      </Button>
+                    )}
                   </Group>
                 ))}
               </Stack>
 
               <Divider my="sm" />
 
+              {/* EVENTS */}
               <Stack gap={4}>
                 {(podEvents[pod.name] || []).slice(0, 6).map((e, i) => (
                   <Group key={i} gap="xs">
@@ -422,13 +441,14 @@ export default function CoreServicesOverview({
         </ScrollArea>
       </Modal>
 
+      {/* LOGS MODAL */}
       <Modal
         opened={logsOpened}
         onClose={() => setLogsOpened(false)}
         size="95vw"
         title={
           selectedPod
-            ? `Logs — ${selectedPod.name}${selectedContainer ? ` / ${selectedContainer}` : ""}`
+            ? `Logs — ${selectedPod.name} / ${selectedContainer}`
             : "Logs"
         }
         keepMounted
@@ -439,6 +459,28 @@ export default function CoreServicesOverview({
             pod={selectedPod.name}
             cluster={env}
             containers={[selectedContainer]}
+          />
+        )}
+      </Modal>
+
+      {/* SHELL MODAL */}
+      <Modal
+        opened={shellOpened}
+        onClose={() => setShellOpened(false)}
+        size="95vw"
+        title={
+          selectedPod
+            ? `Shell — ${selectedPod.name} / ${selectedContainer}`
+            : "Shell"
+        }
+        keepMounted
+      >
+        {selectedPod && selectedContainer && (
+          <TerminalComponent
+            namespace={namespace}
+            pod={selectedPod.name}
+            container={selectedContainer}
+            cluster={env}
           />
         )}
       </Modal>

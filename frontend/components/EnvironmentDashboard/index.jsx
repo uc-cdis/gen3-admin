@@ -110,7 +110,7 @@ export default function EnvironmentDashboardComp({
     if (namespace && accessToken) {
       fetchHostname();
     }
-  }, [namespace, env]);
+  }, [namespace, env, accessToken]);
 
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
@@ -121,7 +121,7 @@ export default function EnvironmentDashboardComp({
   const [podData, setPodData] = useState([]);
   const [eventsData, setEventsData] = useState([]);
   const [metricsData, setMetricsData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
 
@@ -416,6 +416,8 @@ export default function EnvironmentDashboardComp({
     results.forEach((result, i) => {
       const key = keys[i];
 
+      console.log("", key, result);
+
       if (result.status === "fulfilled") {
         if (key === "nodes") safeSet(setRawNodes)(result.value);
         if (key === "namespaces") safeSet(setRawNamespaces)(result.value);
@@ -430,6 +432,7 @@ export default function EnvironmentDashboardComp({
     const failures = results.filter(r => r.status === "rejected").length;
     if (failures) {
       setError(`${failures} data sources failed to load`);
+      setIsLoading(false);
     }
 
     setIsLoading(false);
@@ -439,6 +442,7 @@ export default function EnvironmentDashboardComp({
   useEffect(() => {
     if (!rawNodes || !rawPods || !rawMetrics || !rawNamespaces) return;
 
+    console.log("Processing data with", { rawNodes, rawPods, rawMetrics, rawNamespaces });
     const filteredPods = {
       ...rawPods,
       items: rawPods.items?.filter(p => p.metadata?.namespace === namespace) || [],
@@ -463,8 +467,17 @@ export default function EnvironmentDashboardComp({
     setMemoryData((prev) =>
       [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
     );
-  }, [rawNodes, rawPods, rawMetrics, rawNamespaces, namespace]);
 
+    setEventsData(rawEvents?.items ?? []);
+
+
+  }, [rawNodes, rawPods, rawMetrics, rawEvents, rawNamespaces, namespace]);
+
+
+  useEffect(() => {
+    if (!env || !namespace || !accessToken) return;
+    fetchDashboardData();
+  }, [env, namespace, accessToken]);
 
 
   // Dynamic metrics cards
@@ -801,7 +814,7 @@ export default function EnvironmentDashboardComp({
         accessToken={accessToken}
       />
 
-      <LogViewer hostname={hostname} />
+      {/* <LogViewer hostname={hostname} /> */}
 
       <Divider my="lg" />
 
@@ -810,7 +823,7 @@ export default function EnvironmentDashboardComp({
       <Divider my="lg" />
 
       {/* Pod Status Table */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         <Card withBorder>
           <Title order={4} mb="sm">
             Pod Status
@@ -889,15 +902,15 @@ export default function EnvironmentDashboardComp({
             </Table>
           </ScrollArea>
         </Card>
-      </Group>
+      </Group> */}
 
 
       <Divider my="lg" />
 
       {/* Pod Resource Usage Charts */}
       <Group align="flex-start" gap="md" mb="xl" grow>
-        <PodMemoryBarChart podData={podData} />
-        <PodCpuBarChart podData={podData} />
+        {/* <PodMemoryBarChart podData={podData} />
+        <PodCpuBarChart podData={podData} /> */}
       </Group>
 
       <Divider my="lg" />

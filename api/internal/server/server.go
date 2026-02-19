@@ -1611,6 +1611,94 @@ func SetupHTTPServer() {
 		agent.mutex.Unlock()
 	})
 
+	r.GET("/api/agents/:agent/terminal/exec/:namespace/:pod/:container", func(c *gin.Context) {
+		agentID := c.Param("agent")
+		namespace := c.Param("namespace")
+		pod := c.Param("pod")
+		container := c.Param("container")
+
+		agentsMutex.RLock()
+		agent, exists := AgentConnections[agentID]
+		agentsMutex.RUnlock()
+		if !exists || agent.stream == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not connected"})
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Error().Err(err).Msg("WS upgrade failed")
+			return
+		}
+
+		sessionID := uuid.New().String()
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		agent.mutex.Lock()
+		agent.terminalStreams[sessionID] = ws
+		agent.cancelFuncs[sessionID] = cancel
+		agent.contexts[sessionID] = ctx
+		agent.mutex.Unlock()
+
+		initPayload := map[string]any{
+			"type":      "init",
+			"sessionId": sessionID,
+			"namespace": namespace,
+			"pod":       pod,
+			"container": container,
+			"command":   []string{"sh"},
+		}
+
+		initBytes, _ := json.Marshal(initPayload)
+
+		agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_TerminalStream{
+				TerminalStream: &pb.TerminalStream{
+					SessionId: sessionID,
+					Data:      initBytes,
+				},
+			},
+		})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to init exec session")
+			ws.Close()
+			return
+		}
+
+		// WS → Agent
+		go func() {
+			defer cancel()
+			for {
+				_, msg, err := ws.ReadMessage()
+				if err != nil {
+					log.Warn().Err(err).Msg("WS read failed")
+					return
+				}
+				agent.stream.Send(&pb.ServerMessage{
+					Message: &pb.ServerMessage_TerminalStream{
+						TerminalStream: &pb.TerminalStream{
+							SessionId: sessionID,
+							Data:      msg,
+						},
+					},
+				})
+			}
+		}()
+
+		// block until done
+		<-ctx.Done()
+
+		agent.mutex.Lock()
+		delete(agent.terminalStreams, sessionID)
+		delete(agent.cancelFuncs, sessionID)
+		delete(agent.contexts, sessionID)
+		agent.mutex.Unlock()
+		ws.Close()
+	})
+
 	// dbui routes
 	r.GET("/api/agent/:agent/dbui/:namespace/:dbname", func(c *gin.Context) {
 		log.Info().Msg("Got the PGWEB http request")

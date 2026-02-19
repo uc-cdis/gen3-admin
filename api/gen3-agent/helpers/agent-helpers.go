@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -28,12 +27,15 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport"
 )
 
@@ -62,7 +64,16 @@ type Agent struct {
 	statusUpdateInterval time.Duration
 }
 
-var activeShells sync.Map
+var activeExecSessions sync.Map // sessionId -> *io.PipeWriter
+
+type terminalInit struct {
+	Type      string   `json:"type"`
+	SessionId string   `json:"sessionId"`
+	Namespace string   `json:"namespace"`
+	Pod       string   `json:"pod"`
+	Container string   `json:"container"`
+	Command   []string `json:"command"`
+}
 
 // Helper function to get secret keys for debugging
 func getSecretKeys(secret *corev1.Secret) []string {
@@ -88,8 +99,11 @@ func NewAgent(name, version, serverAddress string, statusInterval time.Duration)
 		return nil, fmt.Errorf("failed to append ca certs")
 	}
 
+	// serverAddressWithoutPort := strings.Split(serverAddress, ":")[0]
+
 	creds := credentials.NewTLS(&tls.Config{
-		ServerName:   "csoc.gen3.org", // Replace with your actual server name
+		ServerName: "csoc.gen3.org", // Replace with your actual server name
+		// ServerName:   serverAddressWithoutPort, // Replace with your actual server name
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 	})
@@ -448,7 +462,6 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 
 	// Set Content-Type header from req.Headers if present; else fallback to application/json
 	if contentType, ok := req.Headers["Content-Type"]; ok {
-		log.Debug().Msg(fmt.Sprintf("Setting Content-Type header to %s", contentType))
 		httpReq.Header.Set("Content-Type", contentType)
 	} else {
 		// log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
@@ -1266,40 +1279,157 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-func startShell(ctx context.Context, streamID string, stream pb.TunnelService_ConnectClient) {
-	cmd := exec.CommandContext(ctx, "/bin/sh") // or "/bin/bash"
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to get stdin")
-		return
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to get stdout")
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to get stderr")
-		return
+// func startShell(ctx context.Context, streamID string, stream pb.TunnelService_ConnectClient) {
+// 	cmd := exec.CommandContext(ctx, "/bin/sh") // or "/bin/bash"
+// 	stdin, err := cmd.StdinPipe()
+// 	if err != nil {
+// 		log.Fatal().Err(err).Msg("failed to get stdin")
+// 		return
+// 	}
+// 	stdout, err := cmd.StdoutPipe()
+// 	if err != nil {
+// 		log.Fatal().Err(err).Msg("failed to get stdout")
+// 		return
+// 	}
+// 	stderr, err := cmd.StderrPipe()
+// 	if err != nil {
+// 		log.Fatal().Err(err).Msg("failed to get stderr")
+// 		return
+// 	}
+
+// 	if err := cmd.Start(); err != nil {
+// 		log.Fatal().Err(err).Msg("failed to start shell")
+// 		return
+// 	}
+
+// 	// Read output (stdout + stderr)
+// 	go func() {
+// 		reader := io.MultiReader(stdout, stderr)
+// 		buf := make([]byte, 1024)
+// 		for {
+// 			n, err := reader.Read(buf)
+// 			if err != nil {
+// 				log.Info().Msg("shell closed output")
+// 				return
+// 			}
+// 			stream.Send(&pb.AgentMessage{
+// 				Message: &pb.AgentMessage_TerminalStream{
+// 					TerminalStream: &pb.TerminalStream{
+// 						SessionId: streamID,
+// 						Data:      buf[:n],
+// 					},
+// 				},
+// 			})
+// 		}
+// 	}()
+
+// 	// Store stdin writer somewhere (e.g. in a map[streamID]io.WriteCloser) so you can write to it later
+
+// 	// Wait until shell exits
+// 	cmd.Wait()
+// 	log.Info().Msg("Shell exited")
+// }
+
+func (a *Agent) HandleTerminal(ts *tunnel.TerminalStream) error {
+
+	log.Debug().
+		Str("session", ts.SessionId).
+		Int("bytes", len(ts.Data)).
+		Msg("terminal data received from UI")
+
+	// Try INIT JSON
+	var init terminalInit
+	if err := json.Unmarshal(ts.Data, &init); err == nil && init.Type == "init" {
+		log.Info().
+			Str("session", init.SessionId).
+			Str("ns", init.Namespace).
+			Str("pod", init.Pod).
+			Str("container", init.Container).
+			Msg("INIT received for exec session")
+
+		ctx := context.Background()
+
+		go func() {
+			if err := a.startK8sExec(
+				ctx,
+				init.Namespace,
+				init.Pod,
+				init.Container,
+				init.Command,
+				init.SessionId,
+			); err != nil {
+				log.Error().Err(err).Msg("k8s exec failed")
+			}
+		}()
+
+		return nil
 	}
 
-	if err := cmd.Start(); err != nil {
-		log.Fatal().Err(err).Msg("failed to start shell")
-		return
+	// Otherwise treat as stdin bytes
+	if stdinAny, ok := activeExecSessions.Load(ts.SessionId); ok {
+		stdin := stdinAny.(*io.PipeWriter)
+		_, _ = stdin.Write(ts.Data)
 	}
 
-	// Read output (stdout + stderr)
+	return nil
+}
+
+func (a *Agent) startK8sExec(ctx context.Context, namespace, pod, container string, cmd []string, streamID string) error {
+	log.Info().
+		Str("streamID", streamID).
+		Msg("registering exec session")
+
+	if len(cmd) == 0 {
+		cmd = []string{"/bin/sh"}
+	}
+
+	config, err := k8s.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	req := clientset.CoreV1().RESTClient().
+		Post().
+		Resource("pods").
+		Name(pod).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: container,
+			Command:   cmd,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       true,
+		}, scheme.ParameterCodec)
+
+	executor, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	if err != nil {
+		return err
+	}
+
+	// UI → k8s
+	stdinReader, stdinWriter := io.Pipe()
+	activeExecSessions.Store(streamID, stdinWriter)
+
+	// k8s → UI
+	stdoutReader, stdoutWriter := io.Pipe()
+
 	go func() {
-		reader := io.MultiReader(stdout, stderr)
-		buf := make([]byte, 1024)
+		defer stdoutReader.Close()
+		buf := make([]byte, 4096)
 		for {
-			n, err := reader.Read(buf)
+			n, err := stdoutReader.Read(buf)
 			if err != nil {
-				log.Info().Msg("shell closed output")
+				log.Info().Msg("exec output closed")
 				return
 			}
-			stream.Send(&pb.AgentMessage{
+			a.stream.Send(&pb.AgentMessage{
 				Message: &pb.AgentMessage_TerminalStream{
 					TerminalStream: &pb.TerminalStream{
 						SessionId: streamID,
@@ -1310,31 +1440,18 @@ func startShell(ctx context.Context, streamID string, stream pb.TunnelService_Co
 		}
 	}()
 
-	// Store stdin writer somewhere (e.g. in a map[streamID]io.WriteCloser) so you can write to it later
-	activeShells.Store(streamID, stdin)
-
-	// Wait until shell exits
-	cmd.Wait()
-	log.Info().Msg("Shell exited")
-	activeShells.Delete(streamID)
-}
-
-func (a *Agent) HandleTerminal(ts *tunnel.TerminalStream) error {
-	log.Info().Msgf("Starting shell for session: %s", ts.SessionId)
-	ctx, _ := context.WithCancel(context.Background())
-
-	// Start the shell in background
-	go startShell(ctx, ts.SessionId, a.stream)
-
-	a.stream.Send(&pb.AgentMessage{
-		Message: &pb.AgentMessage_TerminalStream{
-			TerminalStream: &pb.TerminalStream{
-				Data:      []byte("Connected to"),
-				SessionId: ts.SessionId,
-			},
-		},
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:  stdinReader,
+		Stdout: stdoutWriter,
+		Stderr: stdoutWriter,
+		Tty:    true,
 	})
 
-	log.Info().Msgf("Terminal stream message sent %s", ts.SessionId)
-	return nil
+	log.Info().Err(err).Msg("exec session ended")
+
+	activeExecSessions.Delete(streamID)
+	stdinWriter.Close()
+	stdoutWriter.Close()
+
+	return err
 }
