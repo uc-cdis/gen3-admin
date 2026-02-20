@@ -901,20 +901,13 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	}
 }
 
-func HandleHTTPProxyRequest(c *gin.Context) {
+func HandleAgentHTTPProxyRequest(c *gin.Context) {
 	agentID := c.Param("agent")
-	path := c.Param("path")
+	targetURL := c.Query("url")
 
-	log.Info().Msgf("Path: %s", path)
-
-	// Ensure path starts with /
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	// Add query string if present
-	if c.Request.URL.RawQuery != "" {
-		path += "?" + c.Request.URL.RawQuery
+	if targetURL == "" {
+		c.JSON(400, gin.H{"error": "missing url query param"})
+		return
 	}
 
 	var wg sync.WaitGroup
@@ -956,7 +949,7 @@ func HandleHTTPProxyRequest(c *gin.Context) {
 	proxyReq := &pb.ProxyRequest{
 		StreamId:  streamID,
 		Method:    c.Request.Method,
-		Path:      path,
+		Path:      targetURL,
 		Headers:   make(map[string]string),
 		Body:      nil,
 		ProxyType: "http",
@@ -1125,10 +1118,7 @@ func SetupHTTPServer() {
 			HandleK8sProxyRequest(c)
 		})
 
-		protected.Any("/api/:agent/proxy/*path", func(c *gin.Context) {
-			log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
-			HandleHTTPProxyRequest(c)
-		})
+		protected.Any("/api/agents/:agent/http", HandleAgentHTTPProxyRequest)
 		protected.GET("/api/agents", GetAgentsHandler)
 	}
 

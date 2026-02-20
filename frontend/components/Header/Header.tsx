@@ -48,6 +48,9 @@ type EnvItem = {
   namespace: string;
   manager: EnvManager;
   appName: string;
+
+  provider: string;
+  k8sVersion: string;
 };
 
 const STATUS_CONFIG: Record<
@@ -91,7 +94,7 @@ export function Header({
 
   const router = useRouter();
   const currentPath = usePathname();
-  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName, activeEnvAppName } = useGlobalState();
+  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName, activeEnvAppName, activeClusterProvider, setActiveClusterProvider, activeClusterK8sVersion,  setActiveClusterK8sVersion } = useGlobalState();
 
   // 👇 Pause refresh while dropdown is open
   const { data: sessionData } = useSession();
@@ -145,6 +148,8 @@ export function Header({
                     namespace: chart.namespace,
                     manager: chart.helm === 'true' ? 'helm' : 'argocd',
                     appName: chart.name,
+                    provider: agent.provider || "",
+                    k8sVersion: agent.k8sVersion || "",
                   };
                 } catch {
                   return {
@@ -154,6 +159,8 @@ export function Header({
                     namespace: chart.namespace,
                     manager: chart.helm === 'true' ? 'helm' : 'argocd',
                     appName: chart.name,
+                    provider: agent.provider || "",
+                    k8sVersion: agent.k8sVersion || "",
                   };
                 }
               })
@@ -183,6 +190,7 @@ export function Header({
     [environments]
   );
 
+
   const handleEnvironmentChange = (value: string | null) => {
     if (!value) return;
     const selectedEnv = environments.find((e) => e.value === value);
@@ -195,7 +203,10 @@ export function Header({
 
     setActiveEnvManager(selectedEnv.manager);
     setActiveEnvAppName(selectedEnv.appName);
-    console.log("ACtiveEnvName", activeEnvAppName)
+
+
+    setActiveClusterProvider(selectedEnv.provider);
+    setActiveClusterK8sVersion(selectedEnv.k8sVersion);
 
 
     const [cluster, namespace] = value.split('/');

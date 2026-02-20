@@ -20,8 +20,14 @@ type GlobalContextType = {
   activeEnvManager: EnvManager;
   setActiveEnvManager: Dispatch<SetStateAction<EnvManager>>;
 
-  activeEnvAppName: string;                         // ✅ ADD THIS
-  setActiveEnvAppName: Dispatch<SetStateAction<string>>; // ✅ ADD THIS
+  activeEnvAppName: string;
+  setActiveEnvAppName: Dispatch<SetStateAction<string>>;
+
+  activeClusterProvider: string;
+  setActiveClusterProvider: Dispatch<SetStateAction<string>>;
+
+  activeClusterK8sVersion: string;
+  setActiveClusterK8sVersion: Dispatch<SetStateAction<string>>;
 };
 
 const GlobalContext = createContext<GlobalContextType | null>(null);
@@ -34,7 +40,10 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
   const [activeCluster, setActiveCluster] = useState<string>('');
   const [activeGlobalEnv, setActiveGlobalEnv] = useState<string>('');
   const [activeEnvManager, setActiveEnvManager] = useState<EnvManager>('');
-  const [activeEnvAppName, setActiveEnvAppName] = useState<string>('');   // ✅ ADD THIS
+  const [activeEnvAppName, setActiveEnvAppName] = useState<string>('');
+
+  const [activeClusterProvider, setActiveClusterProvider] = useState<string>('');
+  const [activeClusterK8sVersion, setActiveClusterK8sVersion] = useState<string>('');
 
   useEffect(() => {
     const savedCluster = localStorage.getItem('active-cluster') || '';
@@ -73,6 +82,10 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
     setActiveEnvManager,
     activeEnvAppName,
     setActiveEnvAppName,
+    activeClusterProvider,
+    setActiveClusterProvider,
+    activeClusterK8sVersion,
+    setActiveClusterK8sVersion,
   };
 
   return <GlobalContext.Provider value={value}>{children}</GlobalContext.Provider>;

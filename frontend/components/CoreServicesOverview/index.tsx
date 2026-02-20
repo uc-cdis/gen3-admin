@@ -20,7 +20,7 @@ import LogWindow from "@/components/Logs/LogWindowAgent";
 import dynamic from 'next/dynamic'
 
 const TerminalComponent = dynamic(() => import('@/components/Shell/Terminal'), {
-    ssr: false
+  ssr: false
 })
 
 type Service = {
@@ -91,52 +91,51 @@ export default function CoreServicesOverview({
   const [eventsLoading, setEventsLoading] = useState(false);
   const [podEvents, setPodEvents] = useState<Record<string, PodEvent[]>>({});
 
+  const fetchServices = async () => {
+    setLoading(true);
+    try {
+      const [deploymentsRes, statefulSetsRes] = await Promise.all([
+        callK8sApi(
+          `/apis/apps/v1/namespaces/${namespace}/deployments`,
+          "GET",
+          null,
+          null,
+          env,
+          accessToken
+        ),
+        callK8sApi(
+          `/apis/apps/v1/namespaces/${namespace}/statefulsets`,
+          "GET",
+          null,
+          null,
+          env,
+          accessToken
+        ),
+      ]);
+
+      const deployments =
+        deploymentsRes?.items?.map((d: any) => ({
+          name: d.metadata.name,
+          kind: "Deployment",
+          desired: d.spec?.replicas ?? 0,
+          ready: d.status?.availableReplicas ?? 0,
+        })) ?? [];
+
+      const statefulSets =
+        statefulSetsRes?.items?.map((s: any) => ({
+          name: s.metadata.name,
+          kind: "StatefulSet",
+          desired: s.spec?.replicas ?? 0,
+          ready: s.status?.readyReplicas ?? 0,
+        })) ?? [];
+
+      setServices([...deployments, ...statefulSets]);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     if (!env || !namespace || !accessToken) return;
-
-    const fetchServices = async () => {
-      setLoading(true);
-      try {
-        const [deploymentsRes, statefulSetsRes] = await Promise.all([
-          callK8sApi(
-            `/apis/apps/v1/namespaces/${namespace}/deployments`,
-            "GET",
-            null,
-            null,
-            env,
-            accessToken
-          ),
-          callK8sApi(
-            `/apis/apps/v1/namespaces/${namespace}/statefulsets`,
-            "GET",
-            null,
-            null,
-            env,
-            accessToken
-          ),
-        ]);
-
-        const deployments =
-          deploymentsRes?.items?.map((d: any) => ({
-            name: d.metadata.name,
-            kind: "Deployment",
-            desired: d.spec?.replicas ?? 0,
-            ready: d.status?.availableReplicas ?? 0,
-          })) ?? [];
-
-        const statefulSets =
-          statefulSetsRes?.items?.map((s: any) => ({
-            name: s.metadata.name,
-            kind: "StatefulSet",
-            desired: s.spec?.replicas ?? 0,
-            ready: s.status?.readyReplicas ?? 0,
-          })) ?? [];
-
-        setServices([...deployments, ...statefulSets]);
-      } finally {
-        setLoading(false);
-      }
-    };
 
     fetchServices();
   }, [env, namespace, accessToken]);
@@ -220,10 +219,10 @@ export default function CoreServicesOverview({
               const state = stateObj.running
                 ? "Running"
                 : stateObj.waiting
-                ? "Waiting"
-                : stateObj.terminated
-                ? "Terminated"
-                : "Unknown";
+                  ? "Waiting"
+                  : stateObj.terminated
+                    ? "Terminated"
+                    : "Unknown";
 
               return {
                 name: c.name,
@@ -243,10 +242,10 @@ export default function CoreServicesOverview({
               const state = stateObj.running
                 ? "Running"
                 : stateObj.waiting
-                ? "Waiting"
-                : stateObj.terminated
-                ? "Terminated"
-                : "Unknown";
+                  ? "Waiting"
+                  : stateObj.terminated
+                    ? "Terminated"
+                    : "Unknown";
 
               return {
                 name: c.name,
@@ -281,6 +280,9 @@ export default function CoreServicesOverview({
         <Group justify="space-between" mb="md">
           <Title order={4}>Services</Title>
           {loading && <Loader size="sm" />}
+          <Button onClick={fetchServices}>
+            Refresh
+          </Button>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
@@ -336,8 +338,8 @@ export default function CoreServicesOverview({
                       pod.phase === "Running"
                         ? "green"
                         : pod.phase === "Pending"
-                        ? "yellow"
-                        : "red"
+                          ? "yellow"
+                          : "red"
                     }
                   >
                     {pod.phase}

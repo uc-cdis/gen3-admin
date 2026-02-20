@@ -1,5 +1,5 @@
 import { AreaChart, BarChart } from "@mantine/charts";
-import { useActiveEnvManager, useActiveEnvAppName } from '@/contexts/global';
+import { useGlobalState } from '@/contexts/global';
 import { syncArgoCD, waitForArgoSync } from '@/lib/argocd';
 import { notifications } from '@mantine/notifications';
 import { useRef } from "react";
@@ -67,15 +67,12 @@ export default function EnvironmentDashboardComp({
 
   const [hostname, setHostname] = useState(hostnameProp)
   const [loading, setLoading] = useState(false)
-
-  const [activeEnvManager] = useActiveEnvManager();
-  const [activeEnvAppName] = useActiveEnvAppName();
-
-  console.log("argocd??", activeEnvManager)
+  const { useActiveEnvManager, useActiveEnvAppName, activeEnvManager, activeClusterProvider, activeClusterK8sVersion } = useGlobalState();
   const isArgoEnv = activeEnvManager === 'argocd';
 
   const [syncingArgo, setSyncingArgo] = useState(false);
   const [argoStatus, setArgoStatus] = useState(null);
+
 
 
 
@@ -474,10 +471,10 @@ export default function EnvironmentDashboardComp({
   }, [rawNodes, rawPods, rawMetrics, rawEvents, rawNamespaces, namespace]);
 
 
-  useEffect(() => {
-    if (!env || !namespace || !accessToken) return;
-    fetchDashboardData();
-  }, [env, namespace, accessToken]);
+  // useEffect(() => {
+  //   if (!env || !namespace || !accessToken) return;
+  //   fetchDashboardData();
+  // }, [env, namespace, accessToken]);
 
 
   // Dynamic metrics cards
@@ -662,7 +659,7 @@ export default function EnvironmentDashboardComp({
 
   return (
     <Container size="xl" mt="xl" pos="relative">
-      {/* <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} /> */}
+      <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} />
 
       {/* Header Section */}
       <Group justify="space-between" mb="md">
@@ -756,12 +753,8 @@ export default function EnvironmentDashboardComp({
         <Badge color="green" size="sm">
           {namespace}
         </Badge>
-        <Badge color="blue" size="sm">
-          us-east-1
-        </Badge>
-        <Badge color="yellow" size="sm">
-          v1.31.1
-        </Badge>
+        <Badge color="blue">{activeClusterProvider || "—"}</Badge>
+        <Badge color="yellow">{activeClusterK8sVersion || "—"}</Badge>
       </Group>
 
       {
