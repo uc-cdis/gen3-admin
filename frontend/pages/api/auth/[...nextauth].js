@@ -5,9 +5,7 @@ import KeycloakProvider from "next-auth/providers/keycloak";
 import { serialize } from "cookie";
 
 const ENABLE_MOCK_AUTH =
-  process.env.ENABLE_MOCK_AUTH === "true"
-  ||
-  process.env.NODE_ENV === "development";
+  process.env.ENABLE_MOCK_AUTH === "true" || process.env.NODE_ENV === "development";
 
 // Cookie configuration
 const COOKIE_OPTIONS = {
@@ -21,200 +19,14 @@ const COOKIE_OPTIONS = {
 const ACCESS_TOKEN_COOKIE = "keycloak-access-token";
 const REFRESH_TOKEN_COOKIE = "keycloak-refresh-token";
 
-// Store for passing cookies between callbacks
-let pendingCookies = [];
-
-/** ================= PROVIDERS ================= */
-
-const providers = [
-  KeycloakProvider({
-    clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
-    clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
-    issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
-    authorization: {
-      params: {
-        scope: "openid profile email groups roles",
-      },
-    },
-    profile(profile) {
-      return {
-        id: profile.sub,
-        name:
-          profile.name ||
-          `${profile.given_name || ""} ${profile.family_name || ""}`.trim() ||
-          profile.preferred_username,
-        email: profile.email,
-        image: profile.picture,
-        roles: profile.roles || profile.realm_access?.roles || [],
-        groups: profile.groups || [],
-      };
-    },
-  }),
-];
-
-if (ENABLE_MOCK_AUTH) {
-  providers.push(
-    CredentialsProvider({
-      id: "mock-provider",
-      name: "Mock Provider",
-      async authorize() {
-        console.log("MOCK AUTHORIZE CALLED");
-
-        return {
-          id: "1",
-          name: "John Doe",
-          email: "johndoe@example.com",
-          image: "https://via.placeholder.com/150",
-          accessToken: `fake-access-token-${Date.now()}`,
-          refreshToken: `fake-refresh-token-${Date.now()}`,
-          expiresAt: Date.now() + 60 * 60 * 1000,
-          provider: "mock-provider",
-        };
-      },
-    })
-  );
-}
-
-/** ================= NEXTAUTH OPTIONS ================= */
-
-const authOptions = {
-  providers,
-
-  callbacks: {
-    async jwt({ token, user, account }) {
-      if (account && user) {
-        const expiresAt = account.expires_at
-          ? account.expires_at * 1000
-          : Date.now() + 3600 * 1000;
-
-
-        const accessToken =
-          account.provider === "mock-provider"
-            ? user.accessToken
-            : account.access_token;
-
-        const refreshToken =
-          account.provider === "mock-provider"
-            ? user.refreshToken
-            : account.refresh_token;
-
-        if (account.provider === "keycloak" && account.access_token) {
-          pendingCookies = [];
-
-          pendingCookies.push(
-            serialize(ACCESS_TOKEN_COOKIE, account.access_token, {
-              ...COOKIE_OPTIONS,
-              maxAge: Math.min(
-                COOKIE_OPTIONS.maxAge,
-                Math.floor((expiresAt - Date.now()) / 1000)
-              ),
-            })
-          );
-
-          if (account.refresh_token) {
-            pendingCookies.push(
-              serialize(REFRESH_TOKEN_COOKIE, account.refresh_token, COOKIE_OPTIONS)
-            );
-          }
-        }
-
-        return {
-          ...token,
-          accessToken,
-          refreshToken,
-          accessTokenExpires: expiresAt,
-          provider: account.provider,
-          roles: user.roles || [],
-          groups: user.groups || [],
-          id: user.id,
-          picture: user.image,
-          setCookies: account.provider === "keycloak",
-        };
-      }
-
-      if (Date.now() < (token.accessTokenExpires || 0)) {
-        return token;
-      }
-
-      const refreshedToken = await refreshAccessToken(token);
-
-      if (refreshedToken.provider === "keycloak" && refreshedToken.accessToken) {
-        pendingCookies = [];
-
-        const refreshedExpires =
-          refreshedToken.accessTokenExpires || Date.now() + 3600 * 1000;
-
-        pendingCookies.push(
-          serialize(ACCESS_TOKEN_COOKIE, refreshedToken.accessToken, {
-            ...COOKIE_OPTIONS,
-            maxAge: Math.min(
-              COOKIE_OPTIONS.maxAge,
-              Math.floor((refreshedExpires - Date.now()) / 1000)
-            ),
-          })
-        );
-
-        if (refreshedToken.refreshToken) {
-          pendingCookies.push(
-            serialize(REFRESH_TOKEN_COOKIE, refreshedToken.refreshToken, COOKIE_OPTIONS)
-          );
-        }
-
-        refreshedToken.setCookies = true;
-      }
-
-      return refreshedToken;
-    },
-
-    async session({ session, token }) {
-      if (!token) return session;
-
-      session.user = {
-        ...session.user,
-        id: token.id || token.sub || "",
-        name: token.name,
-        email: token.email,
-        image: token.picture,
-        roles: token.roles || [],
-        groups: token.groups || [],
-      };
-
-      session.accessToken = token.accessToken;
-      session.error = token.error;
-      session.setCookies = token.setCookies || false;
-
-      return session;
-    },
-  },
-
-  events: {
-    async signOut() {
-      pendingCookies = [
-        serialize(ACCESS_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 }),
-        serialize(REFRESH_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 }),
-      ];
-    },
-  },
-
-  debug: process.env.NODE_ENV === "development",
-  secret: process.env.NEXTAUTH_SECRET,
-
-  session: {
-    strategy: "jwt",
-    maxAge: 8 * 60 * 60,
-    updateAge: 60 * 60,
-  },
-};
-
 /** ================= TOKEN REFRESH ================= */
-
+// Kept outside because it doesn't need request-specific state
 async function refreshAccessToken(token) {
   try {
     if (token.provider === "mock-provider") {
       if (!ENABLE_MOCK_AUTH) {
         return { ...token, error: "MockAuthDisabled" };
       }
-
       return {
         ...token,
         accessToken: `fake-access-token-${Date.now()}`,
@@ -231,7 +43,8 @@ async function refreshAccessToken(token) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
       body: new URLSearchParams({
-        client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? "",
+        // FIXED: Make sure this matches your exact .env variable name used in the provider
+        client_id: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
         client_secret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
         refresh_token: token.refreshToken,
@@ -249,6 +62,7 @@ async function refreshAccessToken(token) {
       error: undefined,
     };
   } catch (error) {
+    console.error("Token refresh failed:", error);
     return { ...token, error: "RefreshAccessTokenError" };
   }
 }
@@ -256,6 +70,150 @@ async function refreshAccessToken(token) {
 /** ================= HANDLER ================= */
 
 export default async function handler(req, res) {
+  // FIXED: Scoped to the individual request to prevent race conditions
+  let pendingCookies = [];
+
+  const providers = [
+    KeycloakProvider({
+      clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
+      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
+      issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
+      authorization: { params: { scope: "openid profile email groups roles" } },
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name || `${profile.given_name || ""} ${profile.family_name || ""}`.trim() || profile.preferred_username,
+          email: profile.email,
+          image: profile.picture,
+          roles: profile.roles || profile.realm_access?.roles || [],
+          groups: profile.groups || [],
+        };
+      },
+    }),
+  ];
+
+  if (ENABLE_MOCK_AUTH) {
+    providers.push(
+      CredentialsProvider({
+        id: "mock-provider",
+        name: "Mock Provider",
+        async authorize() {
+          return {
+            id: "1",
+            name: "John Doe",
+            email: "johndoe@example.com",
+            image: "https://via.placeholder.com/150",
+            accessToken: `fake-access-token-${Date.now()}`,
+            refreshToken: `fake-refresh-token-${Date.now()}`,
+            expiresAt: Date.now() + 60 * 60 * 1000,
+            provider: "mock-provider",
+          };
+        },
+      })
+    );
+  }
+
+  // FIXED: authOptions is inside the handler so it has access to this request's pendingCookies
+  const authOptions = {
+    providers,
+    callbacks: {
+      async jwt({ token, user, account }) {
+        if (account && user) {
+          const expiresAt = account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000;
+          const accessToken = account.provider === "mock-provider" ? user.accessToken : account.access_token;
+          const refreshToken = account.provider === "mock-provider" ? user.refreshToken : account.refresh_token;
+
+          if (account.provider === "keycloak" && account.access_token) {
+            pendingCookies = [];
+            pendingCookies.push(
+              serialize(ACCESS_TOKEN_COOKIE, account.access_token, {
+                ...COOKIE_OPTIONS,
+                maxAge: Math.max(0, Math.min(COOKIE_OPTIONS.maxAge, Math.floor((expiresAt - Date.now()) / 1000))),
+              })
+            );
+
+            if (account.refresh_token) {
+              pendingCookies.push(serialize(REFRESH_TOKEN_COOKIE, account.refresh_token, COOKIE_OPTIONS));
+            }
+          }
+
+          return {
+            ...token,
+            accessToken,
+            refreshToken,
+            accessTokenExpires: expiresAt,
+            provider: account.provider,
+            roles: user.roles || [],
+            groups: user.groups || [],
+            id: user.id,
+            picture: user.image,
+            setCookies: account.provider === "keycloak",
+          };
+        }
+
+        // FIXED: Added a 10-second buffer (10000ms) to prevent tokens from expiring while in transit
+        if (Date.now() + 10000 < (token.accessTokenExpires || 0)) {
+          return token;
+        }
+
+        const refreshedToken = await refreshAccessToken(token);
+
+        if (refreshedToken.provider === "keycloak" && refreshedToken.accessToken) {
+          pendingCookies = [];
+          const refreshedExpires = refreshedToken.accessTokenExpires || Date.now() + 3600 * 1000;
+
+          pendingCookies.push(
+            serialize(ACCESS_TOKEN_COOKIE, refreshedToken.accessToken, {
+              ...COOKIE_OPTIONS,
+              maxAge: Math.max(0, Math.min(COOKIE_OPTIONS.maxAge, Math.floor((refreshedExpires - Date.now()) / 1000))),
+            })
+          );
+
+          if (refreshedToken.refreshToken) {
+            pendingCookies.push(serialize(REFRESH_TOKEN_COOKIE, refreshedToken.refreshToken, COOKIE_OPTIONS));
+          }
+          refreshedToken.setCookies = true;
+        }
+
+        return refreshedToken;
+      },
+
+      async session({ session, token }) {
+        if (!token) return session;
+
+        session.user = {
+          ...session.user,
+          id: token.id || token.sub || "",
+          name: token.name,
+          email: token.email,
+          image: token.picture,
+          roles: token.roles || [],
+          groups: token.groups || [],
+        };
+
+        session.accessToken = token.accessToken;
+        session.error = token.error;
+        session.setCookies = token.setCookies || false;
+
+        return session;
+      },
+    },
+
+    events: {
+      async signOut() {
+        pendingCookies = [
+          serialize(ACCESS_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: -1 }),
+          serialize(REFRESH_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: -1 }),
+        ];
+      },
+    },
+
+    debug: process.env.NODE_ENV === "development",
+    secret: process.env.NEXTAUTH_SECRET,
+    session: { strategy: "jwt", maxAge: 8 * 60 * 60, updateAge: 60 * 60 },
+  };
+
+  // Monkey-patching res to inject cookies safely
   const originalSetHeader = res.setHeader.bind(res);
   const originalEnd = res.end.bind(res);
 
@@ -271,10 +229,7 @@ export default async function handler(req, res) {
   res.end = function (...args) {
     if (pendingCookies.length > 0) {
       const existingCookies = res.getHeader("Set-Cookie") || [];
-      const cookieArray = Array.isArray(existingCookies)
-        ? existingCookies
-        : [existingCookies];
-
+      const cookieArray = Array.isArray(existingCookies) ? existingCookies : [existingCookies];
       res.setHeader("Set-Cookie", [...cookieArray, ...pendingCookies]);
       pendingCookies = [];
     }

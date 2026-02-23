@@ -91,14 +91,17 @@ export function Header({
   const [environmentsLoading, setEnvironmentsLoading] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
 
-
   const router = useRouter();
   const currentPath = usePathname();
-  const { activeCluster, setActiveCluster, activeGlobalEnv, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName, activeEnvAppName, activeClusterProvider, setActiveClusterProvider, activeClusterK8sVersion,  setActiveClusterK8sVersion } = useGlobalState();
+  const {
+    activeCluster, setActiveCluster,
+    activeGlobalEnv, setActiveGlobalEnv,
+    setActiveEnvManager, setActiveEnvAppName,
+    activeClusterProvider, setActiveClusterProvider,
+    activeClusterK8sVersion, setActiveClusterK8sVersion
+  } = useGlobalState();
 
-  // 👇 Pause refresh while dropdown is open
   const { data: sessionData } = useSession();
-
   const accessToken = (sessionData as any)?.accessToken;
 
   const fetchEnvironments = async () => {
@@ -184,112 +187,22 @@ export function Header({
     if (activeGlobalEnv) setActiveEnvironments(activeGlobalEnv);
   }, [activeGlobalEnv]);
 
-  // 👇 stable options to avoid re-renders
-  const envOptions = useMemo(
-    () => environments.map(e => ({ value: e.value, label: e.label })),
-    [environments]
-  );
-
-
   const handleEnvironmentChange = (value: string | null) => {
     if (!value) return;
     const selectedEnv = environments.find((e) => e.value === value);
     if (!selectedEnv) return;
 
-
     setActiveEnvironments(value);
     setActiveGlobalEnv(value);
-
-
     setActiveEnvManager(selectedEnv.manager);
     setActiveEnvAppName(selectedEnv.appName);
-
-
     setActiveClusterProvider(selectedEnv.provider);
     setActiveClusterK8sVersion(selectedEnv.k8sVersion);
-
 
     const [cluster, namespace] = value.split('/');
     if (cluster !== activeCluster) setActiveCluster(cluster);
     router.push(`/environments/${cluster}/${namespace}`);
   };
-
-  // replace your EnvironmentSelect with this (matches original UX)
-  const EnvironmentSelect = memo(() => {
-    return (
-      <Select
-        data={environments.map(item => ({
-          value: item.value,
-          label: item.label,
-        }))}
-        value={activeEnvironments || activeGlobalEnv || null}
-        onChange={handleEnvironmentChange}
-        placeholder="Select Environment"
-        allowDeselect={false}
-        searchable
-        clearable
-        style={{ flex: 1, minWidth: 420, fontFamily: 'monospace' }}
-
-        dropdownOpened={envOpen}
-        onDropdownOpen={() => setEnvOpen(true)}
-        onDropdownClose={() => setEnvOpen(false)}
-
-        // comboboxProps={{
-        //   withinPortal: false,
-        //   zIndex: 10000,
-        // }}
-
-
-        renderOption={({ option }) => {
-          const env = environments.find(e => e.value === option.value);
-          if (!env) return null;
-
-          const statusConfig = getStatusIcon(env.status);
-          const StatusIcon = statusConfig.icon;
-
-          return (
-            <Group justify="space-between" wrap="nowrap" w="100%">
-              <div style={{ fontFamily: 'monospace' }}>{env.label}</div>
-              <Group gap="xs" wrap="nowrap">
-                <Badge size="sm" variant="light" color="gray" radius="xl">
-                  {env.namespace}
-                </Badge>
-                <StatusIcon
-                  style={{ width: rem(16), height: rem(16) }}
-                  color={statusConfig.color}
-                />
-              </Group>
-            </Group>
-          );
-        }}
-      />
-    );
-  });
-
-
-  const UserMenu = () => (
-    <Menu
-      width={200}
-      position="bottom"
-      withinPortal={false}
-      onOpen={() => setUserMenuOpened(true)}
-      onClose={() => setUserMenuOpened(false)}
-    >
-      <Menu.Target>
-        <UnstyledButton className={cx(classes.user, { [classes.userActive]: userMenuOpened })}>
-          <Group gap={7}>
-            <Text fw={500} size="sm">{sessionData?.user?.email}</Text>
-            <IconChevronDown style={{ width: rem(12), height: rem(12) }} />
-          </Group>
-        </UnstyledButton>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => signOut()}>
-          Logout
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
-  );
 
   return (
     <Group h="100%" px="md" justify="space-between" align="center" wrap="nowrap">
@@ -298,7 +211,45 @@ export function Header({
         <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
 
         <Group wrap="wrap" gap="xs" style={{ flexGrow: 1 }}>
-          <EnvironmentSelect />
+          {/* 👇 Rendered directly instead of as an inline component */}
+          <Select
+            data={environments.map(item => ({
+              value: item.value,
+              label: item.label,
+            }))}
+            value={activeEnvironments || activeGlobalEnv || null}
+            onChange={handleEnvironmentChange}
+            placeholder="Select Environment"
+            allowDeselect={false}
+            searchable
+            clearable
+            style={{ flex: 1, minWidth: 420, fontFamily: 'monospace' }}
+            dropdownOpened={envOpen}
+            onDropdownOpen={() => setEnvOpen(true)}
+            onDropdownClose={() => setEnvOpen(false)}
+            renderOption={({ option }) => {
+              const env = environments.find(e => e.value === option.value);
+              if (!env) return null;
+
+              const statusConfig = getStatusIcon(env.status);
+              const StatusIcon = statusConfig.icon;
+
+              return (
+                <Group justify="space-between" wrap="nowrap" w="100%">
+                  <div style={{ fontFamily: 'monospace' }}>{env.label}</div>
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge size="sm" variant="light" color="gray" radius="xl">
+                      {env.namespace}
+                    </Badge>
+                    <StatusIcon
+                      style={{ width: rem(16), height: rem(16) }}
+                      color={statusConfig.color}
+                    />
+                  </Group>
+                </Group>
+              );
+            }}
+          />
           <Button onClick={fetchEnvironments} loading={environmentsLoading}>
             <IconRefresh />
           </Button>
@@ -308,7 +259,30 @@ export function Header({
       <Box visibleFrom="sm">
         <Group justify="flex-end">
           <ColorSchemeToggle />
-          <UserMenu />
+
+          {/* 👇 Rendered directly instead of as an inline component */}
+          <Menu
+            width={200}
+            position="bottom"
+            withinPortal={false}
+            onOpen={() => setUserMenuOpened(true)}
+            onClose={() => setUserMenuOpened(false)}
+          >
+            <Menu.Target>
+              <UnstyledButton className={cx(classes.user, { [classes.userActive]: userMenuOpened })}>
+                <Group gap={7}>
+                  <Text fw={500} size="sm">{sessionData?.user?.email}</Text>
+                  <IconChevronDown style={{ width: rem(12), height: rem(12) }} />
+                </Group>
+              </UnstyledButton>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => signOut()}>
+                Logout
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+
         </Group>
       </Box>
     </Group>
