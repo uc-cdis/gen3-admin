@@ -12,6 +12,7 @@ import {
   Modal,
   Button,
   Divider,
+  Tooltip,
   ScrollArea,
 } from "@mantine/core";
 import { useEffect, useState } from "react";
@@ -28,7 +29,26 @@ type Service = {
   kind: "Deployment" | "StatefulSet";
   desired: number;
   ready: number;
+  updated: number; // To track rolling update progress
+  age: string;
+  lastTransitionTime?: string;
+  images: string[]; // Container images
 };
+
+// Helper to format Kubernetes timestamps into human-readable age (e.g., "5d", "2h", "45m")
+function formatAge(timestamp: string | undefined) {
+  if (!timestamp) return "Unknown";
+  const diffMin = Math.floor((new Date().getTime() - new Date(timestamp).getTime()) / 60000);
+  if (diffMin < 60) return `${diffMin}m`;
+  if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h`;
+  return `${Math.floor(diffMin / 1440)}d`;
+}
+
+// Helper to strip long registry URLs and just get "image:tag"
+function formatImageName(fullImage: string) {
+  const parts = fullImage.split('/');
+  return parts[parts.length - 1];
+}
 
 type ContainerStatus = {
   name: string;
@@ -114,12 +134,23 @@ export default function CoreServicesOverview({
       ]);
 
       const deployments =
-        deploymentsRes?.items?.map((d: any) => ({
-          name: d.metadata.name,
-          kind: "Deployment",
-          desired: d.spec?.replicas ?? 0,
-          ready: d.status?.availableReplicas ?? 0,
-        })) ?? [];
+        deploymentsRes?.items?.map((d: any) => {
+          // Find the latest condition transition time
+          const availableCondition = d.status?.conditions?.find((c: any) => c.type === "Available");
+          const progressingCondition = d.status?.conditions?.find((c: any) => c.type === "Progressing");
+          const lastTransition = availableCondition?.lastTransitionTime || progressingCondition?.lastTransitionTime;
+
+          return {
+            name: d.metadata.name,
+            kind: "Deployment",
+            desired: d.spec?.replicas ?? 0,
+            ready: d.status?.readyReplicas ?? 0,
+            updated: d.status?.updatedReplicas ?? 0,
+            age: formatAge(d.metadata.creationTimestamp),
+            lastTransitionTime: formatAge(lastTransition),
+            images: d.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
+          };
+        }) ?? [];
 
       const statefulSets =
         statefulSetsRes?.items?.map((s: any) => ({
@@ -127,6 +158,10 @@ export default function CoreServicesOverview({
           kind: "StatefulSet",
           desired: s.spec?.replicas ?? 0,
           ready: s.status?.readyReplicas ?? 0,
+          updated: s.status?.updatedReplicas ?? 0,
+          age: formatAge(s.metadata.creationTimestamp),
+          lastTransitionTime: "N/A", // StatefulSets track conditions slightly differently
+          images: s.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
         })) ?? [];
 
       setServices([...deployments, ...statefulSets]);
@@ -285,31 +320,72 @@ export default function CoreServicesOverview({
           </Button>
         </Group>
 
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
           {services.map((svc) => {
             const health = computeStatus(svc.desired, svc.ready);
+            const isUpdating = svc.updated < svc.desired && svc.desired > 0;
+
             return (
               <Card
                 key={`${svc.kind}-${svc.name}`}
                 withBorder
-                radius="sm"
+                radius="md"
                 p="md"
                 onClick={() => openPodsModal(svc)}
                 style={{ cursor: "pointer" }}
               >
-                <Stack gap={6}>
-                  <Group justify="space-between">
-                    <Text fw={600}>{svc.name}</Text>
-                    <Badge color={health.color} variant="light">
+                <Stack gap="sm" h="100%">
+                  {/* Top Section: Title, Age, and Status Badge */}
+                  <Group justify="space-between" wrap="nowrap" align="flex-start">
+                    <Stack gap={0} style={{ overflow: "hidden" }}>
+                      <Text fw={600} truncate="end" title={svc.name}>
+                        {svc.name}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {svc.kind} • Age: {svc.age}
+                      </Text>
+                    </Stack>
+                    <Badge
+                      color={health.color}
+                      variant="light"
+                      size="sm"
+                      style={{ flexShrink: 0 }}
+                    >
                       {health.label}
                     </Badge>
                   </Group>
-                  <Text size="sm" c="dimmed">
-                    {svc.kind}
-                  </Text>
-                  <Text size="sm">
-                    {svc.ready} / {svc.desired} replicas ready
-                  </Text>
+
+                  {/* Middle Section: Image Tags */}
+                  <Group gap={6} mt="xs" style={{ flexGrow: 1 }}>
+                    {svc.images.map((img, idx) => (
+                      <Tooltip key={idx} label="Container Image" withArrow>
+                        <Badge
+                          size="xs"
+                          variant="default"
+                          style={{ textTransform: "none", fontWeight: 400 }}
+                        >
+                          {img}
+                        </Badge>
+                      </Tooltip>
+                    ))}
+                  </Group>
+
+                  {/* Bottom Section: Replicas and Last Updated */}
+                  <Group justify="space-between" mt="xs">
+                    <Text size="sm" fw={600}>
+                      {svc.ready} <Text span size="sm" c="dimmed" fw={400}>/ {svc.desired} ready</Text>
+                    </Text>
+
+                    {isUpdating ? (
+                      <Badge size="xs" color="blue" variant="dot">
+                        Updating ({svc.updated}/{svc.desired})
+                      </Badge>
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        Updated {svc.lastTransitionTime} ago
+                      </Text>
+                    )}
+                  </Group>
                 </Stack>
               </Card>
             );
