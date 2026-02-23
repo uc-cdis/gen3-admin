@@ -67,7 +67,7 @@ export default function EnvironmentDashboardComp({
 
   const [hostname, setHostname] = useState(hostnameProp)
   const [loading, setLoading] = useState(false)
-  const { useActiveEnvManager, useActiveEnvAppName, activeEnvManager, activeClusterProvider, activeClusterK8sVersion } = useGlobalState();
+  const { useActiveEnvManager, useActiveEnvAppName, activeEnvManager, activeClusterProvider, activeClusterK8sVersion, activeEnvAppName } = useGlobalState();
   const isArgoEnv = activeEnvManager === 'argocd';
 
   const [syncingArgo, setSyncingArgo] = useState(false);
