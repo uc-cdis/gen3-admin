@@ -233,7 +233,7 @@ export function NavBar() {
         </div>
         <div className={classes.main}>
           <Title order={4} className={classes.title}>
-            <Link href="/" passHref legacyBehavior>
+            <Link href="/" passHref>
               <Image src="/favicon.svg" width={20} height={20} alt="Gen3 Logo" />
             </Link>
           </Title>

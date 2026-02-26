@@ -337,6 +337,64 @@ func AuthMiddleware() gin.HandlerFunc {
 
 func SuccessMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		fakeUser := os.Getenv("MOCK_USER")
+		if fakeUser == "" {
+			fakeUser = "mockuser"
+		}
+
+		fakeEmail := os.Getenv("MOCK_EMAIL")
+		if fakeEmail == "" {
+			fakeEmail = fakeUser + "@example.com"
+		}
+
+		rolesEnv := os.Getenv("MOCK_ROLES")
+		var fakeRoles []string
+		if rolesEnv != "" {
+			fakeRoles = strings.Split(rolesEnv, ",")
+		} else {
+			fakeRoles = []string{"superadmin"}
+		}
+
+		groupsEnv := os.Getenv("MOCK_GROUPS")
+		var fakeGroups []interface{}
+		if groupsEnv != "" {
+			fakeGroups = make([]interface{}, 0)
+			for _, g := range strings.Split(groupsEnv, ",") {
+				fakeGroups = append(fakeGroups, strings.TrimSpace(g))
+			}
+		} else {
+			fakeGroups = []interface{}{"superadmin"}
+		}
+
+		userInfo := map[string]interface{}{
+			"id":             "mock-user-id",
+			"username":       fakeUser,
+			"name":           "Mock User",
+			"email":          fakeEmail,
+			"email_verified": true,
+			"groups":         fakeGroups,
+			"user_roles":     fakeRoles,
+			"account_roles":  fakeRoles,
+			"issuer":         "mock-issuer",
+			"audience":       "mock-client",
+			"issued_at":      time.Now(),
+			"expires_at":     time.Now().Add(24 * time.Hour),
+		}
+
+		c.Set("userInfo", userInfo)
+
+		groupStrings := make([]string, len(fakeGroups))
+		for i, g := range fakeGroups {
+			groupStrings[i] = fmt.Sprintf("%v", g)
+		}
+
+		log.Warn().
+			Str("username", fakeUser).
+			Str("email", fakeEmail).
+			Strs("groups", groupStrings).
+			Strs("roles", fakeRoles).
+			Msg("⚠️  MOCK_AUTH mode active — requests are NOT authenticated! This must NEVER be used in production.")
+
 		c.Next()
 	}
 }

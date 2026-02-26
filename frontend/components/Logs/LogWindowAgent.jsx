@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
-import { Container, Group, Select, Button, Checkbox } from "@mantine/core";
+import { Container, Group, Select, Button, Checkbox, Box } from "@mantine/core";
 import callK8sApi from "@/lib/k8s";
 
 import stripAnsi from 'strip-ansi';
@@ -21,6 +21,9 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     const editorRef = useRef(null);
 
     const { height, width } = useViewportSize();
+
+    const editorHeight = Math.max(height - 250, 300);
+
 
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
@@ -84,7 +87,9 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     };
 
     return (
-        <Container fluid size="lg" p="md" radius="md" my="md">
+        // <Container fluid size="lg" p="md" radius="md" my="md">
+        <Box w="100%" h="100%" p="md" my="md">
+
             <Group
                 grow
                 preventGrowOverflow={false}
@@ -111,7 +116,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
             </Group>
 
             <Editor
-                height={height}
+                height={editorHeight}
                 defaultLanguage="plaintext"
                 value={logs.join("\n")}
                 options={{
@@ -135,7 +140,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
                 onMount={handleEditorDidMount}
                 theme="vs-dark"
             />
-
-        </Container>
+        </Box>
+        // {/* </Container> */}
     );
 }

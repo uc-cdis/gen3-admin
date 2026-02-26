@@ -18,7 +18,7 @@ export default function Detail() {
         <>
             <DataTable
                 agent={clusterName}
-                endpoint={`/api/v1/namespaces/${namespace}/pods`}
+                endpoint={`/apis/apps/v1/namespaces/${namespace}/daemonsets`}
                 fields = {[
                     { key: "metadata.namespace", label: "Namespace" },
                     { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },

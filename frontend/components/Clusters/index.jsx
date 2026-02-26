@@ -132,13 +132,12 @@ function Clusters() {
   // Query for the api for active clusters/agents
   const fetchClusters = async () => {
     if (!sessionData) {
-      console.log("returning")
+      console.log("No session data, returning early")
       // Use this token for your API calls
       return;
     }
     setClusterLoading(true)
     try {
-      console.log("sessionData", sessionData)
       const data = await callGoApi('/agents', 'GET', null, null, sessionData?.accessToken)
       setClusters(data);
       setError(false)
@@ -415,7 +414,7 @@ function Clusters() {
             {
               accessor: 'name',
               title: 'Agent Name',
-              render: ({ name, connected }) => connected ? (<Link passHref legacyBehavior href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
+              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
             },
             {
               accessor: 'provider',

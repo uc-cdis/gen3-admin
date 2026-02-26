@@ -137,12 +137,16 @@ function LinksGroup({ label, links, icon: Icon }) {
 
 export function NavBar() {
     const router = useRouter()
+    const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
+
+    if (bootstrapEnabled) return null;
+
 
 
     // const [activeCluster, setActiveCluster] = useState(0);
-    const { activeCluster, setActiveCluster } = useGlobalState("null");
+    const { activeCluster, setActiveCluster, activeGlobalEnv } = useGlobalState("null");
 
-
+    const [cluster, namespace] = activeGlobalEnv.split('/');
     const [clusters, setClusters] = useState([]);
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
@@ -194,15 +198,15 @@ export function NavBar() {
                 // { label: 'Databases', link: '/', icon: IconChartBar },
             ],
         },
-        {
-            label: 'Helm',
-            icon: IconWheel,
-            links: [
-                // { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
-                { label: 'App Store', link: '/helm/repo/bitnami', icon: IconChartBar },
-                // { label: 'Deployments', link: '/projects', icon: IconChartBar },
-            ],
-        },
+        // {
+        //     label: 'Helm',
+        //     icon: IconWheel,
+        //     links: [
+        //         // { label: 'Deploy Gen3', link: '/helm/gen3/deploy', icon: IconPentagonNumber3 },
+        //         { label: 'App Store', link: '/helm/repo/bitnami', icon: IconChartBar },
+        //         // { label: 'Deployments', link: '/projects', icon: IconChartBar },
+        //     ],
+        // },
         {
             label: 'Kubernetes',
             icon: IconShip,
@@ -219,25 +223,35 @@ export function NavBar() {
                     label: 'Workloads',
                     icon: IconLayoutGrid,
                     links: [
-                        { label: 'Pods', link: `/clusters/${activeCluster}/workloads/pods` },
-                        { label: 'Deployments', link: `/clusters/${activeCluster}/workloads/deployments` },
-                        { label: 'DaemonSets', link: `/clusters/${activeCluster}/workloads/daemonsets` },
-                        { label: 'StatefulSets', link: `/clusters/${activeCluster}/workloads/statefulsets` },
-                        { label: 'ReplicaSets', link: `/clusters/${activeCluster}/workloads/replicasets` },
-                        { label: 'Jobs', link: `/clusters/${activeCluster}/workloads/jobs` },
-                        { label: 'CronJobs', link: `/clusters/${activeCluster}/workloads/cronjobs` },
+                        { label: 'Pods', link: `/clusters/${activeCluster}/workloads/pods/${namespace}` },
+                        { label: 'Deployments', link: `/clusters/${activeCluster}/workloads/deployments/${namespace}` },
+                        { label: 'DaemonSets', link: `/clusters/${activeCluster}/workloads/daemonsets/${namespace}` },
+                        { label: 'StatefulSets', link: `/clusters/${activeCluster}/workloads/statefulsets/${namespace}` },
+                        { label: 'ReplicaSets', link: `/clusters/${activeCluster}/workloads/replicasets/${namespace}` },
+                        { label: 'Jobs', link: `/clusters/${activeCluster}/workloads/jobs/${namespace}` },
+                        { label: 'CronJobs', link: `/clusters/${activeCluster}/workloads/cronjobs/${namespace}` },
+                        { label: 'Pods (All)', link: `/clusters/${activeCluster}/workloads/pods` },
+                        { label: 'Deployments (All)', link: `/clusters/${activeCluster}/workloads/deployments` },
+                        { label: 'DaemonSets (All)', link: `/clusters/${activeCluster}/workloads/daemonsets` },
+                        { label: 'StatefulSets (All)', link: `/clusters/${activeCluster}/workloads/statefulsets` },
+                        { label: 'ReplicaSets (All)', link: `/clusters/${activeCluster}/workloads/replicasets` },
+                        { label: 'Jobs (All)', link: `/clusters/${activeCluster}/workloads/jobs` },
+                        { label: 'CronJobs (All)', link: `/clusters/${activeCluster}/workloads/cronjobs` },
                     ],
                 },
                 {
                     label: 'Configurations',
                     icon: IconSettings,
                     links: [
-                        { label: 'Secrets', link: `/clusters/${activeCluster}/configurations/secrets`, icon: IconKey },
-                        { label: 'ConfigMaps', link: `/clusters/${activeCluster}/configurations/configmaps`, icon: IconFile },
-                        { label: 'HPA', link: `/clusters/${activeCluster}/configurations/hpa`, icon: IconGauge },
+                        // Namespace-scoped
+                        { label: 'Secrets', link: `/clusters/${activeCluster}/configurations/secrets/${namespace}`, icon: IconKey },
+                        { label: 'ConfigMaps', link: `/clusters/${activeCluster}/configurations/configmaps/${namespace}`, icon: IconFile },
+                        { label: 'HPA', link: `/clusters/${activeCluster}/configurations/hpa/${namespace}`, icon: IconGauge },
+                        { label: 'Pod Disruption Budgets', link: `/clusters/${activeCluster}/configurations/poddisruptionbudgets/${namespace}`, icon: IconStar },
+
+                        // Cluster-scoped (no namespace)
                         { label: 'Priority Classes', link: `/clusters/${activeCluster}/configurations/priorityclasses`, icon: IconStar },
                         { label: 'Runtime Classes', link: `/clusters/${activeCluster}/configurations/runtimeclasses`, icon: IconStar },
-                        { label: 'Pod Disruption Budgets', link: `/clusters/${activeCluster}/configurations/poddisruptionbudgets`, icon: IconStar },
                     ],
                 },
                 {
@@ -299,6 +313,7 @@ export function NavBar() {
                 { label: 'Infrastructure heatmap', link: `/cloud/instancemap`, icon: IconChartBar },
                 { label: 'Data Buckets', link: `/cloud/buckets`, icon: IconChartBar },
                 { label: 'IAC Demo', link: `/cloud/provision`, icon: IconChartBar },
+                { label: 'IAC Terraform New', link: `/cloud/terraform`, icon: IconChartBar },
                 { label: 'Spend', link: `/cloud/spend`, icon: IconChartBar },
             ],
         }
@@ -309,14 +324,15 @@ export function NavBar() {
     if (!activeCluster || activeCluster === '') {
         return (
             <>
-            Active Cluster: {activeCluster}
-            Please select a cluster
+                Active Cluster: {activeCluster}
+                Please select a cluster
             </>
         )
     } else {
         return (
             <>
-                Active Cluster: {activeCluster}
+                {/* Active Cluster: {activeCluster}
+                Active Namespace: {namespace} */}
                 <div className={classes.container}>
                     {/* Left Side: Cluster Selection */}
                     {/* <nav className={classes.leftNavbar}>

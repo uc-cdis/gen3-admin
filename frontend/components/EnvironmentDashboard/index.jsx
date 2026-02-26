@@ -1,4 +1,10 @@
 import { AreaChart, BarChart } from "@mantine/charts";
+import { useGlobalState } from '@/contexts/global';
+import { syncArgoCD, waitForArgoSync } from '@/lib/argocd';
+import { notifications } from '@mantine/notifications';
+import { useRef } from "react";
+
+
 import {
   Badge,
   Container,
@@ -19,6 +25,7 @@ import {
   ThemeIcon,
   Flex,
   Paper,
+  Anchor,
 } from "@mantine/core";
 import {
   IconCircleFilled,
@@ -45,6 +52,9 @@ import JobsPage from '@/components/CronJobsPage/Overview';
 
 import LogViewer from '@/components/LokiLogViewer'
 
+import CoreServicesOverview from '@/components/CoreServicesOverview'
+import { active } from "d3";
+
 export default function EnvironmentDashboardComp({
   env,
   namespace,
@@ -57,6 +67,13 @@ export default function EnvironmentDashboardComp({
 
   const [hostname, setHostname] = useState(hostnameProp)
   const [loading, setLoading] = useState(false)
+  const { useActiveEnvManager, useActiveEnvAppName, activeEnvManager, activeClusterProvider, activeClusterK8sVersion, activeEnvAppName } = useGlobalState();
+  const isArgoEnv = activeEnvManager === 'argocd';
+
+  const [syncingArgo, setSyncingArgo] = useState(false);
+  const [argoStatus, setArgoStatus] = useState(null);
+
+
 
 
   useEffect(() => {
@@ -90,7 +107,7 @@ export default function EnvironmentDashboardComp({
     if (namespace && accessToken) {
       fetchHostname();
     }
-  }, [namespace, env]);
+  }, [namespace, env, accessToken]);
 
   // State for storing fetched data
   const [cpuData, setCpuData] = useState([]);
@@ -101,8 +118,18 @@ export default function EnvironmentDashboardComp({
   const [podData, setPodData] = useState([]);
   const [eventsData, setEventsData] = useState([]);
   const [metricsData, setMetricsData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+
+
+  const [rawNodes, setRawNodes] = useState(null);
+  const [rawNamespaces, setRawNamespaces] = useState(null);
+  const [rawPods, setRawPods] = useState(null);
+  const [rawMetrics, setRawMetrics] = useState(null);
+  const [rawEvents, setRawEvents] = useState(null);
+
+  const requestIdRef = useRef(0);
+
 
   const colors = {
     healthy: "green",
@@ -358,134 +385,96 @@ export default function EnvironmentDashboardComp({
     };
   };
 
-  // Data fetching
   const fetchDashboardData = async () => {
-    try {
-      if (env && namespace) {
-        setIsLoading(true);
-        setError(null);
-        console.log("env", env);
+    if (!env || !namespace || !accessToken) return;
 
-        const [
-          nodesResponse,
-          namespaceResponse,
-          metricsResponse,
-          podsResponse,
-          eventsData,
-        ] = await Promise.all([
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/nodes`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/namespaces`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/pods`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-          callGoApi(
-            `/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`,
-            "GET",
-            null,
-            null,
-            accessToken
-          ),
-        ]);
+    const requestId = ++requestIdRef.current;
 
-        // Filter pods to only include those in the specified namespace
-        const filteredPodsResponse = {
-          ...podsResponse,
-          items:
-            podsResponse.items?.filter(
-              (pod) => pod.metadata?.namespace === namespace
-            ) || [],
-        };
+    setIsLoading(true);
+    setError(null);
 
-        const processedMetrics = processMetricsData(
-          metricsResponse,
-          nodesResponse,
-          filteredPodsResponse
-        );
-        const processedNodes = processNodesData(
-          nodesResponse,
-          processedMetrics?.nodes
-        );
-        const processedNamespaces = processNamespaceData(
-          namespaceResponse,
-          filteredPodsResponse
-        );
-        const processedPods = processPodData(filteredPodsResponse);
-
-        setEventsData(eventsData);
-        setMetricsData(processedMetrics);
-        setNodeStatusData(processedNodes);
-        setNamespaceStatusData(processedNamespaces);
-        setPodData(processedPods);
-
-        // Update charts with current metrics
-        const now = new Date();
-        setCpuData((prev) => {
-          const newData = [
-            ...prev,
-            {
-              time: now.toLocaleTimeString(),
-              usage: processedMetrics.cluster.cpuPercentage,
-            },
-          ];
-          return newData.slice(-24);
-        });
-
-        setMemoryData((prev) => {
-          const newData = [
-            ...prev,
-            {
-              time: now.toLocaleTimeString(),
-              usage: processedMetrics.cluster.memoryPercentage,
-            },
-          ];
-          return newData.slice(-24);
-        });
+    const safeSet = (setter) => (data) => {
+      if (requestIdRef.current === requestId) {
+        setter(data);
       }
-    } catch (err) {
-      console.error("Error fetching dashboard data:", err);
-      setError("Failed to load dashboard data. Please try again.");
-    } finally {
+    };
+
+    const requests = {
+      nodes: callGoApi(`/k8s/${env}/proxy/api/v1/nodes`, "GET", null, null, accessToken),
+      namespaces: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces`, "GET", null, null, accessToken),
+      metrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`, "GET", null, null, accessToken),
+      pods: callGoApi(`/k8s/${env}/proxy/api/v1/pods`, "GET", null, null, accessToken),
+      events: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`, "GET", null, null, accessToken),
+    };
+
+    const results = await Promise.allSettled(Object.values(requests));
+    const keys = Object.keys(requests);
+
+    results.forEach((result, i) => {
+      const key = keys[i];
+
+      console.log("", key, result);
+
+      if (result.status === "fulfilled") {
+        if (key === "nodes") safeSet(setRawNodes)(result.value);
+        if (key === "namespaces") safeSet(setRawNamespaces)(result.value);
+        if (key === "metrics") safeSet(setRawMetrics)(result.value);
+        if (key === "pods") safeSet(setRawPods)(result.value);
+        if (key === "events") safeSet(setRawEvents)(result.value);
+      } else {
+        console.error(`${key} failed`, result.reason);
+      }
+    });
+
+    const failures = results.filter(r => r.status === "rejected").length;
+    if (failures) {
+      setError(`${failures} data sources failed to load`);
       setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
 
   useEffect(() => {
-    if (sessionData?.error) {
-      console.log('Session error detected, signing out:', sessionData.error);
-      signOut({ callbackUrl: '/' });
-      return;
-    }
+    if (!rawNodes || !rawPods || !rawMetrics || !rawNamespaces) return;
 
-    if (accessToken && env && namespace) {
-      fetchDashboardData();
-      const interval = setInterval(fetchDashboardData, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [env, namespace]);
+    console.log("Processing data with", { rawNodes, rawPods, rawMetrics, rawNamespaces });
+    const filteredPods = {
+      ...rawPods,
+      items: rawPods.items?.filter(p => p.metadata?.namespace === namespace) || [],
+    };
+
+    const processedMetrics = processMetricsData(rawMetrics, rawNodes, filteredPods);
+    const processedNodes = processNodesData(rawNodes, processedMetrics?.nodes);
+    const processedNamespaces = processNamespaceData(rawNamespaces, filteredPods);
+    const processedPods = processPodData(filteredPods);
+
+    setMetricsData(processedMetrics);
+    setNodeStatusData(processedNodes);
+    setNamespaceStatusData(processedNamespaces);
+    setPodData(processedPods);
+
+    const now = new Date();
+
+    setCpuData((prev) =>
+      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.cpuPercentage }].slice(-24)
+    );
+
+    setMemoryData((prev) =>
+      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
+    );
+
+    setEventsData(rawEvents?.items ?? []);
+
+
+  }, [rawNodes, rawPods, rawMetrics, rawEvents, rawNamespaces, namespace]);
+
+
+  // useEffect(() => {
+  //   if (!env || !namespace || !accessToken) return;
+  //   fetchDashboardData();
+  // }, [env, namespace, accessToken]);
 
 
   // Dynamic metrics cards
@@ -500,10 +489,10 @@ export default function EnvironmentDashboardComp({
         : "0 not ready",
       progress: metricsData
         ? Math.round(
-            (nodeStatusData.filter((n) => n.status === "Ready").length /
-              nodeStatusData.length) *
-              100
-          )
+          (nodeStatusData.filter((n) => n.status === "Ready").length /
+            nodeStatusData.length) *
+          100
+        )
         : 0,
       icon: IconServer,
     },
@@ -541,7 +530,7 @@ export default function EnvironmentDashboardComp({
   const PodMemoryBarChart = ({ podData }) => {
     // Sort pods by memory usage (descending)
     const sortedPods = [...podData].sort((a, b) => b.resourceUsage.memory - a.resourceUsage.memory);
-    
+
     const chartData = sortedPods.map(pod => ({
       pod: pod.name,
       memory: pod.resourceUsage.memory / (1024 * 1024 * 1024), // Convert to GB
@@ -562,8 +551,8 @@ export default function EnvironmentDashboardComp({
               data={chartData}
               dataKey="pod"
               series={[
-                { 
-                  name: 'memory', 
+                {
+                  name: 'memory',
                   color: 'blue',
                   label: (value) => `${value.toFixed(2)} GB`
                 }
@@ -603,10 +592,11 @@ export default function EnvironmentDashboardComp({
     );
   };
 
+
   const PodCpuBarChart = ({ podData }) => {
     // Sort pods by CPU usage (descending)
     const sortedPods = [...podData].sort((a, b) => b.resourceUsage.cpu - a.resourceUsage.cpu);
-    
+
     const chartData = sortedPods.map(pod => ({
       pod: pod.name,
       cpu: pod.resourceUsage.cpu,
@@ -626,8 +616,8 @@ export default function EnvironmentDashboardComp({
               data={chartData}
               dataKey="pod"
               series={[
-                { 
-                  name: 'cpu', 
+                {
+                  name: 'cpu',
                   color: 'green',
                   label: (value) => `${value.toFixed(2)} cores`
                 }
@@ -669,7 +659,7 @@ export default function EnvironmentDashboardComp({
 
   return (
     <Container size="xl" mt="xl" pos="relative">
-      {/* <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} /> */}
+      <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} />
 
       {/* Header Section */}
       <Group justify="space-between" mb="md">
@@ -678,6 +668,66 @@ export default function EnvironmentDashboardComp({
           <Button onClick={fetchDashboardData} loading={isLoading}>
             <IconRefresh />
           </Button>
+          {isArgoEnv && (
+            <Group>
+              <Button
+                loading={syncingArgo}
+                leftSection={<img src="/images/icons/argocd.png" width={18} />}
+                onClick={async () => {
+                  setSyncingArgo(true);
+                  setArgoStatus('Starting sync...');
+
+                  try {
+                    await syncArgoCD({
+                      cluster: env,
+                      appName: activeEnvAppName,
+                      accessToken,
+                    });
+
+                    notifications.show({
+                      title: 'Sync started',
+                      message: 'Waiting for ArgoCD to finish syncing...',
+                      color: 'blue',
+                    });
+
+                    const finalStatus = await waitForArgoSync({
+                      cluster: env,
+                      appName: activeEnvAppName,
+                      accessToken,
+                      onUpdate: (status) => {
+                        setArgoStatus(
+                          `${status.sync.status} / ${status.health.status} (${status.operationState?.phase || 'Running'})`
+                        );
+                      },
+                    });
+
+                    notifications.show({
+                      title: 'Sync complete',
+                      message: `Status: ${finalStatus.sync.status}, Health: ${finalStatus.health.status}`,
+                      color: 'green',
+                    });
+                  } catch (err) {
+                    notifications.show({
+                      title: 'Sync failed',
+                      message: err?.message || 'ArgoCD sync failed',
+                      color: 'red',
+                    });
+                  } finally {
+                    setSyncingArgo(false);
+                  }
+                }}
+              >
+                Sync ArgoCD
+              </Button>
+              {argoStatus && (
+                <Text size="xs" c="dimmed">
+                  ArgoCD: {argoStatus}
+                </Text>
+              )}
+
+            </Group>
+          )}
+
           {/* <Card radius="md">
             <Group gap="sm">
               <Box style={{ position: "relative", width: 16, height: 16, display:'flex', alignItems: 'center', justifyContent:'center' }}>
@@ -703,26 +753,24 @@ export default function EnvironmentDashboardComp({
         <Badge color="green" size="sm">
           {namespace}
         </Badge>
-        <Badge color="blue" size="sm">
-          us-east-1
-        </Badge>
-        <Badge color="yellow" size="sm">
-          v1.31.1
-        </Badge>
+        <Badge color="blue">{activeClusterProvider || "—"}</Badge>
+        <Badge color="yellow">{activeClusterK8sVersion || "—"}</Badge>
       </Group>
 
-      {error && (
-        <Card withBorder mb="md" bg="red.1">
-          <Text c="red" fw={500}>
-            {error}
-          </Text>
-        </Card>
-      )}
+      {
+        error && (
+          <Card withBorder mb="md" bg="red.1">
+            <Text c="red" fw={500}>
+              {error}
+            </Text>
+          </Card>
+        )
+      }
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Main metrics */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         {dynamicMetrics.map((metric) => (
           <Card
             key={metric.title}
@@ -751,24 +799,30 @@ export default function EnvironmentDashboardComp({
             </Stack>
           </Card>
         ))}
-      </Group>
+      </Group> */}
 
-      <LogViewer hostname={hostname} />
+      <CoreServicesOverview
+        env={env}
+        namespace={namespace}
+        accessToken={accessToken}
+      />
 
-      <Divider my="lg"/>
+      {/* <LogViewer hostname={hostname} /> */}
+
+      <Divider my="lg" />
 
       <JobsPage namespace={namespace} hideSelect={true} cluster={env} />
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Pod Status Table */}
-      <Group align="flex-start" gap="md" mb="xl" grow>
+      {/* <Group align="flex-start" gap="md" mb="xl" grow>
         <Card withBorder>
           <Title order={4} mb="sm">
             Pod Status
           </Title>
           <Text c="dimmed" mb="sm">
-            Current pod status across all namespaces
+            Current Status of All Pods in the {namespace} Namespace
           </Text>
           <ScrollArea h={500}>
             <Table striped highlightOnHover>
@@ -787,7 +841,7 @@ export default function EnvironmentDashboardComp({
               <Table.Tbody>
                 {podData.map((pod) => (
                   <Table.Tr key={`${pod.namespace}-${pod.name}`}>
-                    <Table.Td>{pod.name}</Table.Td>
+                    <Table.Td><Anchor href={`/clusters/${env}/workloads/pods/${namespace}/${pod.name}`}>{pod.name}</Anchor></Table.Td>
                     <Table.Td>{pod.namespace}</Table.Td>
                     <Table.Td>
                       <Group gap="sm">
@@ -841,18 +895,18 @@ export default function EnvironmentDashboardComp({
             </Table>
           </ScrollArea>
         </Card>
-      </Group>
+      </Group> */}
 
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       {/* Pod Resource Usage Charts */}
       <Group align="flex-start" gap="md" mb="xl" grow>
-        <PodMemoryBarChart podData={podData} />
-        <PodCpuBarChart podData={podData} />
+        {/* <PodMemoryBarChart podData={podData} />
+        <PodCpuBarChart podData={podData} /> */}
       </Group>
 
-      <Divider my="lg"/>
+      <Divider my="lg" />
 
       <EventsCards
         eventsData={eventsData}
@@ -1027,6 +1081,6 @@ export default function EnvironmentDashboardComp({
           }
         }
       `}</style>
-    </Container>
+    </Container >
   );
 }

@@ -26,7 +26,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -37,6 +39,7 @@ import (
 	"github.com/uc-cdis/gen3-admin/internal/logger"
 	"github.com/uc-cdis/gen3-admin/internal/middleware/keycloak"
 	"github.com/uc-cdis/gen3-admin/internal/runner"
+	"github.com/uc-cdis/gen3-admin/internal/terraform"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
 	"github.com/uc-cdis/gen3-admin/internal/utils"
 	routes "github.com/uc-cdis/gen3-admin/pkg"
@@ -898,20 +901,13 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	}
 }
 
-func HandleHTTPProxyRequest(c *gin.Context) {
+func HandleAgentHTTPProxyRequest(c *gin.Context) {
 	agentID := c.Param("agent")
-	path := c.Param("path")
+	targetURL := c.Query("url")
 
-	log.Info().Msgf("Path: %s", path)
-
-	// Ensure path starts with /
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	// Add query string if present
-	if c.Request.URL.RawQuery != "" {
-		path += "?" + c.Request.URL.RawQuery
+	if targetURL == "" {
+		c.JSON(400, gin.H{"error": "missing url query param"})
+		return
 	}
 
 	var wg sync.WaitGroup
@@ -953,7 +949,7 @@ func HandleHTTPProxyRequest(c *gin.Context) {
 	proxyReq := &pb.ProxyRequest{
 		StreamId:  streamID,
 		Method:    c.Request.Method,
-		Path:      path,
+		Path:      targetURL,
 		Headers:   make(map[string]string),
 		Body:      nil,
 		ProxyType: "http",
@@ -1070,6 +1066,9 @@ func SetupHTTPServer() {
 	r.Use(logger.DefaultStructuredLogger()) // adds our new middleware
 	r.Use(gin.Recovery())
 
+	// Wide open CORS
+	r.Use(cors.Default()) // All origins allowed by default
+
 	r.RedirectTrailingSlash = false
 	// Add to your main function
 	go func() {
@@ -1098,8 +1097,14 @@ func SetupHTTPServer() {
 	}
 
 	protected := r.Group("/")
-	protected.Use(keycloak.AuthMiddleware())
-	// protected.Use(keycloak.SuccessMiddleware())
+	mockAuth := os.Getenv("MOCK_AUTH") == "true"
+	if mockAuth {
+		log.Warn().Msg("⚠️  MOCK_AUTH mode enabled — no real authentication is being applied! This should *NEVER* be used in production.")
+		protected.Use(keycloak.SuccessMiddleware())
+	} else {
+		protected.Use(keycloak.AuthMiddleware())
+	}
+
 	{
 		protected.Any("/api/k8s/proxy/*path", func(c *gin.Context) {
 			requestPath := strings.TrimPrefix(c.Request.URL.Path, "/api/k8s/proxy")
@@ -1113,10 +1118,7 @@ func SetupHTTPServer() {
 			HandleK8sProxyRequest(c)
 		})
 
-		protected.Any("/api/:agent/proxy/*path", func(c *gin.Context) {
-			log.Info().Msgf("Proxying agent k8s request to: %s", c.Request.URL.String())
-			HandleHTTPProxyRequest(c)
-		})
+		protected.Any("/api/agents/:agent/http", HandleAgentHTTPProxyRequest)
 		protected.GET("/api/agents", GetAgentsHandler)
 	}
 
@@ -1500,7 +1502,18 @@ func SetupHTTPServer() {
 	r.DELETE("/api/runner/executions/:id", runner.HandleTerminate(store))
 	r.GET("/api/runner/executions", runner.HandleListExecutions(store))
 
+	// Add Terraform-specific endpoints
+	r.POST("/api/terraform/execute", terraform.HandleTerraformExecute())
+	r.GET("/api/terraform/executions/:id", terraform.HandleGetTerraformExecution())
+	r.GET("/api/terraform/executions/:id/stream", terraform.HandleStreamTerraformExecution())
+	r.DELETE("/api/terraform/executions/:id", terraform.HandleTerminateTerraform())
+	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
+	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
+
 	// AWS routes
+	r.GET("/api/aws/identity", aws.GetCallerIdentity)
+	r.GET("/api/aws/profiles", aws.ListAWSProfilesHandler)
+	r.POST("/api/aws/set-profile", aws.SetAWSProfileHandler)
 	r.GET("/api/aws/instances", aws.ListEC2Instances)
 	r.GET("api/aws/s3", aws.ListS3Buckets)
 
@@ -1586,6 +1599,94 @@ func SetupHTTPServer() {
 		delete(agent.cancelFuncs, streamID)
 		delete(agent.contexts, streamID)
 		agent.mutex.Unlock()
+	})
+
+	r.GET("/api/agents/:agent/terminal/exec/:namespace/:pod/:container", func(c *gin.Context) {
+		agentID := c.Param("agent")
+		namespace := c.Param("namespace")
+		pod := c.Param("pod")
+		container := c.Param("container")
+
+		agentsMutex.RLock()
+		agent, exists := AgentConnections[agentID]
+		agentsMutex.RUnlock()
+		if !exists || agent.stream == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not connected"})
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Error().Err(err).Msg("WS upgrade failed")
+			return
+		}
+
+		sessionID := uuid.New().String()
+		ctx, cancel := context.WithCancel(c.Request.Context())
+
+		agent.mutex.Lock()
+		agent.terminalStreams[sessionID] = ws
+		agent.cancelFuncs[sessionID] = cancel
+		agent.contexts[sessionID] = ctx
+		agent.mutex.Unlock()
+
+		initPayload := map[string]any{
+			"type":      "init",
+			"sessionId": sessionID,
+			"namespace": namespace,
+			"pod":       pod,
+			"container": container,
+			"command":   []string{"sh"},
+		}
+
+		initBytes, _ := json.Marshal(initPayload)
+
+		agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_TerminalStream{
+				TerminalStream: &pb.TerminalStream{
+					SessionId: sessionID,
+					Data:      initBytes,
+				},
+			},
+		})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to init exec session")
+			ws.Close()
+			return
+		}
+
+		// WS → Agent
+		go func() {
+			defer cancel()
+			for {
+				_, msg, err := ws.ReadMessage()
+				if err != nil {
+					log.Warn().Err(err).Msg("WS read failed")
+					return
+				}
+				agent.stream.Send(&pb.ServerMessage{
+					Message: &pb.ServerMessage_TerminalStream{
+						TerminalStream: &pb.TerminalStream{
+							SessionId: sessionID,
+							Data:      msg,
+						},
+					},
+				})
+			}
+		}()
+
+		// block until done
+		<-ctx.Done()
+
+		agent.mutex.Lock()
+		delete(agent.terminalStreams, sessionID)
+		delete(agent.cancelFuncs, sessionID)
+		delete(agent.contexts, sessionID)
+		agent.mutex.Unlock()
+		ws.Close()
 	})
 
 	// dbui routes

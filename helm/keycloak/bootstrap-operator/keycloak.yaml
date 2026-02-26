@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 10Gi
+  postgresql:
+    parameters:
+      shared_buffers: "512MB"
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+  monitoring:
+    enablePodMonitor: true
+---
+
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  instances: 2
+
+  bootstrapAdmin:
+    user:
+      secret: keycloak-admin-credentials
+
+
+  db:
+    vendor: postgres
+    host: keycloak-db-rw
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-app
+      key: username
+    passwordSecret:
+      name: keycloak-db-app
+      key: password
+
+  http:
+    httpEnabled: true
+    # httpsPort: 8443
+    # tlsSecret: keycloak-tls
+
+  hostname:
+    hostname: test.keycloak.org
+
+  proxy:
+    headers: xforwarded
+
+  additionalOptions:
+    - name: KC_PROXY
+      value: passthrough
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-admin-credentials
+  namespace: keycloak
+type: Opaque
+stringData:
+  username: admin
+  password: change_me
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: csoc-realm
+  namespace: keycloak
+spec:
+  keycloakCRName: keycloak       # Name of your Keycloak CR
+  realm:
+    id: csoc-realm
+    realm: csoc-realm
+    enabled: true
+
+    identityProviders:
+      - alias: google
+        displayName: Google
+        providerId: google
+        enabled: true
+        trustEmail: true
+        storeToken: false
+        firstBrokerLoginFlowAlias: "first broker login"
+
+        config:
+          clientId: "${googleClientId}"
+          clientSecret: "${googleClientSecret}"
+          authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth"
+          tokenUrl: "https://oauth2.googleapis.com/token"
+          userInfoUrl: "https://openidconnect.googleapis.com/v1/userinfo"
+          defaultScope: "openid email profile"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: google-idp-secret
+  namespace: keycloak
+type: Opaque
+stringData:
+  clientId: "<GOOGLE_CLIENT_ID>"
+  clientSecret: "<GOOGLE_CLIENT_SECRET>"
+
+---
+
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-selfsigned-cert
+  namespace: keycloak
+spec:
+  secretName: keycloak-tls
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  commonName: test.keycloak.org
+  dnsNames:
+    - test.keycloak.org
+
+---

@@ -1,0 +1,67 @@
+
+services:
+
+  # docker-proxy:
+  #   image: tecnativa/docker-socket-proxy
+  #   container_name: docker-proxy
+  #   environment:
+  #     - CONTAINERS=1
+  #     - IMAGES=1
+  #     - NETWORKS=1
+  #     - VOLUMES=1
+
+  #     # ADD THESE for docker run:
+  #     - POST=1           # Allow POST requests (creating containers)
+  #     - CREATE=1         # Explicitly allow container creation
+  #     - START=1          # Allow starting containers
+  #     - STOP=1           # Allow stopping containers (optional)
+  #     - RESTART=1        # Allow restarting (optional)
+  #     - DELETE=1         # Allow deleting containers (optional)
+
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   ports:
+  #     - "2375:2375"
+  #   restart: unless-stopped
+
+
+  # api:
+  #   # network_mode: host
+  #   environment:
+  #     DOCKER_HOST: "tcp://docker-proxy:2375"
+  #     PORT: "8002"
+  #     MOCK_AUTH: "true"
+  #     # AWS_PROFILE: "csoc"
+  #     KUBECONFIG: /root/.kube/config
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.api
+  #   ports:
+  #     - "8002:8002"
+  #     - "50051:50051"
+  #   volumes:
+  #     - ~/.aws:/root/.aws
+  #     - ~/.kube/config:/root/.kube/config
+  #     - ./api/certs:/go/src/gen3-admin-api/certs
+  #     - ~/.minikube:/Users/elisecastle/.minikube
+  frontend:
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
+        # API_BASE_URL: "http://api:8002"
+    ports:
+      - "3000:3000"
+    environment:
+      NEXTAUTH_SECRET: "6bcc8d24207ff145da5740b0ec0ed231563404b4e65325d1ac22b8b68142634f" #pragma: allowlist secret
+      MOCK_AUTH: "true"
+      NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
+      API_BASE_URL: "http://localhost:8002"
+    # depends_on:
+    #   - api
+    command:
+      - npm
+      - run
+      - start
