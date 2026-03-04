@@ -124,6 +124,9 @@ export default function Elasticsearch() {
   const [loadingIndices, setLoadingIndices] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const [proxyMode, setProxyMode] = useState("auto");
+  // "auto" | "k8s" | "agent"
+
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
 
@@ -161,9 +164,18 @@ export default function Elasticsearch() {
     if (!cluster || !namespace) return;
 
     setLoadingIndices(true);
+
     try {
-      const proxyPath = `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/gen3-elasticsearch-master:9200/proxy/_cat/indices?format=json`;
+      let proxyPath;
+
+      if (proxyMode === "agent") {
+        proxyPath = buildAgentProxyPath("/_cat/indices?format=json");
+      } else {
+        proxyPath = buildK8sProxyPath("/_cat/indices?format=json");
+      }
+
       const response = await callGoApi(proxyPath, 'GET', null, null, accessToken, "text");
+
       const parsed = typeof response === 'string' ? JSON.parse(response) : response;
 
       if (Array.isArray(parsed)) {
@@ -180,6 +192,7 @@ export default function Elasticsearch() {
 
         setIndices(indexList);
       }
+
     } catch (error) {
       console.error('Failed to fetch indices:', error);
     } finally {
@@ -199,7 +212,7 @@ export default function Elasticsearch() {
 
   const executeElasticsearchRequest = async (values) => {
     if (!cluster || !namespace) {
-      setError('Please select a cluster and namespace');
+      setError("Please select a cluster and namespace");
       return;
     }
 
@@ -210,28 +223,64 @@ export default function Elasticsearch() {
     const startTime = Date.now();
 
     try {
-      const proxyPath = `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/gen3-elasticsearch-master:9200/proxy${values.url}`;
-
       let requestBody = null;
-      if (['POST', 'PUT', 'PATCH'].includes(values.method) && values.body) {
+
+      if (["POST", "PUT", "PATCH"].includes(values.method) && values.body) {
         try {
           requestBody = JSON.parse(values.body);
-        } catch (e) {
-          throw new Error('Invalid JSON in request body');
+        } catch {
+          throw new Error("Invalid JSON in request body");
         }
       }
 
-      const response = await callGoApi(
-        proxyPath,
-        values.method,
-        requestBody,
-        null,
-        accessToken,
-        "text"
-      );
+      let response;
+
+      if (proxyMode === "auto") {
+
+        try {
+          response = await callGoApi(
+            buildK8sProxyPath(values.url),
+            values.method,
+            requestBody,
+            null,
+            accessToken,
+            "text"
+          );
+
+        } catch (err) {
+
+          console.warn("K8s proxy failed — falling back to agent proxy");
+
+          response = await callGoApi(
+            buildAgentProxyPath(values.url),
+            values.method,
+            requestBody,
+            null,
+            accessToken,
+            "text"
+          );
+        }
+
+      } else {
+
+        const proxyPath =
+          proxyMode === "agent"
+            ? buildAgentProxyPath(values.url)
+            : buildK8sProxyPath(values.url);
+
+        response = await callGoApi(
+          proxyPath,
+          values.method,
+          requestBody,
+          null,
+          accessToken,
+          "text"
+        );
+      }
 
       const endTime = Date.now();
       const responseTimeMs = endTime - startTime;
+
       setResponseTime(responseTimeMs);
       setResponse(response);
 
@@ -241,22 +290,26 @@ export default function Elasticsearch() {
         method: values.method,
         url: values.url,
         responseTime: responseTimeMs,
-        status: 'success'
+        status: "success"
       };
-      setRequestHistory(prev => [historyEntry, ...prev.slice(0, 9)]);
+
+      setRequestHistory((prev) => [historyEntry, ...prev.slice(0, 9)]);
 
     } catch (error) {
-      console.error('Elasticsearch request failed:', error);
-      setError(error.message || 'Request failed');
+
+      console.error("Elasticsearch request failed:", error);
+      setError(error.message || "Request failed");
 
       const historyEntry = {
         id: Date.now(),
         timestamp: new Date().toLocaleTimeString(),
         method: values.method,
         url: values.url,
-        status: 'error'
+        status: "error"
       };
-      setRequestHistory(prev => [historyEntry, ...prev.slice(0, 9)]);
+
+      setRequestHistory((prev) => [historyEntry, ...prev.slice(0, 9)]);
+
     } finally {
       setLoading(false);
     }
@@ -316,6 +369,14 @@ export default function Elasticsearch() {
     } else {
       form.setFieldValue('url', `/${index}/_search`);
     }
+  };
+
+  const buildK8sProxyPath = (url) =>
+    `/k8s/${cluster}/proxy/api/v1/namespaces/${namespace}/services/gen3-elasticsearch-master:9200/proxy${url}`;
+
+  const buildAgentProxyPath = (url) => {
+    const target = `http://gen3-elasticsearch-master.${namespace}.svc:9200${url}`;
+    return `/agents/${cluster}/http?url=${encodeURIComponent(target)}`;
   };
 
   const parseResponseForLinks = (responseData) => {
@@ -476,6 +537,16 @@ export default function Elasticsearch() {
                     <Text size="xs" c="dimmed">+</Text>
                     <Kbd size="xs">Enter</Kbd>
                   </Group>
+                  {/* <Select
+                    label="Proxy Mode"
+                    value={proxyMode}
+                    onChange={setProxyMode}
+                    data={[
+                      { value: "auto", label: "Auto (fallback)" },
+                      { value: "k8s", label: "Kubernetes API Proxy" },
+                      { value: "agent", label: "Agent HTTP Proxy" }
+                    ]}
+                  /> */}
                 </Group>
 
                 <form onSubmit={form.onSubmit(executeElasticsearchRequest)}>
