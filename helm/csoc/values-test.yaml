@@ -1,0 +1,177 @@
+# Test Environment Values for Minikube
+# This configuration is optimized for local development and testing on Minikube
+# It overrides production settings for faster iteration and minimal resource usage
+
+replicaCount: 1
+
+image:
+  pullPolicy: Never  # Use local images only
+  api:
+    repository: csoc-api
+    tag: "arm64-local"
+  frontend:
+    repository: csoc-frontend
+    tag: "arm64-local"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  workingDir: /go/src/api
+  env:
+    MOCK_AUTH: "true"
+    # For testing without external KeyCloak
+  ports:
+    http: 8002
+    grpc: 50051
+  livenessProbe:
+    httpGet:
+      path: /ping
+      port: 8002
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  # Minimal resources for local testing
+  resources:
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+    requests:
+      memory: "32Mi"
+      cpu: "100m"
+  volumeMounts:
+    - name: data-volume
+      mountPath: /go/src/api/certs
+
+frontend:
+  ports:
+    http: 3000
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  env:
+    # Use csoc.local for Minikube testing (add to /etc/hosts)
+    NEXTAUTH_URL: "http://csoc.local"
+    NEXTAUTH_SECRET: "test-secret-change-in-production" #pragma: allowlist secret
+    NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" #pragma: allowlist secret
+    MOCK_AUTH: "true"
+    ENABLE_MOCK_AUTH: "true"
+  # Minimal resources for local testing
+  resources:
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+    requests:
+      memory: "32Mi"
+      cpu: "50m"
+
+persistence:
+  enabled: true
+  name: csoc-pvc
+  accessModes:
+    - ReadWriteOnce
+  size: 2Gi  # Smaller for local testing
+  storageClassName: ""  # Use default (minikube-hostpath)
+  annotations: {}
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+# Use NodePort instead of ALB ingress for Minikube
+service:
+  type: ClusterIP
+
+  grpc:
+    port: 50051
+    targetPort: 50051
+    type: NodePort  # Expose gRPC via NodePort for local testing
+
+  frontend:
+    port: 80
+    targetPort: 3000
+
+  api:
+    port: 8002
+    targetPort: 8002
+
+# Enable ingress for Minikube with nginx
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: "csoc.local"
+      paths:
+        - path: /api/auth
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: frontend
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                number: 8002
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: frontend
+  tls: []
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+volumes:
+  config:
+    name: config-volume
+    configMapName: csoc
+  data:
+    name: data-volume
+    pvcName: csoc-pvc
+
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
