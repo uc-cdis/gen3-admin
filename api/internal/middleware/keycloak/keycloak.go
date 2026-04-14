@@ -109,28 +109,38 @@ func keyFunc(token *jwt.Token) (interface{}, error) {
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
+
 		url := c.Request.URL.Path
 		method := c.Request.Method
 
+		// -------------------------
+		// Public routes
+		// -------------------------
+
+		if url == "/ping" {
+			c.Next()
+			return
+		}
+
+		// -------------------------
+		// Extract token
+		// -------------------------
+
+		authHeader := c.GetHeader("Authorization")
 		var tokenString string
 
-		// First try to get token from Authorization header
 		if authHeader != "" {
-			bearerToken := strings.Split(authHeader, " ")
-			if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
-				log.Error().Msg("error: Invalid Authorization header format")
+			parts := strings.Split(authHeader, " ")
+			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
 				c.Abort()
 				return
 			}
-			tokenString = bearerToken[1]
+			tokenString = parts[1]
 		} else {
-			// Try to get token from cookie if no Authorization header
 			cookie, err := c.Cookie("keycloak-access-token")
 			if err != nil {
-				log.Error().Msg("error: Authorization header or access-token cookie is required")
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or access-token cookie is required"})
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or access-token cookie required"})
 				c.Abort()
 				return
 			}
@@ -138,200 +148,206 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		token, err := jwt.Parse(tokenString, keyFunc)
-		if err != nil {
-			log.Error().Err(err).Msg("error: Token verification failed")
+		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token verification failed"})
-			c.Abort()
-			return
-		}
-
-		if !token.Valid {
-			log.Error().Msg("error: Invalid token")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			log.Error().Msg("error: Invalid claims")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			c.Abort()
 			return
 		}
 
-		expectedIssuer := fmt.Sprintf("%s/realms/%s", os.Getenv("KEYCLOAK_URL"), os.Getenv("KEYCLOAK_REALM"))
+		// -------------------------
+		// Validate issuer
+		// -------------------------
+
+		expectedIssuer := fmt.Sprintf("%s/realms/%s",
+			os.Getenv("KEYCLOAK_URL"),
+			os.Getenv("KEYCLOAK_REALM"),
+		)
+
 		if iss, ok := claims["iss"].(string); ok {
-			if iss != expectedIssuer {
-				legacyIssuer := fmt.Sprintf("%s/auth/realms/%s", os.Getenv("KEYCLOAK_URL"), os.Getenv("KEYCLOAK_REALM"))
-				if iss != legacyIssuer {
-					log.Error().Str("expected", expectedIssuer).Str("legacy_expected", legacyIssuer).Str("actual", iss).Msg("error: Invalid issuer")
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token issuer"})
-					c.Abort()
-					return
-				}
-			}
-		}
 
-		// Verify audience (client_id)
-		// expectedAudience := os.Getenv("KEYCLOAK_CLIENT_ID")
-		// if aud, ok := claims["aud"]; ok {
-		// 	var validAudience bool
-		// 	switch v := aud.(type) {
-		// 	case string:
-		// 		validAudience = v == expectedAudience
-		// 	case []interface{}:
-		// 		for _, audience := range v {
-		// 			if audStr, ok := audience.(string); ok && audStr == expectedAudience {
-		// 				validAudience = true
-		// 				break
-		// 			}
-		// 		}
-		// 	}
-		// 	if !validAudience {
-		// 		log.Error().Str("expected", expectedAudience).Interface("actual", aud).Msg("error: Invalid audience")
-		// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token audience"})
-		// 		c.Abort()
-		// 		return
-		// 	}
-		// }
+			legacyIssuer := fmt.Sprintf("%s/auth/realms/%s",
+				os.Getenv("KEYCLOAK_URL"),
+				os.Getenv("KEYCLOAK_REALM"),
+			)
 
-		if exp, ok := claims["exp"].(float64); ok {
-			if time.Now().Unix() > int64(exp) {
-				log.Error().Msg("error: Token has expired")
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token has expired"})
+			if iss != expectedIssuer && iss != legacyIssuer {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token issuer"})
 				c.Abort()
 				return
 			}
 		}
 
-		userInfo := make(map[string]interface{})
+		// -------------------------
+		// Check expiration
+		// -------------------------
 
-		if sub, ok := claims["sub"]; ok {
-			userInfo["id"] = sub
-		}
-		if name, ok := claims["name"]; ok {
-			userInfo["name"] = name
-		}
-		if email, ok := claims["email"]; ok {
-			userInfo["email"] = email
-		}
-		if username, ok := claims["preferred_username"]; ok {
-			userInfo["username"] = username
-		}
-		if givenName, ok := claims["given_name"]; ok {
-			userInfo["given_name"] = givenName
-		}
-		if familyName, ok := claims["family_name"]; ok {
-			userInfo["family_name"] = familyName
-		}
-		if emailVerified, ok := claims["email_verified"]; ok {
-			userInfo["email_verified"] = emailVerified
+		if exp, ok := claims["exp"].(float64); ok {
+			if time.Now().Unix() > int64(exp) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
+				c.Abort()
+				return
+			}
 		}
 
-		if groups, ok := claims["groups"].([]interface{}); ok {
-			userInfo["groups"] = groups
-		}
+		// -------------------------
+		// Extract roles
+		// -------------------------
 
-		if userRoles, ok := claims["roles"].([]interface{}); ok {
-			userInfo["user_roles"] = userRoles
-		}
+		roleMap := map[string]bool{}
 
-		if resourceAccess, ok := claims["resource_access"].(map[string]interface{}); ok {
-			if account, ok := resourceAccess["account"].(map[string]interface{}); ok {
-				if roles, ok := account["roles"].([]interface{}); ok {
-					var accRoleStrings []string
-					for _, role := range roles {
-						if roleStr, ok := role.(string); ok {
-							accRoleStrings = append(accRoleStrings, roleStr)
-						}
+		if realmAccess, ok := claims["realm_access"].(map[string]interface{}); ok {
+			if roles, ok := realmAccess["roles"].([]interface{}); ok {
+				for _, r := range roles {
+					if roleStr, ok := r.(string); ok {
+						roleMap[roleStr] = true
 					}
-					userInfo["account_roles"] = accRoleStrings
 				}
 			}
 		}
 
-		if iss, ok := claims["iss"].(string); ok {
-			userInfo["issuer"] = iss
+		if len(roleMap) == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: no roles assigned"})
+			c.Abort()
+			return
 		}
-		if aud, ok := claims["aud"]; ok {
-			userInfo["audience"] = aud
-		}
-		if exp, ok := claims["exp"].(float64); ok {
-			userInfo["expires_at"] = time.Unix(int64(exp), 0)
-		}
-		if iat, ok := claims["iat"].(float64); ok {
-			userInfo["issued_at"] = time.Unix(int64(iat), 0)
+
+		userInfo := map[string]interface{}{
+			"id":       claims["sub"],
+			"name":     claims["name"],
+			"email":    claims["email"],
+			"username": claims["preferred_username"],
+			"roles":    roleMap,
 		}
 
 		c.Set("userInfo", userInfo)
 
-		groupsIface, ok := userInfo["groups"].([]interface{})
-		if !ok {
-			log.Error().Msg("error: User groups missing or invalid")
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: missing groups"})
-			c.Abort()
-			return
-		}
+		// -------------------------
+		// /api/agents listing
+		// -------------------------
 
-		var groups []string
-		for _, g := range groupsIface {
-			if groupStr, ok := g.(string); ok {
-				cleanGroup := strings.TrimPrefix(groupStr, "/")
-				groups = append(groups, cleanGroup)
+		if url == "/api/agents" && method == http.MethodGet {
 
-			}
-		}
+			accessibleAgents := []string{}
 
-		log.Info().Msgf("Groups: %s", groups)
+			for role := range roleMap {
 
-		parts := strings.Split(strings.TrimPrefix(url, "/api/k8s/"), "/")
-		if len(parts) < 1 {
-			log.Error().Msg("error: Could not extract agent from URL")
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: invalid URL"})
-			c.Abort()
-			return
-		}
-		agent := parts[0]
+				if role == "superadmin" {
+					c.Set("visibleAgents", []string{"*"})
+					c.Next()
+					return
+				}
 
-		readGroup := fmt.Sprintf("%s-read", agent)
-		writeGroup := fmt.Sprintf("%s-write", agent)
+				if strings.HasSuffix(role, "-read") {
+					agent := strings.TrimSuffix(role, "-read")
+					accessibleAgents = append(accessibleAgents, agent)
+				}
 
-		hasGroup := func(target string) bool {
-			for _, g := range groups {
-				if g == target {
-					return true
+				if strings.HasSuffix(role, "-write") {
+					agent := strings.TrimSuffix(role, "-write")
+					accessibleAgents = append(accessibleAgents, agent)
 				}
 			}
-			return false
+
+			c.Set("visibleAgents", accessibleAgents)
+
+			c.Next()
+			return
 		}
 
-		if method == http.MethodGet {
-			if !hasGroup(readGroup) && !hasGroup(writeGroup) && !hasGroup("superadmin") {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: read permission required"})
-				log.Error().Msg("error: Access denied: read permission required")
-				c.Abort()
-				return
-			}
-		} else if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut || method == http.MethodDelete {
-			if !hasGroup(writeGroup) && !hasGroup("superadmin") {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: write or superadmin permission required"})
-				log.Error().Msg("error: Access denied: write or superadmin permission required")
-				c.Abort()
+		// -------------------------
+		// Superadmin-only routes
+		// -------------------------
+
+		superAdminPrefixes := []string{
+			"/api/aws",
+			"/api/terraform",
+			"/api/runner",
+		}
+
+		for _, prefix := range superAdminPrefixes {
+			if strings.HasPrefix(url, prefix) {
+
+				if !roleMap["superadmin"] {
+					c.JSON(http.StatusForbidden, gin.H{
+						"error": "Access denied: superadmin required",
+					})
+					c.Abort()
+					return
+				}
+
+				c.Next()
 				return
 			}
 		}
 
-		log.Info().
-			Str("user", fmt.Sprintf("%v", userInfo["username"])).
-			Str("email", fmt.Sprintf("%v", userInfo["email"])).
-			Str("id", fmt.Sprintf("%v", userInfo["id"])).
-			Str("grps", fmt.Sprintf("%v", userInfo["groups"])).
-			Str("user_roles", fmt.Sprintf("%v", userInfo["user_roles"])).
-			Str("acc_roles", fmt.Sprintf("%v", userInfo["account_roles"])).
-			Msg("User authenticated and authorized")
+		// -------------------------
+		// Extract agent (k8s or agents routes)
+		// -------------------------
 
-		c.Next()
+		var agent string
+
+		if strings.HasPrefix(url, "/api/k8s/") {
+			parts := strings.Split(strings.TrimPrefix(url, "/api/k8s/"), "/")
+			if len(parts) > 0 {
+				agent = parts[0]
+			}
+		}
+
+		if strings.HasPrefix(url, "/api/agents/") {
+			parts := strings.Split(strings.TrimPrefix(url, "/api/agents/"), "/")
+			if len(parts) > 0 {
+				agent = parts[0]
+			}
+		}
+
+		// -------------------------
+		// RBAC for agent routes
+		// -------------------------
+
+		if agent != "" {
+
+			readRole := agent + "-read"
+			writeRole := agent + "-write"
+
+			if method == http.MethodGet {
+
+				if !(roleMap[readRole] || roleMap[writeRole] || roleMap["superadmin"]) {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Read permission required"})
+					c.Abort()
+					return
+				}
+
+			} else if method == http.MethodPost ||
+				method == http.MethodPut ||
+				method == http.MethodPatch ||
+				method == http.MethodDelete {
+
+				if !(roleMap[writeRole] || roleMap["superadmin"]) {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Write permission required"})
+					c.Abort()
+					return
+				}
+			}
+
+			c.Next()
+			return
+		}
+
+		// -------------------------
+		// Default deny
+		// -------------------------
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Access denied: route not allowed",
+		})
+		c.Abort()
 	}
 }
 

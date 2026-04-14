@@ -584,9 +584,8 @@ func CreateAgentHandler(c *gin.Context) {
 }
 
 func GetAgentsHandler(c *gin.Context) {
-	w := c.Writer
 
-	// Get user info from context (set by AuthMiddleware)
+	// Get user info (for logging)
 	userInfoInterface, exists := c.Get("userInfo")
 	if !exists {
 		log.Error().Msg("User info not found in context")
@@ -601,70 +600,46 @@ func GetAgentsHandler(c *gin.Context) {
 		return
 	}
 
-	// Extract groups from user info
-	groupsInterface, ok := userInfo["groups"].([]interface{})
-	if !ok {
-		log.Error().Msg("User groups missing or invalid")
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: missing groups"})
+	// Get visible agents from middleware
+	visibleAgentsRaw, exists := c.Get("visibleAgents")
+	if !exists {
+		log.Error().Msg("visibleAgents not found in context")
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	// Convert groups to string slice and clean them
-	var userGroups []string
-	for _, g := range groupsInterface {
-		if groupStr, ok := g.(string); ok {
-			cleanGroup := strings.TrimPrefix(groupStr, "/")
-			userGroups = append(userGroups, cleanGroup)
-		}
-	}
+	visibleAgents := visibleAgentsRaw.([]string)
 
-	// Check if user is superadmin
 	isSuperAdmin := false
-	for _, group := range userGroups {
-		if group == "superadmin" {
-			isSuperAdmin = true
-			break
+	allowedAgents := map[string]bool{}
+
+	if len(visibleAgents) == 1 && visibleAgents[0] == "*" {
+		isSuperAdmin = true
+	} else {
+		for _, a := range visibleAgents {
+			allowedAgents[a] = true
 		}
 	}
 
 	agentsMutex.RLock()
 	defer agentsMutex.RUnlock()
 
-	w.Header().Set("Content-Type", "application/json")
 	returnAgents := make([]Agent, 0)
 
 	for name, agent := range AgentConnections {
-		// If user is superadmin, include all agents
-		if isSuperAdmin {
-			log.Debug().Msgf("Superadmin access: including agent %s", name)
-			agent.agent.Name = name
-			agent.agent.Metadata.Name = name
-			agent.agent.Metadata.Namespace = "default"
-			returnAgents = append(returnAgents, agent.agent)
+
+		if !isSuperAdmin && !allowedAgents[name] {
+			log.Debug().Msgf("User does not have access to agent %s", name)
 			continue
 		}
 
-		// Check if user has read or write access to this specific agent
-		readGroup := fmt.Sprintf("%s-read", name)
-		writeGroup := fmt.Sprintf("%s-write", name)
+		log.Debug().Msgf("User has access to agent %s", name)
 
-		hasAccess := false
-		for _, group := range userGroups {
-			if group == readGroup || group == writeGroup {
-				hasAccess = true
-				break
-			}
-		}
+		agent.agent.Name = name
+		agent.agent.Metadata.Name = name
+		agent.agent.Metadata.Namespace = "default"
 
-		if hasAccess {
-			log.Debug().Msgf("User has access to agent %s", name)
-			agent.agent.Name = name
-			agent.agent.Metadata.Name = name
-			agent.agent.Metadata.Namespace = "default"
-			returnAgents = append(returnAgents, agent.agent)
-		} else {
-			log.Debug().Msgf("User does not have access to agent %s", name)
-		}
+		returnAgents = append(returnAgents, agent.agent)
 	}
 
 	log.Info().
@@ -672,9 +647,9 @@ func GetAgentsHandler(c *gin.Context) {
 		Int("total_agents", len(AgentConnections)).
 		Int("accessible_agents", len(returnAgents)).
 		Bool("is_superadmin", isSuperAdmin).
-		Msg("Filtered agents based on user permissions")
+		Msg("Filtered agents based on RBAC permissions")
 
-	json.NewEncoder(w).Encode(returnAgents)
+	c.JSON(http.StatusOK, returnAgents)
 }
 
 func deleteAgent(agentName string) error {
@@ -755,13 +730,49 @@ func deleteAgent(agentName string) error {
 }
 
 func DeleteAgentHandler(c *gin.Context) {
-	agentName := c.Param("agent")
-	err := deleteAgent(agentName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	userInfoInterface, exists := c.Get("userInfo")
+	if !exists {
+		log.Error().Msg("User info missing")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Agent deleted"})
+
+	userInfo := userInfoInterface.(map[string]interface{})
+	roles := userInfo["roles"].(map[string]bool)
+
+	if !roles["superadmin"] {
+		log.Warn().
+			Str("user", fmt.Sprintf("%v", userInfo["username"])).
+			Msg("Unauthorized attempt to delete agent")
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Only superadmin can delete agents",
+		})
+		return
+	}
+
+	agentName := c.Param("agent")
+
+	agentsMutex.Lock()
+	defer agentsMutex.Unlock()
+
+	if _, exists := AgentConnections[agentName]; !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		return
+	}
+
+	delete(AgentConnections, agentName)
+
+	log.Warn().
+		Str("user", fmt.Sprintf("%v", userInfo["username"])).
+		Str("agent", agentName).
+		Msg("Agent deleted")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Agent deleted",
+		"agent":   agentName,
+	})
 }
 
 func HandleK8sProxyRequest(c *gin.Context) {
@@ -1080,7 +1091,7 @@ func SetupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	// r.Use(AuthMiddleware())
+	r.Use(keycloak.AuthMiddleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
