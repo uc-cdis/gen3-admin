@@ -5,13 +5,13 @@
 replicaCount: 1
 
 image:
-  pullPolicy: Never  # Use local images only
+  pullPolicy: IfNotPresent  # Pull from registry if not available locally
   api:
     repository: csoc-api
-    tag: "arm64-local"
+    tag: "feat_bootstrap-onboarding-impl"
   frontend:
     repository: csoc-frontend
-    tag: "arm64-local"
+    tag: "feat_bootstrap-onboarding-impl"
 
 imagePullSecrets: []
 nameOverride: ""

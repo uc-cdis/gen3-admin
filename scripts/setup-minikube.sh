@@ -35,23 +35,35 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+ensure_brew() {
+    if ! command -v brew &> /dev/null; then
+        log_error "Homebrew not found. Please install it first: https://brew.sh"
+        exit 1
+    fi
+}
+
+install_tool() {
+    local tool="$1"
+    local name="$2"
+
+    if ! command -v "$tool" &> /dev/null; then
+        log_warning "$name not found. Installing via Homebrew..."
+        brew install "$tool" || {
+            log_error "Failed to install $name. Please install manually and re-run."
+            exit 1
+        }
+        log_success "$name installed successfully"
+    fi
+}
+
 check_prerequisites() {
     log_info "Checking prerequisites..."
 
-    if ! command -v minikube &> /dev/null; then
-        log_error "minikube not found. Please install minikube: https://minikube.sigs.k8s.io/docs/start/"
-        exit 1
-    fi
+    ensure_brew
 
-    if ! command -v kubectl &> /dev/null; then
-        log_error "kubectl not found. Please install kubectl: https://kubernetes.io/docs/tasks/tools/"
-        exit 1
-    fi
-
-    if ! command -v helm &> /dev/null; then
-        log_error "helm not found. Please install helm: https://helm.sh/docs/intro/install/"
-        exit 1
-    fi
+    install_tool minikube "Minikube"
+    install_tool kubectl "kubectl"
+    install_tool helm "Helm"
 
     log_success "All prerequisites are installed"
 }
