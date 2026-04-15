@@ -80,7 +80,7 @@ func ApplyYAMLToCluster(yamlContent string, namespace string) error {
 		gvr := gvk.GroupVersion().WithResource(resourceForKind(kind))
 		var resInterface dynamic.ResourceInterface
 		if isNamespaced(kind) {
-			resInterface = dynamicClient.Resource(gvr).Namespace(namespace)
+			resInterface = dynamicClient.Resource(gvr).Namespace(obj.GetNamespace())
 		} else {
 			resInterface = dynamicClient.Resource(gvr)
 		}
@@ -88,6 +88,11 @@ func ApplyYAMLToCluster(yamlContent string, namespace string) error {
 		_, err = resInterface.Create(context.TODO(), &obj, metav1.CreateOptions{})
 		if errors.IsAlreadyExists(err) {
 			log.Info().Msgf("%s %s already exists, updating", kind, name)
+			existing, getErr := resInterface.Get(context.TODO(), name, metav1.GetOptions{})
+			if getErr != nil {
+				return fmt.Errorf("failed to get existing %s %s for update: %w", kind, name, getErr)
+			}
+			obj.SetResourceVersion(existing.GetResourceVersion())
 			_, err = resInterface.Update(context.TODO(), &obj, metav1.UpdateOptions{})
 		}
 		if err != nil {

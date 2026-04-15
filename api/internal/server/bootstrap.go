@@ -71,7 +71,8 @@ func InstallAppsHandler(c *gin.Context) {
 
 	var req struct {
 		StorageType        string `json:"storageType"` // "pvc" or "s3"
-		Skip               bool   `json:"skip"`        // skip LGTM deployment entirely
+		Skip               bool   `json:"skip"`        // skip monitoring deployment entirely
+		Mode               string `json:"mode"`        // "full" (lgtm-distributed) or "lightweight" (loki SingleBinary)
 		S3Bucket           string `json:"s3Bucket,omitempty"`
 		S3Region           string `json:"s3Region,omitempty"`
 		AWSAccessKeyID     string `json:"awsAccessKeyID,omitempty"`
@@ -90,6 +91,16 @@ func InstallAppsHandler(c *gin.Context) {
 			"skipped":         true,
 			"targetNamespace": "monitoring",
 		})
+		return
+	}
+
+	// Default mode to full if not specified
+	if req.Mode == "" {
+		req.Mode = "full"
+	}
+
+	if req.Mode != "full" && req.Mode != "lightweight" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be 'full' or 'lightweight'"})
 		return
 	}
 
@@ -123,8 +134,16 @@ func InstallAppsHandler(c *gin.Context) {
 		log.Info().Str("bucket", req.S3Bucket).Msg("S3 credentials validated")
 	}
 
-	// Build ArgoCD Application CR YAML for monitoring stack
-	appCR := buildMonitoringAppCR(req.StorageType, req.S3Bucket, req.S3Region)
+	// Build ArgoCD Application CR YAML based on mode
+	var appCR string
+	var lokiEndpoint string
+	if req.Mode == "lightweight" {
+		appCR = buildLightweightMonitoringAppCR(req.StorageType, req.S3Bucket, req.S3Region)
+		lokiEndpoint = "http://monitoring-loki-gateway.monitoring:8080/loki/api/v1/push"
+	} else {
+		appCR = buildMonitoringAppCR(req.StorageType, req.S3Bucket, req.S3Region)
+		lokiEndpoint = "http://monitoring-loki-distributor.monitoring:3100/loki/api/v1/push"
+	}
 
 	// Apply the Application CR into argocd namespace
 	if err := k8s.ApplyYAMLToCluster(appCR, "argocd"); err != nil {
@@ -133,12 +152,14 @@ func InstallAppsHandler(c *gin.Context) {
 		return
 	}
 
-	log.Info().Msg("ArgoCD Application 'monitoring' created successfully")
+	log.Info().Str("mode", req.Mode).Msg("ArgoCD Application 'monitoring' created successfully")
 	c.JSON(http.StatusOK, gin.H{
 		"message":         "Monitoring stack deployment initiated",
 		"appName":         "monitoring",
+		"mode":            req.Mode,
 		"storageType":     req.StorageType,
 		"targetNamespace": "monitoring",
+		"lokiEndpoint":    lokiEndpoint,
 	})
 }
 
@@ -180,6 +201,118 @@ spec:
     syncOptions:
       - CreateNamespace=true
 `, helmValues)
+}
+
+// buildLightweightMonitoringAppCR constructs an ArgoCD Application CR YAML for
+// the standalone loki chart in SingleBinary mode + Grafana (~4-5 pods total).
+// This is ideal for workshops, Minikube, and low-resource clusters.
+func buildLightweightMonitoringAppCR(storageType, s3Bucket, s3Region string) string {
+	storageValues := ""
+	if storageType == "s3" && s3Bucket != "" {
+		storageValues = fmt.Sprintf(`
+        loki:
+          storage:
+            type: s3
+            s3:
+              bucketName: %s
+              endpoint: s3.%%s.amazonaws.com
+              region: %%s
+              insecure: true
+            bucketNames:
+              chunks: %%s-chunks
+              ruler: %%s-ruler
+              admin: %%s-admin
+        minio:
+          enabled: true`, s3Bucket, s3Region, s3Region, s3Bucket, s3Bucket, s3Bucket)
+	} else {
+		storageValues = `
+        loki:
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: loki_index_
+                  period: 24h`
+	}
+
+	return fmt.Sprintf(`---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: monitoring
+    server: https://kubernetes.default.svc
+  source:
+    chart: loki
+    repoURL: https://grafana.github.io/helm-charts
+    targetRevision: "*"
+    helm:
+      values: |
+        deploymentMode: SingleBinary
+
+        singleBinary:
+          replicas: 1
+
+        # Zero out all non-SingleBinary deployment mode targets
+        backend:
+          replicas: 0
+        read:
+          replicas: 0
+        write:
+          replicas: 0
+        ingester:
+          replicas: 0
+        querier:
+          replicas: 0
+        queryFrontend:
+          replicas: 0
+        queryScheduler:
+          replicas: 0
+        distributor:
+          replicas: 0
+        compactor:
+          replicas: 0
+        indexGateway:
+          replicas: 0
+        bloomCompactor:
+          replicas: 0
+        bloomGateway:
+          replicas: 0
+
+        # Disable heavy caches for lightweight mode
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
+
+        loki:
+          commonConfig:
+            replication_factor: 1
+          ingester:
+            chunk_encoding: snappy%s
+
+        gateway:
+          enabled: true
+          replicas: 1
+
+        grafana:
+          enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+`, storageValues)
 }
 
 // BootstrapStatusHandler returns health status of all bootstrapped components
@@ -357,10 +490,11 @@ func checkAppsStatus() map[string]interface{} {
 		return map[string]interface{}{"ready": false, "message": "No apps deployed yet"}
 	}
 
-	var healthStatus, syncStatus, syncDetails string
+	var healthStatus, syncStatus, syncDetails, healthMessage string
 	if status, ok := app.Object["status"].(map[string]interface{}); ok {
 		if health, ok := status["health"].(map[string]interface{}); ok {
 			healthStatus, _ = health["status"].(string)
+			healthMessage, _ = health["message"].(string)
 		}
 		if sync, ok := status["sync"].(map[string]interface{}); ok {
 			syncStatus, _ = sync["status"].(string)
@@ -422,14 +556,15 @@ func checkAppsStatus() map[string]interface{} {
 	isReady := (appIsHealthy || syncOk) && allPodsReady && totalCount > 0
 
 	return map[string]interface{}{
-		"ready":       isReady,
-		"health":      healthStatus,
-		"syncStatus":  syncStatus,
-		"totalReady":  totalReady,
-		"totalCount":  totalCount,
-		"message":     fmt.Sprintf("Health: %s | Sync: %s | Pods: %d/%d", healthStatus, syncStatus, totalReady, totalCount),
-		"syncDetails": syncDetails,
-		"components":  componentStatus,
+		"ready":         isReady,
+		"health":        healthStatus,
+		"syncStatus":    syncStatus,
+		"totalReady":    totalReady,
+		"totalCount":    totalCount,
+		"message":       fmt.Sprintf("Health: %s | Sync: %s | Pods: %d/%d", healthStatus, syncStatus, totalReady, totalCount),
+		"healthMessage": healthMessage,
+		"syncDetails":   syncDetails,
+		"components":    componentStatus,
 	}
 }
 
@@ -547,7 +682,7 @@ func InstallAlloyHandler(c *gin.Context) {
 		req.Project = "csoc"
 	}
 
-	// Build the YAML documents: AppCR + ConfigMap + PriorityClass
+	// Build the YAML documents: AppCR + ConfigMap
 	yamlDocs := buildAlloyResources(req.LokiAddress, req.Cluster, req.Project)
 
 	if err := k8s.ApplyYAMLToCluster(yamlDocs, "argocd"); err != nil {
@@ -566,7 +701,7 @@ func InstallAlloyHandler(c *gin.Context) {
 	})
 }
 
-// buildAlloyResources constructs the YAML for ArgoCD Application CR + ConfigMap + PriorityClass
+// buildAlloyResources constructs the YAML for ArgoCD Application CR + ConfigMap
 func buildAlloyResources(lokiAddress string, cluster string, project string) string {
 	alloyConfig := buildAlloyConfigMapData(lokiAddress, cluster, project)
 
@@ -616,14 +751,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
----
-apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: alloy-high-priority
-value: 1000000
-globalDefault: false
-description: "Priority class for alloy service"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -1092,7 +1219,7 @@ func checkAlloyStatus() map[string]interface{} {
 	totalCount := int64(0)
 
 	deploys, depErr := depResource.List(context.TODO(), metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=alloy,release=alloy",
+		LabelSelector: "app.kubernetes.io/name=alloy",
 	})
 	if depErr == nil && len(deploys.Items) > 0 {
 		for _, dep := range deploys.Items {
@@ -1145,6 +1272,8 @@ func checkAlloyStatus() map[string]interface{} {
 		"totalReady": totalReady,
 		"totalCount": totalCount,
 		"lokiURL":    lokiURL,
+		"configMap":  configMapExists,
+		"appCR":      appExists,
 		"message":    fmt.Sprintf("Health: %s | Sync: %s | Pods: %d/%d", healthStatus, syncStatus, totalReady, totalCount),
 		"components": componentStatus,
 	}
