@@ -49,29 +49,23 @@ func InstallArgoCDHandler(c *gin.Context) {
 	}
 	log.Info().Msg("Ensured argocd namespace exists")
 
-	// 2. Apply CRDs from remote URL
-	crdURL := "https://raw.githubusercontent.com/argoproj/argo-cd/manifests/crds?ref=stable"
-	crdOutput, crdErr := applyRemoteYAML(crdURL, "argocd")
-	if crdErr != nil {
-		log.Warn().Err(crdErr).Str("output", crdOutput).Msg("CRD apply had errors (some may already exist)")
-	} else {
-		log.Info().Str("output", crdOutput).Msg("ArgoCD CRDs applied successfully")
-	}
-
-	// 3. Apply ArgoCD install manifest
+	// 2. Apply ArgoCD install manifest (includes CRDs + all core components)
 	installURL := "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
-	installOutput, installErr := applyRemoteYAML(installURL, "argocd")
+	_, installErr := applyRemoteYAML(installURL, "argocd")
 	if installErr != nil {
-		log.Warn().Err(installErr).Str("output", installOutput).Msg("ArgoCD install had some errors (resources may still be applied)")
-	} else {
-		log.Info().Str("output", installOutput).Msg("ArgoCD installed successfully")
+		log.Warn().Err(installErr).Msg("ArgoCD install had some errors (resources may still be applied)")
+		c.JSON(http.StatusAccepted, gin.H{
+			"message":   "ArgoCD installation had errors",
+			"namespace": "argocd",
+			"error":    installErr.Error(),
+		})
+		return
 	}
+	log.Info().Msg("ArgoCD installed successfully")
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "ArgoCD installation initiated",
 		"namespace": "argocd",
-		"crdOutput": strings.TrimSpace(crdOutput),
-		"output":    strings.TrimSpace(installOutput),
 	})
 }
 

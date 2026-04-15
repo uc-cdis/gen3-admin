@@ -47,6 +47,9 @@ func ApplyYAMLToCluster(yamlContent string, namespace string) error {
 
 	// Split YAML documents and apply each one
 	documents := strings.Split(yamlContent, "---")
+	var applyErrors []string
+	applied := 0
+
 	for i, doc := range documents {
 		doc = strings.TrimSpace(doc)
 		if doc == "" {
@@ -90,24 +93,33 @@ func ApplyYAMLToCluster(yamlContent string, namespace string) error {
 			log.Info().Msgf("%s %s already exists, updating", kind, name)
 			existing, getErr := resInterface.Get(context.TODO(), name, metav1.GetOptions{})
 			if getErr != nil {
-				return fmt.Errorf("failed to get existing %s %s for update: %w", kind, name, getErr)
+				applyErrors = append(applyErrors, fmt.Sprintf("%s %s: get failed: %v", kind, name, getErr))
+				continue
 			}
 			obj.SetResourceVersion(existing.GetResourceVersion())
 			_, err = resInterface.Update(context.TODO(), &obj, metav1.UpdateOptions{})
 		}
 		if err != nil {
-			return fmt.Errorf("failed to apply %s %s: %w", kind, name, err)
+			log.Warn().Err(err).Msgf("Failed to apply %s/%s (continuing)", kind, name)
+			applyErrors = append(applyErrors, fmt.Sprintf("%s %s: %v", kind, name, err))
+			continue
 		}
+		applied++
 	}
 
+	log.Info().Int("applied", applied).Int("errors", len(applyErrors)).Msg("YAML apply complete")
+	if len(applyErrors) > 0 {
+		return fmt.Errorf("%d resource(s) applied successfully, %d error(s): %s", applied, len(applyErrors), strings.Join(applyErrors, "; "))
+	}
 	return nil
 }
 
 func isNamespaced(kind string) bool {
 	switch kind {
-	case "Secret", "ServiceAccount", "Deployment", "ConfigMap", "Pod":
-		return true
-	case "ClusterRoleBinding", "ClusterRole", "Namespace":
+	// Cluster-scoped
+	case "Namespace", "ClusterRole", "ClusterRoleBinding",
+		"CustomResourceDefinition", "PersistentVolume",
+		"StorageClass", "PriorityClass":
 		return false
 	default:
 		return true
@@ -116,16 +128,48 @@ func isNamespaced(kind string) bool {
 
 func resourceForKind(kind string) string {
 	switch kind {
+	case "Namespace":
+		return "namespaces"
+	case "ConfigMap":
+		return "configmaps"
 	case "Secret":
 		return "secrets"
 	case "ServiceAccount":
 		return "serviceaccounts"
 	case "Deployment":
 		return "deployments"
-	case "ClusterRoleBinding":
-		return "clusterrolebindings"
+	case "StatefulSet":
+		return "statefulsets"
+	case "DaemonSet":
+		return "daemonsets"
+	case "ReplicaSet":
+		return "replicasets"
+	case "Pod":
+		return "pods"
+	case "Service":
+		return "services"
+	case "Ingress":
+		return "ingresses"
+	case "Role":
+		return "roles"
+	case "RoleBinding":
+		return "rolebindings"
 	case "ClusterRole":
 		return "clusterroles"
+	case "ClusterRoleBinding":
+		return "clusterrolebindings"
+	case "CustomResourceDefinition":
+		return "customresourcedefinitions"
+	case "PersistentVolume":
+		return "persistentvolumes"
+	case "PersistentVolumeClaim":
+		return "persistentvolumeclaims"
+	case "StorageClass":
+		return "storageclasses"
+	case "NetworkPolicy":
+		return "networkpolicies"
+	case "PriorityClass":
+		return "priorityclasses"
 	default:
 		return strings.ToLower(kind) + "s"
 	}

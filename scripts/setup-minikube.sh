@@ -19,6 +19,7 @@ NAMESPACE="${NAMESPACE:-csoc}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
 VALUES_FILE="./helm/csoc/values-test.yaml"
 HOSTNAME="csoc.local"
+GEN3_HOSTNAME="gen3.local"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="keycloak"
@@ -113,6 +114,12 @@ setup_hosts() {
 
   echo "$ip  $HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
   ok "Added $HOSTNAME -> $ip to /etc/hosts"
+
+  # Also add gen3.local for workshop deployments
+  if ! grep -qw "$GEN3_HOSTNAME" /etc/hosts 2>/dev/null; then
+    echo "$ip  $GEN3_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+    ok "Added $GEN3_HOSTNAME -> $ip to /etc/hosts"
+  fi
 }
 
 # ── Keycloak via Operator (opt-in) ──────────────────────────────────────────
@@ -354,6 +361,15 @@ teardown() {
     ok "Removed $HOSTNAME from /etc/hosts"
   fi
 
+  if grep -qw "$GEN3_HOSTNAME" /etc/hosts 2>/dev/null; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sudo sed -i '' "/[[:space:]]$GEN3_HOSTNAME$/d" /etc/hosts
+    else
+      sudo sed -i "/[[:space:]]$GEN3_HOSTNAME$/d" /etc/hosts
+    fi
+    ok "Removed $GEN3_HOSTNAME from /etc/hosts"
+  fi
+
   # Stop minikube
   if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
     log "Stopping Minikube..."
@@ -405,6 +421,7 @@ show_status() {
   echo "  Namespace: $NAMESPACE"
   echo "  Release:   $RELEASE_NAME"
   echo "  Hostname:  http://$HOSTNAME"
+  echo "  Gen3:      http://$GEN3_HOSTNAME"
   echo ""
 
   if kubectl get svc "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
@@ -422,6 +439,7 @@ show_status() {
   echo "    Frontend:  http://localhost:3000"
   echo "    API:       http://localhost:8002/ping"
   echo "    Ingress:   http://$HOSTNAME"
+  echo "    Gen3:      http://$GEN3_HOSTNAME"
   echo ""
 }
 
