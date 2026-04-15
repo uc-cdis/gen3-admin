@@ -21,7 +21,7 @@ jobs:
 
   build-api:
     name: Build API Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.api"
       OVERRIDE_REPO_NAME: "csoc-api"
@@ -35,7 +35,7 @@ jobs:
 
   build-agent:
     name: Build Agent Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.agent"
       OVERRIDE_REPO_NAME: "csoc-agent"
