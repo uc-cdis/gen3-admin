@@ -52,6 +52,7 @@ const StepperForm = () => {
   const [releaseStatus, setReleaseStatus] = useState(null);
   const [namespaceStatus, setNamespaceStatus] = useState(null);
   const [deployComplete, setDeployComplete] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -406,6 +407,7 @@ const StepperForm = () => {
               clearInterval(interval);
               setDeployComplete(true);
               setDeploying(false);
+              fetchNamespaceStatus(); // Get final rollout status
               notifications.show({
                 title: 'Deployment Complete',
                 message: `${dest.releaseName} is deployed and running!`,
@@ -445,6 +447,19 @@ const StepperForm = () => {
     return () => clearInterval(interval);
   }, [accessToken, form.values.destination, deployComplete]);
 
+  // Fetch namespace deployment status (standalone, can be called anytime)
+  const fetchNamespaceStatus = useCallback(async () => {
+    const dest = form.values.destination;
+    const ns = dest.namespace || dest.releaseName;
+    if (!dest.cluster || !ns) return;
+    try {
+      const nsData = await callGoApi(`/agent/${dest.cluster}/namespace/${ns}/status`, 'GET', null, null, accessToken);
+      if (nsData) setNamespaceStatus(nsData);
+    } catch (err) {
+      console.error('Error fetching namespace status:', err);
+    }
+  }, [accessToken, form.values.destination]);
+
   const deploy = async () => {
     const dest = form.values.destination;
     setDeployError(null);
@@ -482,6 +497,38 @@ const StepperForm = () => {
     if (!accessToken) return;
     const load = async () => {
       try { await fetchClusters(); } catch (err) { console.error('Error fetching clusters:', err); }
+
+      // Check for edit mode params (from Projects page "Edit" button)
+      const urlParams = new URLSearchParams(window.location.search);
+      const clusterParam = urlParams.get('cluster');
+      const releaseParam = urlParams.get('release');
+      const namespaceParam = urlParams.get('namespace');
+
+      if (clusterParam && releaseParam && namespaceParam) {
+        setEditMode(true);
+        try {
+          const existingValues = await callGoApi(
+            `/agent/${clusterParam}/helm/values/${releaseParam}/${namespaceParam}`,
+            'GET', null, null, accessToken
+          );
+          if (existingValues) {
+            form.setFieldValue('destination.cluster', clusterParam);
+            form.setFieldValue('destination.releaseName', releaseParam);
+            form.setFieldValue('destination.namespace', namespaceParam);
+            // Deep merge existing values into form (preserve defaults for missing keys)
+            form.setFieldValue('values', { ...form.values.values, ...existingValues });
+          }
+        } catch (err) {
+          console.error('Error loading existing deployment values:', err);
+          notifications.show({
+            title: 'Load Warning',
+            message: 'Could not load existing values. Starting with defaults.',
+            color: 'orange',
+          });
+          // Fetch current rollout status for this deployment
+          setTimeout(() => fetchNamespaceStatus(), 500);
+        }
+      }
     };
     load();
   }, [accessToken]);
@@ -521,9 +568,11 @@ const StepperForm = () => {
         <ThemeIcon size={56} radius="xl" variant="light" color="teal">
           <IconRocket size={28} stroke={1.5} />
         </ThemeIcon>
-        <Title order={3} mt="sm">Ready to Deploy</Title>
+        <Title order={3} mt="sm">{editMode ? 'Update Deployment' : 'Ready to Deploy'}</Title>
         <Text c="dimmed" mt={4} maw={500} mx="auto">
-          Review your configuration below, then launch your Gen3 Data Commons.
+          {editMode
+            ? `Review and update your ${dest.releaseName} deployment.`
+            : 'Review your configuration below, then launch your Gen3 Data Commons.'}
         </Text>
       </div>
 
@@ -600,7 +649,7 @@ const StepperForm = () => {
               rightSection={<IconChevronRight size={18} />}
               disabled={!dest.cluster}
             >
-              Deploy Gen3
+              {editMode ? 'Update Deployment' : 'Deploy Gen3'}
             </Button>
           </Flex>
         </>
@@ -614,7 +663,7 @@ const StepperForm = () => {
               <ThemeIcon size={64} radius="xl" variant="light" color="blue">
                 <Loader size={32} color="blue" />
               </ThemeIcon>
-              <Title order={4} ta="center">Deploying Gen3</Title>
+              <Title order={4} ta="center">{editMode ? 'Updating Deployment' : 'Deploying Gen3'}</Title>
               <Text c="dimmed" ta="center" size="sm">
                 Sending configuration to <b>{dest.cluster}</b> — installing <b>{dest.releaseName}</b> into namespace <b>{ns}</b>...
               </Text>
@@ -664,6 +713,64 @@ const StepperForm = () => {
             </Paper>
           )}
 
+          {/* Namespace deployment status (per-deployment rollout tracking) — always visible during deploy */}
+          <Paper withBorder p="md" radius="lg">
+            <Group justify="space-between" mb="sm">
+              <Group gap="sm">
+                <ThemeIcon size="sm" radius="md" variant="light" color={
+                  namespaceStatus?.ready ? 'green' : 'blue'
+                }>
+                  {namespaceStatus
+                    ? (namespaceStatus.ready
+                      ? <IconCheck size={14} />
+                      : <IconLoader2 size={14} />)
+                    : <IconLoader2 size={14} />}
+                </ThemeIcon>
+                <Text size="sm" fw={600}>Deployments</Text>
+              </Group>
+              {namespaceStatus?.deployments ? (
+                <Group gap="xs">
+                  <Badge size="sm" variant="filled" color={namespaceStatus.ready ? 'green' : 'yellow'} radius="sm">
+                    {namespaceStatus.totalReady}/{namespaceStatus.totalCount} ready
+                  </Badge>
+                </Group>
+              ) : (
+                <Loader size="xs" type="dots" />
+              )}
+            </Group>
+
+            {namespaceStatus?.deployments?.length > 0 ? (
+              <SimpleGrid cols={{ base: 1, xs: 2, sm: 3, lg: 4 }} spacing="xs">
+                {namespaceStatus.deployments.map((dep) => (
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                    <Group gap="xs" justify="space-between">
+                      <Group gap="xs">
+                        <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
+                          {dep.Ready
+                            ? <IconCheck size={10} />
+                            : <IconLoader2 size={10} />}
+                        </ThemeIcon>
+                        <Text size="xs" fw={500} lineClamp={1}>{dep.name}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed">{dep.ReadyReplicas}/{dep.TotalReplicas}</Text>
+                    </Group>
+                  </Paper>
+                ))}
+              </SimpleGrid>
+            ) : (
+              <Stack align="center" py="xl" gap="xs">
+                <Text size="sm" c="dimmed">
+                  {namespaceStatus === null
+                    ? 'Scanning namespace for deployments...'
+                    : namespaceStatus.deployments.length === 0
+                      ? 'No deployments found yet — waiting for Helm to create resources...'
+                      : 'Loading...'}
+                </Text>
+                <Loader size="sm" type="dots" />
+              </Stack>
+            )}
+          </Paper>
+
           {/* Progress timeline */}
           <Stack gap="xs">
             <Group gap="sm">
@@ -691,11 +798,15 @@ const StepperForm = () => {
               </Text>
             </Group>
             <Group gap="sm">
-              <ThemeIcon size="sm" radius="xl" variant={deployComplete ? 'filled' : 'outline'} color={deployComplete ? 'green' : 'gray'}>
-                {deployComplete ? <IconCheck size={12} /> : <IconPlayerPlay size={12} />}
+              <ThemeIcon size="sm" radius="xl" variant={namespaceStatus?.ready ? 'filled' : 'outline'} color={namespaceStatus?.ready ? 'green' : 'gray'}>
+                {namespaceStatus?.ready
+                  ? <IconCheck size={12} />
+                  : <IconPlayerPlay size={12} />}
               </ThemeIcon>
-              <Text size="sm" c={deployComplete ? undefined : 'dimmed'}>
-                {deployComplete ? 'All services running' : 'Pods starting up...'}
+              <Text size="sm" c={namespaceStatus?.ready ? undefined : 'dimmed'}>
+                {namespaceStatus?.ready
+                  ? `${namespaceStatus.totalCount} deployments running`
+                  : 'Pods starting up...'}
               </Text>
             </Group>
           </Stack>
@@ -708,7 +819,7 @@ const StepperForm = () => {
           <ThemeIcon size={80} radius="xl" variant="filled" gradient={{ from: 'teal', to: 'green', deg: 135 }}>
             <IconCircleCheck size={42} stroke={1.5} />
           </ThemeIcon>
-          <Title order={3} ta="center">Gen3 Deployed Successfully!</Title>
+          <Title order={3} ta="center">{editMode ? 'Deployment Updated!' : 'Gen3 Deployed Successfully!'}</Title>
           <Text c="dimmed" ta="center" maw={480}>
             Your Gen3 Data Commons <Code size="sm">{dest.releaseName}</Code> is running in namespace <Code size="sm">{ns}</Code> on cluster <Code size="sm">{dest.cluster}</Code>.
           </Text>
@@ -736,6 +847,50 @@ const StepperForm = () => {
             </Paper>
           )}
 
+          {/* Final deployment status summary */}
+          {namespaceStatus?.deployments && namespaceStatus.deployments.length > 0 && (
+            <Paper withBorder p="md" radius="lg" w="100%" maw={560}>
+              <Group justify="space-between" mb="sm">
+                <Group gap="sm">
+                  <Text size="sm" fw={600}>Service Deployments</Text>
+                  <Badge
+                    size="sm"
+                    color={namespaceStatus.ready ? 'green' : 'yellow'}
+                    variant="filled"
+                    radius="sm"
+                  >
+                    {namespaceStatus.totalReady}/{namespaceStatus.totalCount} ready
+                  </Badge>
+                </Group>
+                <Button
+                  variant="light"
+                  size="xs"
+                  leftSection={<IconRefresh size={12} />}
+                  onClick={fetchNamespaceStatus}
+                >
+                  Refresh
+                </Button>
+              </Group>
+              <SimpleGrid cols={{ base: 2, xs: 3 }} spacing="sm">
+                {namespaceStatus.deployments.map((dep) => (
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                    <Group gap={6} justify="space-between">
+                      <Group gap={6}>
+                        <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
+                          {dep.Ready
+                            ? <IconCheck size={10} />
+                            : <IconLoader2 size={10} />}
+                        </ThemeIcon>
+                        <Text size="xs" fw={500} lineClamp={1}>{dep.name}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" fw={500}>{dep.ReadyReplicas}/{dep.TotalReplicas}</Text>
+                    </Group>
+                  </Paper>
+                ))}
+              </SimpleGrid>
+            </Paper>
+          )}
+
           <Group gap="md" mt="md">
             <Button
               onClick={() => {
@@ -748,7 +903,7 @@ const StepperForm = () => {
               variant="light"
               leftSection={<IconRefresh size={16} />}
             >
-              Deploy Another
+              {editMode ? 'Edit Another' : 'Deploy Another'}
             </Button>
           </Group>
         </Stack>
@@ -777,6 +932,9 @@ const StepperForm = () => {
               <IconRocket size={14} />
             </ThemeIcon>
             <Text size="sm" fw={600}>Gen3 Deployment Wizard</Text>
+            {editMode && (
+              <Badge size="sm" variant="filled" color="violet" radius="sm">Editing {form.values.destination.releaseName}</Badge>
+            )}
           </Group>
           <Group gap="md">
             <Text size="xs" c="dimmed">Step {active + 1} of {STEP_CONFIG.length}</Text>

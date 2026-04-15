@@ -16,10 +16,24 @@ import {
   ScrollArea,
   Switch,
   Progress,
+  Tabs,
+  ThemeIcon,
+  Box,
+  Anchor,
 } from "@mantine/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   IconRefresh,
+  IconContainer,
+  IconPlayerPlay,
+  IconClock,
+  IconAlertTriangle,
+  IconBug,
+  IconTerminal,
+  IconFileText,
+  IconCheck,
+  IconLoader,
+  IconCircleDot,
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
 import LogWindow from "@/components/Logs/LogWindowAgent";
@@ -114,6 +128,546 @@ function buildLabelSelector(matchLabels: Record<string, string>) {
   return Object.entries(matchLabels)
     .map(([k, v]) => `${k}=${v}`)
     .join(",");
+}
+
+/* ── Single Pod Tabbed Detail View ── */
+function SinglePodDetailTabs({
+  pod,
+  events,
+  eventsLoading,
+  namespace,
+  cluster,
+  onRefreshEvents,
+  onOpenLogs,
+  onOpenShell,
+  selectedContainer,
+}: {
+  pod: Pod;
+  events: PodEvent[];
+  eventsLoading: boolean;
+  namespace: string;
+  cluster: string;
+  onRefreshEvents: () => void;
+  onOpenLogs: (container: string) => void;
+  onOpenShell: (container: string) => void;
+  selectedContainer: string | null;
+}) {
+  const initContainers = pod.containers.filter((c) => c.isInit);
+  const runningContainers = pod.containers.filter((c) => !c.isInit && c.state === "Running" && c.ready);
+  const waitingContainers = pod.containers.filter((c) => !c.isInit && (c.state === "Waiting" || (c.state === "Running" && !c.ready)));
+  const terminatedContainers = pod.containers.filter((c) => !c.isInit && c.state === "Terminated");
+
+  const tabs = [
+    ...(initContainers.length > 0 ? [{ value: "init", label: "INIT", icon: IconLoader, count: initContainers.length }] : []),
+    { value: "ready", label: "Ready", icon: IconCheck, count: runningContainers.length },
+    ...(waitingContainers.length > 0 ? [{ value: "waiting", label: "Waiting", icon: IconClock, count: waitingContainers.length }] : []),
+    ...(terminatedContainers.length > 0 ? [{ value: "terminated", label: "Terminated", icon: IconAlertTriangle, count: terminatedContainers.length }] : []),
+    { value: "events", label: "Events", icon: IconAlertTriangle, count: events.length },
+    { value: "logs", label: "Logs", icon: IconFileText },
+    { value: "shell", label: "Shell", icon: IconTerminal },
+  ];
+
+  return (
+    <Tabs defaultValue={runningContainers.length > 0 ? "ready" : tabs[0]?.value ?? "ready"}>
+      {/* Pod header row */}
+      <Box py="xs" px="md">
+        <Group justify="space-between">
+          <Group gap="sm">
+            <Text fw={600} size="lg">{pod.name}</Text>
+            <Badge
+              color={
+                pod.phase === "Running" ? "green" :
+                pod.phase === "Pending" ? "yellow" : "red"
+              }
+              variant="filled"
+              size="lg"
+            >
+              {pod.phase.toUpperCase()}
+            </Badge>
+          </Group>
+          <Button
+            size="compact-xs"
+            variant="light"
+            leftSection={<IconRefresh size={12} />}
+            loading={eventsLoading}
+            onClick={onRefreshEvents}
+          >
+            Refresh Events
+          </Button>
+        </Group>
+      </Box>
+
+      <Tabs.List>
+        {tabs.map((tab) => (
+          <Tabs.Tab key={tab.value} value={tab.value} leftSection={<tab.icon size={14} />}>
+            {tab.label}
+            {"count" in tab ? (
+              <Badge size="xs" ml={4} variant="filled">{tab.count as number}</Badge>
+            ) : null}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+
+      {/* INIT containers */}
+      {initContainers.length > 0 && (
+        <Tabs.Panel value="init" p="md">
+          <Stack gap="sm">
+            {initContainers.map((c) => (
+              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+      )}
+
+      {/* Ready / Running containers */}
+      <Tabs.Panel value="ready" p="md">
+        <Stack gap="sm">
+          {runningContainers.length > 0 ? (
+            runningContainers.map((c) => (
+              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} onShell={() => onOpenShell(c.name)} />
+            ))
+          ) : (
+            <Text c="dimmed" ta="center" py="xl">No ready containers</Text>
+          )}
+        </Stack>
+      </Tabs.Panel>
+
+      {/* Waiting containers */}
+      {waitingContainers.length > 0 && (
+        <Tabs.Panel value="waiting" p="md">
+          <Stack gap="sm">
+            {waitingContainers.map((c) => (
+              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} highlight />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+      )}
+
+      {/* Terminated containers */}
+      {terminatedContainers.length > 0 && (
+        <Tabs.Panel value="terminated" p="md">
+          <Stack gap="sm">
+            {terminatedContainers.map((c) => (
+              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+      )}
+
+      {/* Events timeline */}
+      <Tabs.Panel value="events" p="md">
+        <Stack gap="sm">
+          {events.length > 0 ? (
+            events.slice(0, 20).map((e, i) => (
+              <EventTimelineItem key={i} event={e} index={i} />
+            ))
+          ) : eventsLoading ? (
+            <Text c="dimmed" ta="center" py="xl"><Loader size="sm" /> Loading events...</Text>
+          ) : (
+            <Text c="dimmed" ta="center" py="xl">No events recorded</Text>
+          )}
+        </Stack>
+      </Tabs.Panel>
+
+      {/* Logs — opens sub-modal or inline */}
+      <Tabs.Panel value="logs" p="md">
+        {selectedContainer ? (
+          <Box h="60vh">
+            <LogWindow namespace={namespace} pod={pod.name} cluster={cluster} containers={[selectedContainer]} />
+          </Box>
+        ) : (
+          <Stack align="center" gap="sm" py="xl">
+            <Text c="dimmed">Select a container to view logs</Text>
+            {[...initContainers, ...runningContainers, ...waitingContainers, ...terminatedContainers].map((c) => (
+              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenLogs(c.name)}>
+                {c.name}{c.isInit ? " (init)" : ""}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </Tabs.Panel>
+
+      {/* Shell — opens sub-modal or inline */}
+      <Tabs.Panel value="shell" p="md">
+        {selectedContainer ? (
+          <Box h="60vh">
+            <TerminalComponent namespace={namespace} pod={pod.name} container={selectedContainer} cluster={cluster} />
+          </Box>
+        ) : (
+          <Stack align="center" gap="sm" py="xl">
+            <Text c="dimmed">Select a container to open shell</Text>
+            {[...runningContainers, ...waitingContainers].filter((c) => !c.isInit).map((c) => (
+              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenShell(c.name)}>
+                {c.name}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </Tabs.Panel>
+    </Tabs>
+  );
+}
+
+/* ── Multi-Pod Detail View (pod selector + tabs for selected pod) ── */
+function MultiPodDetailView({
+  pods,
+  podEvents,
+  eventsLoading,
+  loading,
+  namespace,
+  cluster,
+  selectedPod,
+  onSelectPod,
+  onRefreshEvents,
+  onOpenLogs,
+  onOpenShell,
+  selectedContainer,
+}: {
+  pods: Pod[];
+  podEvents: Record<string, PodEvent[]>;
+  eventsLoading: boolean;
+  loading: boolean;
+  namespace: string;
+  cluster: string;
+  selectedPod: Pod | null;
+  onSelectPod: (p: Pod) => void;
+  onRefreshEvents: (name: string) => void;
+  onOpenLogs: (p: Pod, c: string) => void;
+  onOpenShell: (p: Pod, c: string) => void;
+  selectedContainer: string | null;
+}) {
+  const activePod = selectedPod || pods[0] || null;
+
+  if (!activePod) {
+    return <Text c="dimmed" ta="center" py="xl">No pods found</Text>;
+  }
+
+  return (
+    <Tabs defaultValue="overview">
+      {/* Pod selector bar */}
+      <Box py="xs" px="md" bg="dark.6">
+        <Group gap="sm">
+          {loading ? (
+            <Loader size="xs" />
+          ) : (
+            pods.map((p) => {
+              const isActive = activePod.name === p.name;
+              const hasIssues = p.phase !== "Running" ||
+                p.containers.some((c) => !c.ready && !c.isInit);
+              return (
+                <Anchor
+                  key={p.name}
+                  onClick={() => onSelectPod(p)}
+                  style={{
+                    fontWeight: isActive ? 700 : 400,
+                    opacity: isActive ? 1 : 0.6,
+                    borderBottom: isActive ? "2px solid #228be6" : "none",
+                    paddingBottom: 2,
+                  }}
+                  size={isActive ? "sm" : "xs"}
+                >
+                  <Group gap={4}>
+                    <ThemeIcon
+                      size="xs"
+                      color={
+                        p.phase === "Running" ? "teal" :
+                        p.phase === "Pending" ? "yellow" : "red"
+                      }
+                      variant="filled"
+                      radius="xl"
+                    >
+                      <IconCircleDot size={8} />
+                    </ThemeIcon>
+                    <span>{p.name}</span>
+                    {hasIssues && !isActive && (
+                      <Badge size="xs" color="red" variant="filled">!</Badge>
+                    )}
+                  </Group>
+                </Anchor>
+              );
+            })
+          )}
+        </Group>
+      </Box>
+
+      <Tabs.List>
+        <Tabs.Tab value="overview" leftSection={<IconContainer size={14} />}>Overview</Tabs.Tab>
+        <Tabs.Tab value="containers" leftSection={<IconPlayerPlay size={14} />}>
+          Containers
+          <Badge size="xs" ml={4}>{activePod.containers.length}</Badge>
+        </Tabs.Tab>
+        <Tabs.Tab value="events" leftSection={<IconAlertTriangle size={14} />}>
+          Events
+          <Badge size="xs" ml={4}>{(podEvents[activePod.name] || []).length}</Badge>
+        </Tabs.Tab>
+        <Tabs.Tab value="logs" leftSection={<IconFileText size={14} />}>Logs</Tabs.Tab>
+        <Tabs.Tab value="shell" leftSection={<IconTerminal size={14} />}>Shell</Tabs.Tab>
+      </Tabs.List>
+
+      {/* Overview panel */}
+      <Tabs.Panel value="overview" p="md">
+        <Card withBorder radius="sm">
+          <Group justify="space-between" mb="sm">
+            <Group gap="sm">
+              <Text fw={700} size="lg">{activePod.name}</Text>
+              <Badge
+                color={
+                  activePod.phase === "Running" ? "green" :
+                  activePod.phase === "Pending" ? "yellow" : "red"
+                }
+                variant="filled"
+                size="lg"
+              >
+                {activePod.phase.toUpperCase()}
+              </Badge>
+            </Group>
+            <Button
+              size="compact-xs"
+              variant="light"
+              leftSection={<IconRefresh size={12} />}
+              loading={eventsLoading}
+              onClick={() => onRefreshEvents(activePod.name)}
+            >
+              Refresh Events
+            </Button>
+          </Group>
+
+          <Divider my="sm" />
+
+          <Stack gap="xs">
+            {activePod.containers.map((c) => (
+              <ContainerRow
+                key={c.name}
+                container={c}
+                onLogs={() => onOpenLogs(activePod, c.name)}
+                onShell={!c.isInit ? () => onOpenShell(activePod, c.name) : undefined}
+                highlight={!c.ready}
+              />
+            ))}
+          </Stack>
+
+          <Divider my="sm" />
+
+          {/* Event summary */}
+          {(podEvents[activePod.name] || []).length > 0 && (
+            <>
+              <Text fw={600} size="sm" mb="xs">Recent Events</Text>
+              <Stack gap={4}>
+                {(podEvents[activePod.name] || []).slice(0, 5).map((e, i) => (
+                  <EventTimelineItem key={i} event={e} index={i} compact />
+                ))}
+              </Stack>
+            </>
+          )}
+        </Card>
+      </Tabs.Panel>
+
+      {/* Containers panel */}
+      <Tabs.Panel value="containers" p="md">
+        <Stack gap="sm">
+          {activePod.containers.map((c) => (
+            <ContainerRow
+              key={c.name}
+              container={c}
+              onLogs={() => onOpenLogs(activePod, c.name)}
+              onShell={!c.isInit ? () => onOpenShell(activePod, c.name) : undefined}
+              expanded
+            />
+          ))}
+        </Stack>
+      </Tabs.Panel>
+
+      {/* Events panel */}
+      <Tabs.Panel value="events" p="md">
+        <Stack gap="sm">
+          {(podEvents[activePod.name] || []).length > 0 ? (
+            (podEvents[activePod.name] || []).slice(0, 30).map((e, i) => (
+              <EventTimelineItem key={i} event={e} index={i} />
+            ))
+          ) : (
+            <Text c="dimmed" ta="center" py="xl">No events recorded for this pod</Text>
+          )}
+        </Stack>
+      </Tabs.Panel>
+
+      {/* Logs panel */}
+      <Tabs.Panel value="logs" p="md">
+        {selectedContainer ? (
+          <Box h="60vh">
+            <LogWindow namespace={namespace} pod={activePod.name} cluster={cluster} containers={[selectedContainer]} />
+          </Box>
+        ) : (
+          <Stack align="center" gap="sm" py="xl">
+            <Text c="dimmed">Select a container to view logs</Text>
+            {activePod.containers.filter((c) => !c.isInit).map((c) => (
+              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenLogs(activePod, c.name)}>
+                {c.name}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </Tabs.Panel>
+
+      {/* Shell panel */}
+      <Tabs.Panel value="shell" p="md">
+        {selectedContainer ? (
+          <Box h="60vh">
+            <TerminalComponent namespace={namespace} pod={activePod.name} container={selectedContainer} cluster={cluster} />
+          </Box>
+        ) : (
+          <Stack align="center" gap="sm" py="xl">
+            <Text c="dimmed">Select a container to open shell</Text>
+            {activePod.containers.filter((c) => !c.isInit && c.state === "Running").map((c) => (
+              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenShell(activePod, c.name)}>
+                {c.name}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </Tabs.Panel>
+    </Tabs>
+  );
+}
+
+/* ── Container Row Component ── */
+function ContainerRow({
+  container,
+  onLogs,
+  onShell,
+  highlight = false,
+  expanded = false,
+}: {
+  container: ContainerStatus;
+  onLogs: () => void;
+  onShell?: () => void;
+  highlight?: boolean;
+  expanded?: boolean;
+}) {
+  const stateColor =
+    container.state === "Running" ? "teal" :
+    container.state === "Waiting" ? "blue" :
+    container.state === "Terminated" ? "orange" : "gray";
+
+  return (
+    <Card
+      withBorder
+      radius="sm"
+      p="xs"
+      bg={highlight ? "red.0" : undefined}
+    >
+      <Group justify="space-between" align="center">
+        <Group gap="xs">
+          {container.isInit && (
+            <Badge size="xs" color="gray" variant="filled">INIT</Badge>
+          )}
+          <ThemeIcon size="sm" color={stateColor} variant="light" radius="xl">
+            {container.ready ? <IconCheck size={10} /> : <IconBug size={10} />}
+          </ThemeIcon>
+          <Text size="sm" fw={550}>{container.name}</Text>
+          <Badge
+            size="xs"
+            color={stateColor}
+            variant="light"
+          >
+            {container.state.toUpperCase()}
+          </Badge>
+          {container.reason && (
+            <Tooltip label={container.reason} withArrow>
+              <Text size="xs" c="red" td="underline">{container.reason}</Text>
+            </Tooltip>
+          )}
+          {container.restartCount > 0 && (
+            <Badge size="xs" color="orange" variant="outline">
+              {container.restartCount} restart{container.restartCount > 1 ? "s" : ""}
+            </Badge>
+          )}
+        </Group>
+
+        <Group gap={4}>
+          <Button size="compact-xs" variant="subtle" onClick={onLogs}>
+            Logs
+          </Button>
+          {onShell && (
+            <Button size="compact-xs" variant="subtle" onClick={onShell}>
+              Shell
+            </Button>
+          )}
+        </Group>
+      </Group>
+    </Card>
+  );
+}
+
+/* ── Event Timeline Item ── */
+function EventTimelineItem({ event, index, compact = false }: { event: PodEvent; index: number; compact?: boolean }) {
+  const isWarning = event.type === "Warning";
+  const isNormal = event.type === "Normal";
+
+  // Classify reason for visual treatment
+  const isPulling = event.reason === "Pulling" || event.reason === "Pulled";
+  const isFailed = event.reason === "Failed" || event.reason === "FailedScheduling" || event.reason === "FailedMount";
+  const isScheduled = event.reason === "Scheduled";
+  const isStarted = event.reason === "Started";
+  const isKilling = event.reason === "Killing";
+
+  const dotColor =
+    isWarning || isFailed ? "red" :
+    isPulling ? "blue" :
+    isScheduled || isStarted ? "green" :
+    isKilling ? "orange" : "gray";
+
+  if (compact) {
+    return (
+      <Group gap="xs">
+        <ThemeIcon size="xs" color={dotColor} variant="filled" radius="xl">
+          <IconCircleDot size={6} />
+        </ThemeIcon>
+        <Badge size="xs" color={isWarning ? "red" : "blue"} variant="light">
+          {event.reason}
+        </Badge>
+        <Text size="xs" c="dimmed" truncate="end" style={{ flex: 1 }}>
+          {event.message}
+        </Text>
+        <Text size="xs" c="dimmed">{formatAge(event.lastTimestamp)}</Text>
+      </Group>
+    );
+  }
+
+  return (
+    <Group gap="sm" align="flex-start">
+      {/* Timeline dot + line */}
+      <Box style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24 }}>
+        <ThemeIcon size="sm" color={dotColor} variant="filled" radius="xl">
+          <IconCircleDot size={8} />
+        </ThemeIcon>
+        {index < 19 && (
+          <Box w={1} h={28} bg={`${dotColor}.3`} style={{ minHeight: 28 }} />
+        )}
+      </Box>
+
+      {/* Content */}
+      <Card withBorder radius="sm" p="xs" style={{ flex: 1 }} bg={isWarning ? "red.0" : undefined}>
+        <Group justify="space-between" align="center">
+          <Group gap="xs">
+            <Badge
+              size="sm"
+              color={isWarning ? "red" : isPulling ? "blue" : isScheduled || isStarted ? "green" : "gray"}
+              variant="light"
+            >
+              {event.reason}
+            </Badge>
+            {isWarning && (
+              <Badge size="xs" color="red" variant="filled">WARNING</Badge>
+            )}
+          </Group>
+          <Text size="xs" c="dimmed">{formatAge(event.lastTimestamp)}</Text>
+        </Group>
+        <Text size="sm" mt={4} c={isWarning ? "red.8" : "dimmed"} lineClamp={2}>
+          {event.message}
+        </Text>
+      </Card>
+    </Group>
+  );
 }
 
 export default function CoreServicesOverview({
@@ -577,15 +1131,24 @@ export default function CoreServicesOverview({
                 <Stack gap={6}>
                   {/* Top: Name + Status */}
                   <Group justify="space-between" align="center">
-                    <Text fw={550} size="sm" truncate="end" title={svc.name} style={{ maxWidth: "65%" }}>
-                      {svc.name}
-                    </Text>
+                    <Group gap={4} style={{ maxWidth: "65%" }}>
+                      <Text fw={550} size="sm" truncate="end" title={svc.name}>
+                        {svc.name}
+                      </Text>
+                      <Badge
+                        size="xs"
+                        variant="outline"
+                        color="gray"
+                      >
+                        {svc.kind === "Deployment" ? "Deploy" : "STS"}
+                      </Badge>
+                    </Group>
                     <Badge
                       color={clr}
-                      variant="light"
+                      variant="filled"
                       size="xs"
                     >
-                      {health.label.toLowerCase()}
+                      {health.label.toUpperCase()}
                     </Badge>
                   </Group>
 
@@ -657,171 +1220,123 @@ export default function CoreServicesOverview({
         )}
       </Card>
 
-      {/* PODS MODAL */}
+      {/* UNIFIED DETAIL MODAL — tabbed pods/events/logs/shell */}
       <Modal
         opened={podsOpened}
-        onClose={() => setPodsOpened(false)}
+        onClose={() => {
+          setPodsOpened(false);
+          setSelectedPod(null);
+          setSelectedContainer(null);
+          setPodEvents({});
+        }}
         size="95vw"
         title={
           <Group gap="sm">
             <Text fw={600}>{selectedService?.name}</Text>
-            <Badge color={computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).color}>
-              {computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).label}
+            <Badge color={computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).color} variant="filled" size="lg">
+              {computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).label.toUpperCase()}
             </Badge>
+            <Badge variant="outline" size="lg">{selectedService?.kind}</Badge>
           </Group>
         }
         keepMounted
       >
-        <ScrollArea h="75vh">
-          {podsLoading && <Loader size="sm" />}
-
-          {pods.map((pod) => (
-            <Card key={pod.name} withBorder radius="sm" mb="sm">
-              <Group justify="space-between">
-                <Group gap="sm">
-                  <Text fw={600}>{pod.name}</Text>
-                  <Badge
-                    color={
-                      pod.phase === "Running"
-                        ? "green"
-                        : pod.phase === "Pending"
-                          ? "yellow"
-                          : "red"
-                    }
-                  >
-                    {pod.phase}
-                  </Badge>
-                </Group>
-
-                <Button
-                  size="xs"
-                  variant="light"
-                  loading={eventsLoading}
-                  onClick={() => fetchPodEvents(pod.name)}
-                >
-                  Refresh Events
-                </Button>
-              </Group>
-
-              <Divider my="sm" />
-
-              {/* CONTAINERS */}
-              <Stack gap={6}>
-                {pod.containers.map((c) => (
-                  <Group key={c.name} gap="xs">
-                    {c.isInit && (
-                      <Badge size="xs" color="gray">init</Badge>
-                    )}
-                    <Badge size="xs" color={c.ready ? "green" : "red"}>
-                      {c.ready ? "Ready" : "Not Ready"}
-                    </Badge>
-                    <Text size="xs">{c.name}</Text>
-                    <Badge
-                      size="xs"
-                      variant="outline"
-                      color={c.state === "Running" ? "green" : "orange"}
-                    >
-                      {c.state}
-                    </Badge>
-                    {c.reason && (
-                      <Text size="xs" c="red">{c.reason}</Text>
-                    )}
-                    {c.restartCount > 0 && (
-                      <Text size="xs" c="dimmed">{c.restartCount} restarts</Text>
-                    )}
-
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      onClick={() => {
-                        setSelectedPod(pod);
-                        setSelectedContainer(c.name);
-                        setLogsOpened(true);
-                      }}
-                    >
-                      Logs
-                    </Button>
-
-                    {!c.isInit && (
-                      <Button
-                        size="xs"
-                        variant="subtle"
-                        onClick={() => {
-                          setSelectedPod(pod);
-                          setSelectedContainer(c.name);
-                          setShellOpened(true);
-                        }}
-                      >
-                        Shell
-                      </Button>
-                    )}
-                  </Group>
-                ))}
-              </Stack>
-
-              <Divider my="sm" />
-
-              {/* EVENTS */}
-              <Stack gap={4}>
-                {(podEvents[pod.name] || []).slice(0, 6).map((e, i) => (
-                  <Group key={i} gap="xs">
-                    <Badge size="xs" color={e.type === "Warning" ? "red" : "blue"}>
-                      {e.reason}
-                    </Badge>
-                    <Text size="xs" c="dimmed">{e.message}</Text>
-                  </Group>
-                ))}
-                {!podEvents[pod.name]?.length && (
-                  <Text size="xs" c="dimmed">No events</Text>
-                )}
-              </Stack>
-            </Card>
-          ))}
-        </ScrollArea>
-      </Modal>
-
-      {/* LOGS MODAL */}
-      <Modal
-        opened={logsOpened}
-        onClose={() => setLogsOpened(false)}
-        size="95vw"
-        title={
-          selectedPod
-            ? `Logs — ${selectedPod.name} / ${selectedContainer}`
-            : "Logs"
-        }
-        keepMounted
-      >
-        {selectedPod && selectedContainer && (
-          <LogWindow
+        {pods.length === 1 ? (
+          /* Single pod — show tabs directly */
+          <SinglePodDetailTabs
+            pod={pods[0]}
+            events={podEvents[pods[0].name] || []}
+            eventsLoading={eventsLoading}
             namespace={namespace}
-            pod={selectedPod.name}
             cluster={env}
-            containers={[selectedContainer]}
+            onRefreshEvents={() => fetchPodEvents(pods[0].name)}
+            onOpenLogs={(container) => {
+              setSelectedPod(pods[0]);
+              setSelectedContainer(container);
+              setLogsOpened(true);
+            }}
+            onOpenShell={(container) => {
+              setSelectedPod(pods[0]);
+              setSelectedContainer(container);
+              setShellOpened(true);
+            }}
+            selectedContainer={selectedContainer}
+          />
+        ) : (
+          /* Multi-pod — pod selector + tabs */
+          <MultiPodDetailView
+            pods={pods}
+            podEvents={podEvents}
+            eventsLoading={eventsLoading}
+            loading={podsLoading}
+            namespace={namespace}
+            cluster={env}
+            selectedPod={selectedPod}
+            onSelectPod={setSelectedPod}
+            onRefreshEvents={fetchPodEvents}
+            onOpenLogs={(pod, container) => {
+              setSelectedPod(pod);
+              setSelectedContainer(container);
+              setLogsOpened(true);
+            }}
+            onOpenShell={(pod, container) => {
+              setSelectedPod(pod);
+              setSelectedContainer(container);
+              setShellOpened(true);
+            }}
+            selectedContainer={selectedContainer}
           />
         )}
-      </Modal>
 
-      {/* SHELL MODAL */}
-      <Modal
-        opened={shellOpened}
-        onClose={() => setShellOpened(false)}
-        size="95vw"
-        title={
-          selectedPod
-            ? `Shell — ${selectedPod.name} / ${selectedContainer}`
-            : "Shell"
-        }
-        keepMounted
-      >
-        {selectedPod && selectedContainer && (
-          <TerminalComponent
-            namespace={namespace}
-            pod={selectedPod.name}
-            container={selectedContainer}
-            cluster={env}
-          />
-        )}
+        {/* Logs sub-modal (overlay) */}
+        <Modal
+          opened={logsOpened}
+          onClose={() => setLogsOpened(false)}
+          size="90vw"
+          title={
+            <Group gap="xs">
+              <IconFileText size={16} />
+              <Text fw={600}>Logs — {selectedPod?.name} / {selectedContainer}</Text>
+            </Group>
+          }
+          keepMounted
+        >
+          {selectedPod && selectedContainer && (
+            <Box h="70vh">
+              <LogWindow
+                namespace={namespace}
+                pod={selectedPod.name}
+                cluster={env}
+                containers={[selectedContainer]}
+              />
+            </Box>
+          )}
+        </Modal>
+
+        {/* Shell sub-modal (overlay) */}
+        <Modal
+          opened={shellOpened}
+          onClose={() => setShellOpened(false)}
+          size="90vw"
+          title={
+            <Group gap="xs">
+              <IconTerminal size={16} />
+              <Text fw={600}>Shell — {selectedPod?.name} / {selectedContainer}</Text>
+            </Group>
+          }
+          keepMounted
+        >
+          {selectedPod && selectedContainer && (
+            <Box h="70vh">
+              <TerminalComponent
+                namespace={namespace}
+                pod={selectedPod.name}
+                container={selectedContainer}
+                cluster={env}
+              />
+            </Box>
+          )}
+        </Modal>
       </Modal>
     </>
   );
