@@ -87,6 +87,9 @@ serviceAccount:
   annotations: {}
   name: ""
 
+rbac:
+  create: true
+
 podAnnotations: {}
 podLabels: {}
 

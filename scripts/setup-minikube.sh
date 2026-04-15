@@ -1,184 +1,519 @@
 #!/bin/bash
-# Setup Minikube cluster for Gen3-Admin E2E testing
-# This script automates the creation and configuration of a Minikube cluster
-# for testing the Gen3-Admin deployment before production rollout
+# =============================================================================
+# setup-minikube.sh — Spin up Minikube + deploy CSOC portal via Helm
+#
+# Usage:
+#   chmod +x scripts/setup-minikube.sh
+#   ./scripts/setup-minikube.sh              # full setup (minikube + deploy)
+#   ./scripts/setup-minikube.sh --teardown   # tear everything down
+#   ./scripts/setup-minikube.sh --skip-keycloak
+#   ./scripts/setup-minikube.sh --cluster-only  # only start minikube, don't deploy
+# =============================================================================
 
-set -e
+set -euo pipefail
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Configuration
-CLUSTER_NAME="${CLUSTER_NAME:-gen3-admin-test}"
-MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-6144}"  # 6GB
-MINIKUBE_CPUS="${MINIKUBE_CPUS:-4}"
-MINIKUBE_DISK="${MINIKUBE_DISK:-30g}"
+# ── Config ────────────────────────────────────────────────────────────────────
+MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-csoc}"
+RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
+HELM_CHART="${CHART_PATH:-./helm/csoc}"
+VALUES_FILE="./helm/csoc/values-test.yaml"
+HOSTNAME="csoc.local"
+KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
+KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
+KEYCLOAK_NS="keycloak"
+KEYCLOAK_HOSTNAME="keycloak.local"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+# Quay image tags — override with env vars or CLI flags
+API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
+FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
+
+# Port-forward PIDs file
+PF_DIR="$PROJECT_ROOT/.minikube-setup"
+
+# Colors
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+
+log()    { echo -e "${BLUE}[setup]${NC} $*"; }
+ok()     { echo -e "${GREEN}✓${NC} $*"; }
+warn()   { echo -e "${YELLOW}⚠${NC} $*"; }
+die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
+
+# ── Pre-flight checks ─────────────────────────────────────────────────────────
+check_prereqs() {
+  log "Checking prerequisites..."
+
+  local missing=()
+  for cmd in minikube kubectl helm docker; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    die "Missing tools: ${missing[*]}. Install them first."
+  fi
+
+  if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
+    ok "Minikube profile '$MINIKUBE_PROFILE' is already running"
+  else
+    log "Will start Minikube profile '$MINIKUBE_PROFILE'"
+  fi
 }
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-ensure_brew() {
-    if ! command -v brew &> /dev/null; then
-        log_error "Homebrew not found. Please install it first: https://brew.sh"
-        exit 1
-    fi
-}
-
-install_tool() {
-    local tool="$1"
-    local name="$2"
-
-    if ! command -v "$tool" &> /dev/null; then
-        log_warning "$name not found. Installing via Homebrew..."
-        brew install "$tool" || {
-            log_error "Failed to install $name. Please install manually and re-run."
-            exit 1
-        }
-        log_success "$name installed successfully"
-    fi
-}
-
-check_prerequisites() {
-    log_info "Checking prerequisites..."
-
-    ensure_brew
-
-    install_tool minikube "Minikube"
-    install_tool kubectl "kubectl"
-    install_tool helm "Helm"
-
-    log_success "All prerequisites are installed"
-}
-
+# ── Minikube start ───────────────────────────────────────────────────────────
 start_minikube() {
-    log_info "Starting Minikube cluster: $CLUSTER_NAME"
+  if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
+    warn "Minikube already running, skipping start"
+    return
+  fi
 
-    # Check if cluster already exists
-    if minikube profile list | grep -q "$CLUSTER_NAME"; then
-        log_warning "Cluster $CLUSTER_NAME already exists. Starting it..."
-        minikube start -p "$CLUSTER_NAME" || log_warning "Cluster may already be running"
-    else
-        log_info "Creating new Minikube cluster..."
-        minikube start \
-            -p "$CLUSTER_NAME" \
-            --memory="$MINIKUBE_MEMORY" \
-            --cpus="$MINIKUBE_CPUS" \
-            --disk-size="$MINIKUBE_DISK" \
-            --driver=docker \
-            --container-runtime=docker \
-            --addons=ingress \
-            --addons=registry
+  log "Starting Minikube (profile: $MINIKUBE_PROFILE)..."
+  minikube start \
+    -p "$MINIKUBE_PROFILE" \
+    --driver=docker \
+    --cpus=4 \
+    --memory=8192 \
+    --disk-size=40g \
+    --kubernetes-version=v1.30.0 \
+    --container-runtime=docker
+
+  # Enable required addons
+  log "Enabling addons..."
+  minikube addons enable metrics-server -p "$MINIKUBE_PROFILE" 2>/dev/null || true
+  minikube addons enable ingress         -p "$MINIKUBE_PROFILE" 2>/dev/null || true
+
+  # Wait for ingress controller
+  log "Waiting for nginx ingress controller..."
+  local max_wait=120
+  local waited=0
+  while [[ $waited -lt $max_wait ]]; do
+    if kubectl get pods -A 2>/dev/null | grep -qE "(nginx-ingress|ingress-nginx).+Running"; then
+      break
     fi
+    sleep 5
+    waited=$((waited + 5))
+  done
 
-    # Set kubectl context to minikube
-    kubectl config use-context "$CLUSTER_NAME"
-    log_success "Minikube cluster is running"
+  ok "Minikube is ready"
 }
 
-create_namespace() {
-    log_info "Creating namespace: $NAMESPACE"
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-    log_success "Namespace created"
+# ── /etc/hosts entry ────────────────────────────────────────────────────────
+setup_hosts() {
+  local ip
+  ip=$(minikube ip -p "$MINIKUBE_PROFILE")
+
+  if grep -qw "$HOSTNAME" /etc/hosts 2>/dev/null; then
+    warn "/etc/hosts already has an entry for $HOSTNAME — updating IP to $ip"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sudo sed -i '' "/[[:space:]]$HOSTNAME$/d" /etc/hosts
+    else
+      sudo sed -i "/[[:space:]]$HOSTNAME$/d" /etc/hosts
+    fi
+  fi
+
+  echo "$ip  $HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+  ok "Added $HOSTNAME -> $ip to /etc/hosts"
 }
 
-enable_addons() {
-    log_info "Enabling useful Minikube addons..."
+# ── Keycloak via Operator (opt-in) ──────────────────────────────────────────
+start_keycloak() {
+  if [[ "${INSTALL_KEYCLOAK:-0}" != "1" ]]; then
+    log "Keycloak not requested (--keycloak to enable), using MOCK_AUTH mode"
+    return
+  fi
 
-    addons=("ingress" "metrics-server" "dashboard")
+  # Check if keycloak pod is already running
+  if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1 && \
+     kubectl get pods -n "$KEYCLOAK_NS" -l app=keycloak 2>/dev/null | grep -q "Running"; then
+    warn "Keycloak already running in cluster"
+    start_keycloak_pf
+    return
+  fi
 
-    for addon in "${addons[@]}"; do
-        log_info "Enabling addon: $addon"
-        minikube addons enable "$addon" -p "$CLUSTER_NAME" || log_warning "Failed to enable $addon"
-    done
+  log "Installing Keycloak via Operator..."
 
-    log_success "Addons enabled"
+  # Step 1: Install operator (CRDs + deployment)
+  if [[ -f "$KEYCLOAK_OPERATOR_DIR/install.sh" ]]; then
+    log "Running operator install script..."
+    bash "$KEYCLOAK_OPERATOR_DIR/install.sh"
+  else
+    # Fallback: install manually
+    local KC_VERSION="26.5.2"
+    kubectl create namespace "$KEYCLOAK_NS" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml"
+    kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml"
+    kubectl -n "$KEYCLOAK_NS" apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/kubernetes.yml"
+    kubectl patch clusterrolebinding keycloak-operator-clusterrolebinding \
+      --type='json' \
+      -p='[{"op": "replace", "path": "/subjects/0/namespace", "value":"'"$KEYCLOAK_NS"'"}]' || true
+    kubectl rollout restart deployment/keycloak-operator -n "$KEYCLOAK_NS" 2>/dev/null || true
+  fi
+
+  # Wait for operator to be ready
+  log "Waiting for Keycloak operator..."
+  kubectl rollout status deployment/keycloak-operator -n "$KEYCLOAK_NS" --timeout=120s
+
+  # Step 2: Apply Keycloak CRD (server + realm config)
+  if [[ -f "$KEYCLOAK_CRD_FILE" ]]; then
+    log "Applying Keycloak CRD (server + realm)..."
+    kubectl apply -f "$KEYCLOAK_CRD_FILE"
+  else
+    die "Keycloak CRD file not found: $KEYCLOAK_CRD_FILE"
+  fi
+
+  # Step 3: Wait for Keycloak server pod to be ready
+  log "Waiting for Keycloak server pod..."
+  kubectl wait --for=condition=ready pod \
+    -l app=keycloak -n "$KEYCLOAK_NS" \
+    --timeout=300s
+
+  ok "Keycloak is ready"
+
+  # Step 4: Create ingress for Keycloak
+  create_keycloak_ingress
+
+  # Step 5: Add keycloak hostname to /etc/hosts
+  setup_keycloak_hosts
 }
 
-load_images() {
-    log_info "Configuring image loading..."
+# ── Keycloak ingress ────────────────────────────────────────────────────────
+create_keycloak_ingress() {
+  log "Creating ingress for Keycloak ($KEYCLOAK_HOSTNAME)..."
 
-    # Instructions for using local images
-    log_info "To use locally built images:"
-    log_info "  1. Build images: docker build -t quay.io/cdis/csoc-api:test ."
-    log_info "  2. Load to Minikube: minikube image load quay.io/cdis/csoc-api:test -p $CLUSTER_NAME"
-    log_info "  3. Or use: eval \$(minikube docker-env -p $CLUSTER_NAME)"
+  kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: ${KEYCLOAK_NS}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ${KEYCLOAK_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-service
+                port:
+                  name: http
+EOF
+
+  ok "Keycloak ingress created → http://$KEYCLOAK_HOSTNAME"
 }
 
-display_info() {
-    local MINIKUBE_IP
-    MINIKUBE_IP=$(minikube ip -p "$CLUSTER_NAME")
+# ── Keycloak /etc/hosts entry ──────────────────────────────────────────────
+setup_keycloak_hosts() {
+  local ip
+  ip=$(minikube ip -p "$MINIKUBE_PROFILE")
 
-    log_info "Cluster setup complete!"
-    echo ""
-    log_success "Cluster Information:"
-    echo "  Profile: $CLUSTER_NAME"
-    echo "  API Server: $(kubectl cluster-info | grep 'Kubernetes master' | awk '{print $NF}')"
-    echo "  Namespace: $NAMESPACE"
-    echo "  Minikube IP: $MINIKUBE_IP"
-    echo ""
+  if grep -qw "$KEYCLOAK_HOSTNAME" /etc/hosts 2>/dev/null; then
+    warn "/etc/hosts already has $KEYCLOAK_HOSTNAME — updating IP to $ip"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sudo sed -i '' "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
+    else
+      sudo sed -i "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
+    fi
+  fi
 
-    log_success "Next steps:"
-    echo "  1. (Optional) Add to /etc/hosts for ingress access:"
-    echo "     echo '$MINIKUBE_IP  csoc.local' | sudo tee -a /etc/hosts"
-    echo ""
-    echo "  2. Set kubectl context:"
-    echo "     kubectl config use-context $CLUSTER_NAME"
-    echo ""
-    echo "  3. Deploy CSOC stack:"
-    echo "     bash scripts/deploy-csoc.sh -e test"
-    echo ""
-    echo "  4. Run E2E tests:"
-    echo "     bash scripts/test-e2e.sh -n $NAMESPACE"
-    echo ""
-    echo "  5. Access application:"
-    echo "     - Via ingress (recommended after hosts entry): http://csoc.local"
-    echo "     - Via Minikube IP: http://$MINIKUBE_IP"
-    echo "     - Via port-forward:"
-    echo "       kubectl port-forward -n $NAMESPACE svc/csoc 3000:80 &"
-    echo "       then access at http://localhost:3000"
-    echo ""
-    echo "  6. View Minikube dashboard:"
-    echo "     minikube dashboard -p $CLUSTER_NAME"
-    echo ""
+  echo "$ip  $KEYCLOAK_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
+  ok "Added $KEYCLOAK_HOSTNAME -> $ip to /etc/hosts"
 }
 
-cleanup_on_exit() {
-    log_info "Setup complete. To clean up later, run:"
-    echo "  minikube delete -p $CLUSTER_NAME"
+# ── Helm deploy ──────────────────────────────────────────────────────────────
+deploy_csoc() {
+  cd "$PROJECT_ROOT"
+
+  if [[ ! -f "$VALUES_FILE" ]]; then
+    die "Values file not found: $VALUES_FILE"
+  fi
+
+  log "Deploying CSOC portal via Helm..."
+  log "  Chart:    $HELM_CHART"
+  log "  Values:   $VALUES_FILE"
+  log "  API tag:  $API_IMAGE_TAG"
+  log "  FE tag:   $FRONTEND_IMAGE_TAG"
+
+  # Create namespace if needed
+  if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+    kubectl create namespace "$NAMESPACE"
+    ok "Created namespace: $NAMESPACE"
+  fi
+
+  # Build helm args
+  local helm_args=(
+    --namespace "$NAMESPACE"
+    -f "$VALUES_FILE"
+    --set "image.api.tag=${API_IMAGE_TAG}"
+    --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
+    --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
+  )
+
+  # Upgrade or install
+  if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+    log "Upgrading existing release..."
+    helm upgrade "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
+  else
+    log "Installing fresh release..."
+    helm install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
+  fi
+
+  ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
 
-# Main execution
+# ── Wait for pods ────────────────────────────────────────────────────────────
+wait_for_pods() {
+  log "Waiting for CSOC pods to become ready..."
+
+  # Wait up to 5 minutes
+  kubectl wait \
+    --for=condition=ready pod \
+    -l "app.kubernetes.io/instance=$RELEASE_NAME" \
+    -n "$NAMESPACE" \
+    --timeout=300s
+
+  ok "All CSOC pods are ready"
+
+  echo ""
+  log "Pod status:"
+  kubectl get pods -l "app.kubernetes.io/instance=$RELEASE_NAME" -n "$NAMESPACE" -o wide
+  echo ""
+
+  log "Services:"
+  kubectl get svc "$RELEASE_NAME" -n "$NAMESPACE"
+}
+
+# ── Port forwarding ──────────────────────────────────────────────────────────
+port_forward() {
+  mkdir -p "$PF_DIR"
+
+  # Kill any existing port-forwards on these ports
+  for port in 8002 3000; do
+    lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null || true
+  done
+
+  log "Setting up port forwards..."
+
+  # API port-forward (background)
+  kubectl port-forward "svc/$RELEASE_NAME" -n "$NAMESPACE" 8002:api > /dev/null 2>&1 &
+  echo $! > "$PF_DIR/api-pf.pid"
+
+  # Frontend port-forward (background)
+  kubectl port-forward "svc/$RELEASE_NAME" -n "$NAMESPACE" 3000:frontend > /dev/null 2>&1 &
+  echo $! > "$PF_DIR/frontend-pf.pid"
+
+  sleep 2
+
+  # Verify they're still running
+  if kill -0 $(cat "$PF_DIR/api-pf.pid") 2>/dev/null && \
+     kill -0 $(cat "$PF_DIR/frontend-pf.pid") 2>/dev/null; then
+    ok "Port forwards active:"
+  else
+    warn "Port-forward may have failed — check pod/service names match"
+  fi
+
+  echo "  → http://localhost:3000  (Frontend)"
+  echo "  → http://localhost:8002  (API ping: http://localhost:8002/ping)"
+  echo ""
+  echo "  Or via ingress (if nginx addon is working):"
+  echo "  → http://$HOSTNAME"
+}
+
+# ── Teardown ─────────────────────────────────────────────────────────────────
+teardown() {
+  cd "$PROJECT_ROOT"
+  log "Tearing down..."
+
+  # Stop port-forwards
+  for pid_file in "$PF_DIR"/*.pid; do
+    if [[ -f "$pid_file" ]]; then
+      kill $(cat "$pid_file") 2>/dev/null || true
+    fi
+  done
+  rm -rf "$PF_DIR"
+
+  # Uninstall helm release
+  if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+    log "Uninstalling Helm release '$RELEASE_NAME'..."
+    helm uninstall "$RELEASE_NAME" -n "$NAMESPACE"
+    ok "Helm release uninstalled"
+  fi
+
+  # Remove /etc/hosts entry
+  if grep -qw "$HOSTNAME" /etc/hosts 2>/dev/null; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sudo sed -i '' "/[[:space:]]$HOSTNAME$/d" /etc/hosts
+    else
+      sudo sed -i "/[[:space:]]$HOSTNAME$/d" /etc/hosts
+    fi
+    ok "Removed $HOSTNAME from /etc/hosts"
+  fi
+
+  # Stop minikube
+  if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
+    log "Stopping Minikube..."
+    minikube stop -p "$MINIKUBE_PROFILE"
+    ok "Minikube stopped"
+  fi
+
+  # Optionally stop keycloak (operator-managed)
+  if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]] && \
+     kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1; then
+    read -rp "Remove Keycloak (operator + CRDs) too? [y/N] " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+      log "Removing Keycloak resources..."
+      kubectl delete -f "$KEYCLOAK_CRD_FILE" --ignore-not-found=true 2>/dev/null || true
+      kubectl delete namespace "$KEYCLOAK_NS" --ignore-not-found=true 2>/dev/null || true
+      ok "Keycloak removed from cluster"
+    fi
+  fi
+
+  # Remove keycloak hosts entry
+  if grep -qw "$KEYCLOAK_HOSTNAME" /etc/hosts 2>/dev/null; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sudo sed -i '' "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
+    else
+      sudo sed -i "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
+    fi
+    ok "Removed $KEYCLOAK_HOSTNAME from /etc/hosts"
+  fi
+
+  ok "Teardown complete"
+}
+
+# ── Status check ─────────────────────────────────────────────────────────────
+show_status() {
+  cd "$PROJECT_ROOT"
+  echo ""
+  echo "============================================"
+  echo "  CSOC Portal — Local Minikube Environment"
+  echo "============================================"
+  echo ""
+
+  if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
+    echo "  Minikube:  $(minikube ip -p "$MINIKUBE_PROFILE")  Running"
+  else
+    echo "  Minikube:  NOT RUNNING"
+  fi
+
+  echo "  Profile:   $MINIKUBE_PROFILE"
+  echo "  Namespace: $NAMESPACE"
+  echo "  Release:   $RELEASE_NAME"
+  echo "  Hostname:  http://$HOSTNAME"
+  echo ""
+
+  if kubectl get svc "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+    echo "  Services:"
+    kubectl get svc "$RELEASE_NAME" -n "$NAMESPACE" 2>/dev/null | sed 's/^/    /'
+    echo ""
+    echo "  Pods:"
+    kubectl get pods -l "app.kubernetes.io/instance=$RELEASE_NAME" -n "$NAMESPACE" 2>/dev/null | sed 's/^/    /'
+  else
+    echo "  Helm release NOT installed yet (run without --status to deploy)"
+  fi
+
+  echo ""
+  echo "  Quick access:"
+  echo "    Frontend:  http://localhost:3000"
+  echo "    API:       http://localhost:8002/ping"
+  echo "    Ingress:   http://$HOSTNAME"
+  echo ""
+}
+
+# ── Usage ───────────────────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  --teardown        Tear down everything (stop services, cleanup hosts)
+  --status          Show current environment status
+  --cluster-only    Only start minikube, skip helm deploy
+  --keycloak        Install Keycloak via operator (default: off, uses MOCK_AUTH)
+  --api-tag TAG     Override API Docker image tag (default: $API_IMAGE_TAG)
+  --frontend-tag TAG Override Frontend Docker image tag (default: $FRONTEND_IMAGE_TAG)
+  --namespace NS     Kubernetes namespace (default: $NAMESPACE)
+  --release NAME    Helm release name (default: $RELEASE_NAME)
+  --help            Show this help message
+
+Examples:
+  $(basename "$0")                          # Full setup + deploy
+  $(basename "$0") --keycloak              # Setup with Keycloak operator
+  $(basename "$0") --cluster-only           # Only start minikube
+  $(basename "$0") --api-tag latest         # Use 'latest' tag for API
+  $(basename "$0") --teardown               # Tear down
+  $(basename "$0") --status                 # Show status
+EOF
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 main() {
-    echo -e "${BLUE}=====================================${NC}"
-    echo -e "${BLUE}Gen3-Admin Minikube Setup${NC}"
-    echo -e "${BLUE}=====================================${NC}"
-    echo ""
+  cd "$PROJECT_ROOT"
 
-    check_prerequisites
-    start_minikube
-    create_namespace
-    enable_addons
-    load_images
-    display_info
-    cleanup_on_exit
+  case "${1:-}" in
+    --teardown|-t)
+      teardown
+      exit 0
+      ;;
+    --status|-s)
+      show_status
+      exit 0
+      ;;
+    --help|-h|help)
+      usage
+      exit 0
+      ;;
+  esac
+
+  # Parse optional flags
+  CLUSTER_ONLY=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keycloak) INSTALL_KEYCLOAK=1; shift ;;
+      --cluster-only)   CLUSTER_ONLY=1; shift ;;
+      --api-tag)        API_IMAGE_TAG="$2"; shift 2 ;;
+      --frontend-tag)   FRONTEND_IMAGE_TAG="$2"; shift 2 ;;
+      --namespace)      NAMESPACE="$2"; shift 2 ;;
+      --release)        RELEASE_NAME="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  echo ""
+  echo "╔══════════════════════════════════════════╗"
+  echo "║   CSOC Portal — Minikube Setup           ║"
+  echo "╚══════════════════════════════════════════╝"
+  echo ""
+
+  check_prereqs
+  start_minikube
+  setup_hosts
+  start_keycloak
+
+  if [[ "$CLUSTER_ONLY" == "0" ]]; then
+    deploy_csoc
+    wait_for_pods
+    port_forward
+  fi
+
+  show_status
+
+  if [[ "$CLUSTER_ONLY" == "0" ]]; then
+    echo ""
+    ok "Setup complete! Open http://localhost:3000 in your browser"
+  else
+    echo ""
+    ok "Minikube ready. Deploy with:  $(basename "$0") --namespace $NAMESPACE"
+  fi
+  echo ""
+  echo "To tear down later:  $(basename "$0") --teardown"
+  echo "To check status:     $(basename "$0") --status"
+  echo ""
 }
 
 main "$@"

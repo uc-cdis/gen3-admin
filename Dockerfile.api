@@ -21,8 +21,10 @@ CMD ["/go/bin/csoc"]
 
 FROM quay.io/cdis/golang-build-base:master AS final
 
-# need it for bootstrap
-RUN yum install -y docker
+# need these for bootstrap (kubectl) and agent proxy
+RUN yum install -y docker && \
+    curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && mv kubectl /usr/local/bin/kubectl
 
 WORKDIR /go/src/api
 

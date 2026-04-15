@@ -3,14 +3,15 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,50 +19,59 @@ import (
 
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/uc-cdis/gen3-admin/internal/k8s"
 	"github.com/uc-cdis/gen3-admin/pkg/config"
 )
 
-// InstallArgoCDHandler installs ArgoCD into the cluster via kubectl apply with official manifests
+// InstallArgoCDHandler installs ArgoCD into the cluster via k8s SDK
 func InstallArgoCDHandler(c *gin.Context) {
 	log.Info().Msg("InstallArgoCDHandler - installing ArgoCD into cluster")
 
-	// 1. Ensure argocd namespace exists (kubectl apply -n does NOT auto-create it)
-	nsCmd := exec.CommandContext(context.TODO(), "kubectl", "create", "namespace", "argocd")
-	nsCmd.CombinedOutput() // ignore error if already exists
-	log.Info().Msg("Ensured argocd namespace exists")
-
-	// 2. Apply CRDs first (before the main manifest, which may fail on missing CRDs or annotation issues)
-	crdCmd := exec.CommandContext(context.TODO(), "kubectl", "apply",
-		"--server-side",
-		"-k", "https://github.com/argoproj/argo-cd/manifests/crds?ref=stable",
-	)
-	if crdOut, crdErr := crdCmd.CombinedOutput(); crdErr != nil {
-		log.Warn().Err(crdErr).Str("output", string(crdOut)).Msg("CRD apply had errors (some may already exist)")
-	} else {
-		log.Info().Str("output", string(crdOut)).Msg("ArgoCD CRDs applied successfully")
+	clientset, _, err := config.K8sClient()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create k8s client: " + err.Error()})
+		return
 	}
 
-	// 3. Apply ArgoCD install manifest (non-HA, suitable for Minikube/workshops)
-	//    Note: may have errors on CRD annotations that are too long for newer K8s — those are non-fatal
-	//          since we already applied CRDs above.
-	installCmd := exec.CommandContext(context.TODO(), "kubectl", "apply", "-n", "argocd",
-		"--server-side",
-		"-f", "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml",
+	// 1. Ensure argocd namespace exists
+	_, err = clientset.CoreV1().Namespaces().Create(
+		context.TODO(),
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "argocd"}},
+		metav1.CreateOptions{},
 	)
-	installOut, err := installCmd.CombinedOutput()
 	if err != nil {
-		// Log but don't fail — CRD annotation errors are common with newer K8s versions.
-		// The important resources (deployments, services, etc.) should still be created.
-		log.Warn().Err(err).Str("output", string(installOut)).Msg("ArgoCD install had some errors (resources may still be applied)")
+		if !errors.IsAlreadyExists(err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create argocd namespace: " + err.Error()})
+			return
+		}
+	}
+	log.Info().Msg("Ensured argocd namespace exists")
+
+	// 2. Apply CRDs from remote URL
+	crdURL := "https://raw.githubusercontent.com/argoproj/argo-cd/manifests/crds?ref=stable"
+	crdOutput, crdErr := applyRemoteYAML(crdURL, "argocd")
+	if crdErr != nil {
+		log.Warn().Err(crdErr).Str("output", crdOutput).Msg("CRD apply had errors (some may already exist)")
 	} else {
-		log.Info().Str("output", string(installOut)).Msg("ArgoCD installed successfully via kubectl apply")
+		log.Info().Str("output", crdOutput).Msg("ArgoCD CRDs applied successfully")
+	}
+
+	// 3. Apply ArgoCD install manifest
+	installURL := "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+	installOutput, installErr := applyRemoteYAML(installURL, "argocd")
+	if installErr != nil {
+		log.Warn().Err(installErr).Str("output", installOutput).Msg("ArgoCD install had some errors (resources may still be applied)")
+	} else {
+		log.Info().Str("output", installOutput).Msg("ArgoCD installed successfully")
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "ArgoCD installation initiated",
 		"namespace": "argocd",
-		"output":    strings.TrimSpace(string(installOut)),
+		"crdOutput": strings.TrimSpace(crdOutput),
+		"output":    strings.TrimSpace(installOutput),
 	})
 }
 
@@ -109,25 +119,17 @@ func InstallAppsHandler(c *gin.Context) {
 		return
 	}
 
-	// If S3, validate credentials
+	// If S3, validate credentials via AWS SDK
 	if req.StorageType == "s3" {
 		if req.S3Bucket == "" || req.S3Region == "" || req.AWSAccessKeyID == "" || req.AWSSecretAccessKey == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "S3 requires bucket, region, accessKeyID, and secretAccessKey"})
 			return
 		}
-		validateCmd := exec.CommandContext(context.TODO(), "aws", "sapi", "head-bucket",
-			"--bucket", req.S3Bucket,
-			"--region", req.S3Region,
-		)
-		validateCmd.Env = append(os.Environ(),
-			"AWS_ACCESS_KEY_ID="+req.AWSAccessKeyID,
-			"AWS_SECRET_ACCESS_KEY="+req.AWSSecretAccessKey,
-		)
-		if out, err := validateCmd.CombinedOutput(); err != nil {
-			log.Warn().Err(err).Str("output", string(out)).Msg("S3 credential validation failed")
+		if s3Err := validateS3Bucket(req.S3Bucket, req.S3Region, req.AWSAccessKeyID, req.AWSSecretAccessKey); s3Err != nil {
+			log.Warn().Err(s3Err).Msg("S3 credential validation failed")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "S3 validation failed",
-				"details": strings.TrimSpace(string(out)),
+				"details": s3Err.Error(),
 			})
 			return
 		}
@@ -1277,4 +1279,44 @@ func checkAlloyStatus() map[string]interface{} {
 		"message":    fmt.Sprintf("Health: %s | Sync: %s | Pods: %d/%d", healthStatus, syncStatus, totalReady, totalCount),
 		"components": componentStatus,
 	}
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// applyRemoteYAML fetches YAML from a URL and applies it to the cluster via the k8s SDK.
+// Returns combined output string and any error (continues on partial failures).
+func applyRemoteYAML(url, namespace string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, string(body))
+	}
+
+	yamlBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response from %s: %w", url, err)
+	}
+
+	if err := k8s.ApplyYAMLToCluster(string(yamlBytes), namespace); err != nil {
+		return string(yamlBytes), err
+	}
+	return string(yamlBytes), nil
+}
+
+// validateS3Bucket checks that S3 credentials can access a bucket using AWS SDK v2.
+func validateS3Bucket(bucket, region, accessKeyID, secretAccessKey string) error {
+	cfg, err := config.AWSConfig(accessKeyID, secretAccessKey, region)
+	if err != nil {
+		return fmt.Errorf("failed to create AWS config: %w", err)
+	}
+
+	svc := config.NewS3Client(cfg)
+	ctx := context.TODO()
+	_, err = svc.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
+	return err
 }

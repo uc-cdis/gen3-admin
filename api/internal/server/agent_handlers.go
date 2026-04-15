@@ -329,7 +329,7 @@ func CreateLocalAgentHandler(c *gin.Context) {
 }
 
 func detectLocalServerAddress() string {
-	return "csoc-api.csoc.svc:50051"
+	return "csoc-grpc.csoc.svc:50051"
 }
 
 func injectServerAddress(yamlManifest string, serverAddress string) string {
