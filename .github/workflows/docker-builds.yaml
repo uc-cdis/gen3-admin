@@ -5,7 +5,7 @@ on: push
 jobs:
   build-frontend:
     name: Build Frontend Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.frontend"
       OVERRIDE_REPO_NAME: "csoc-frontend"
