@@ -34,6 +34,17 @@ const GlobalSettingsStep = ({ form }) => {
                 { label: 'Gen3FF (Frontend Framework)', value: 'gen3ff' },
               ]}
               {...g('values.global.frontendRoot')}
+              onChange={(val) => {
+                form.setFieldValue('values.global.frontendRoot', val);
+                // Sync frontend service toggles
+                if (val === 'gen3ff') {
+                  form.setFieldValue('values.portal.enabled', false);
+                  form.setFieldValue('values["frontend-framework"].enabled', true);
+                } else {
+                  form.setFieldValue('values.portal.enabled', true);
+                  form.setFieldValue('values["frontend-framework"].enabled', false);
+                }
+              }}
             />
           </Group>
         </div>

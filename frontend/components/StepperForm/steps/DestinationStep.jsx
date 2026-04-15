@@ -1,4 +1,4 @@
-import { TextInput, Select, Group, Stack, Paper, Divider, Switch, Tooltip, ActionIcon } from '@mantine/core';
+import { TextInput, Select, Group, Stack, Paper, Divider, Switch, Tooltip, ActionIcon, Accordion, Text } from '@mantine/core';
 import { IconPencil, IconRefresh } from '@tabler/icons-react';
 
 const DestinationStep = ({ form, clusters, fetchClusters }) => {
@@ -64,30 +64,40 @@ const DestinationStep = ({ form, clusters, fetchClusters }) => {
           />
         </Group>
 
-        {/* Helm Repository Configuration */}
-        <Divider label="Helm Chart Source" labelPosition="center" />
+        {/* Helm Repository Configuration — collapsible */}
+        <Accordion defaultValue="" variant="separated">
+          <Accordion.Item value="helm-source">
+            <Accordion.Control>
+              Helm Chart Source
+              <Text size="xs" c="dimmed" ml="xs">Repository URL, chart name & version</Text>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap="sm">
+                <Group grow>
+                  <TextInput
+                    label="Repository URL"
+                    description="Helm repository URL for the gen3 chart"
+                    {...form.getInputProps('destination.repoUrl')}
+                    placeholder="https://helm.gen3.org"
+                  />
+                  <TextInput
+                    label="Chart Name"
+                    description="Name of the chart to deploy"
+                    {...form.getInputProps('destination.chartName')}
+                    placeholder="gen3"
+                  />
+                </Group>
 
-        <Group grow>
-          <TextInput
-            label="Repository URL"
-            description="Helm repository URL for the gen3 chart"
-            {...form.getInputProps('destination.repoUrl')}
-            placeholder="https://helm.gen3.org"
-          />
-          <TextInput
-            label="Chart Name"
-            description="Name of the chart to deploy"
-            {...form.getInputProps('destination.chartName')}
-            placeholder="gen3"
-          />
-        </Group>
-
-        <TextInput
-          label="Chart Version (optional)"
-          description="Leave empty for latest version"
-          {...form.getInputProps('destination.chartVersion')}
-          placeholder="e.g., 0.3.26"
-        />
+                <TextInput
+                  label="Chart Version (optional)"
+                  description="Leave empty for latest version"
+                  {...form.getInputProps('destination.chartVersion')}
+                  placeholder="e.g., 0.3.26"
+                />
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       </Stack>
     </Paper>
   );

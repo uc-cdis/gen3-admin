@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Stack, Paper, TextInput, Text, Divider, Group, Card, Title, Switch, Button, NumberInput, Collapse, Accordion, Textarea, Select, PasswordInput } from '@mantine/core';
 import { IconArrowBackUp, IconPlus, IconTrash } from '@tabler/icons-react';
 
-import AuthStep from './AuthStep';
 import { notifications } from '@mantine/notifications';
 
 const ConfigStep = ({ form }) => {
@@ -54,41 +53,6 @@ const ConfigStep = ({ form }) => {
 
   return (
     <Stack spacing="lg">
-
-      {/* ── Fence Configuration ── */}
-      {v?.fence?.enabled && (
-        <Accordion variant="separated" defaultValue="fence">
-          <Accordion.Item value="fence">
-            <Accordion.Control>
-              <Group justify="space-between">
-                <Text fw={600}>Fence (Authentication)</Text>
-              </Group>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Stack spacing="md">
-                <Text size="sm" c="dimmed">Configure OIDC providers and user sync settings.</Text>
-                <Paper p="md" radius="md" withBorder>
-                  <AuthStep form={form} />
-                </Paper>
-
-                {/* Additional Fence usersync quick settings */}
-                <Divider label="Usersync CronJob" labelPosition="center" />
-                <Switch
-                  label="Enable Usersync"
-                  checked={Boolean(v.fence?.usersync?.usersync)}
-                  onChange={(e) => form.setFieldValue('values.fence.usersync.usersync', e.currentTarget.checked)}
-                />
-                {v.fence?.usersync?.usersync && (
-                  <Group grow mt="xs">
-                    <TextInput label="Schedule (cron)" {...form.getInputProps('values.fence.usersync.schedule')} />
-                    <TextInput label="User YAML S3 Path" {...form.getInputProps('values.fence.usersync.userYamlS3Path')} />
-                  </Group>
-                )}
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      )}
 
       {/* ── Hatchery / Workspace Configuration ── */}
       {(v?.hatchery?.enabled || v?.hatchery === true) && (
