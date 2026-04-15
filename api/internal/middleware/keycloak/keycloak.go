@@ -391,6 +391,7 @@ func SuccessMiddleware() gin.HandlerFunc {
 			"groups":         fakeGroups,
 			"user_roles":     fakeRoles,
 			"account_roles":  fakeRoles,
+			"roles":         fakeRoles,
 			"issuer":         "mock-issuer",
 			"audience":       "mock-client",
 			"issued_at":      time.Now(),
@@ -398,6 +399,7 @@ func SuccessMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("userInfo", userInfo)
+		c.Set("visibleAgents", []string{"*"})
 
 		groupStrings := make([]string, len(fakeGroups))
 		for i, g := range fakeGroups {

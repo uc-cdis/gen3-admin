@@ -7,10 +7,10 @@ replicaCount: 1
 image:
   pullPolicy: IfNotPresent  # Pull from registry if not available locally
   api:
-    repository: csoc-api
+    repository: quay.io/cdis/csoc-api
     tag: "feat_bootstrap-onboarding-impl"
   frontend:
-    repository: csoc-frontend
+    repository: quay.io/cdis/csoc-frontend
     tag: "feat_bootstrap-onboarding-impl"
 
 imagePullSecrets: []

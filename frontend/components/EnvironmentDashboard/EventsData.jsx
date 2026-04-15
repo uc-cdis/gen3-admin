@@ -309,26 +309,26 @@ const EventsCards = ({ eventsData, onRefresh }) => {
             ) : (
               <Paper
                 p="md"
-                style={{ 
-                  textAlign: "center", 
-                  backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.green[0],
-                  border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.green[2]}`,
+                style={{
+                  textAlign: "center",
+                  backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.gray[0],
+                  border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
                 }}
               >
                 <ThemeIcon
                   size="lg"
                   variant={isDark ? 'filled' : 'light'}
-                  color="green"
+                  color="gray"
                   mx="auto"
                   mb="xs"
                 >
                   <IconCircleCheck size={20} />
                 </ThemeIcon>
-                <Text color={isDark ? theme.colors.green[4] : 'green'} fw={500}>
-                  All systems operational
+                <Text color={isDark ? theme.colors.dark[1] : 'dimmed'} fw={500}>
+                  No K8s warnings or errors
                 </Text>
                 <Text color={isDark ? theme.colors.dark[2] : 'dimmed'} size="sm">
-                  No active alerts or warnings
+                  This shows event-level alerts — check Services above for deployment status
                 </Text>
               </Paper>
             )}

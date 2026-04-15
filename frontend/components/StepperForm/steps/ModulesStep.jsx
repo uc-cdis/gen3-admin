@@ -1,44 +1,83 @@
-import { TextInput, Stack, Paper, Divider, Group, Switch, Collapse, Text, Checkbox, SimpleGrid, Tooltip, PasswordInput, Radio, Textarea, Alert, List, Title } from '@mantine/core';
-import { IconHelp, IconWorld, IconId, IconKey, IconLink, IconInfoCircle } from '@tabler/icons-react';
+import { useState } from 'react';
+import { Stack, Paper, Text, Divider, Checkbox, SimpleGrid, Tooltip, Accordion, Badge, Group } from '@mantine/core';
+import { IconHelp } from '@tabler/icons-react';
 
+import { SERVICE_CATEGORIES } from '../serviceRegistry';
 
 const ModulesStep = ({ form }) => {
-  const modulesNew = [
-    { label: 'Audit', value: 'audit', tooltip: 'Gen3 audit service' },
-    { label: 'Arborist', value: 'arborist', tooltip: 'Gen3 auth service' },
-    { label: 'Indexd', value: 'indexd', tooltip: '' },
-    { label: 'Fence', value: 'fence', tooltip: 'Gen3 auth service' },
-    { label: 'Frontend-Framework', value: 'frontend-framework', tooltip: 'New frontend framework' },
-    { label: 'Guppy', value: 'guppy', tooltip: 'GraphQL API for flattened Gen3 data' },
-    { label: 'Hatchery', value: 'hatchery', tooltip: 'Gen3 workspaces' },
-    { label: 'Metadata', value: 'metadata', tooltip: 'Gen3 metadata catalog' },
-    { label: 'Peregrine', value: 'peregrine', tooltip: 'GraphQL API for Gen3 structured data' },
-    { label: 'Portal', value: 'portal', tooltip: 'Gen3 portal' },
-    { label: 'Sheepdog', value: 'sheepdog', tooltip: 'Gen3 sheepdog service' },
-  ];
+  // Default expanded categories (core services visible by default)
+  const [expandedCategories] = useState(['core']);
+
+  // Toggle all services in a category
+  const toggleCategory = (category, enabled) => {
+    category.services.forEach(svc => {
+      form.setFieldValue(`values.${svc.key}.enabled`, enabled);
+    });
+  };
+
+  // Check if all services in a category are enabled
+  const isCategoryAllEnabled = (category) =>
+    category.services.every(svc => form.values.values?.[svc.key]?.enabled);
+
+  // Count enabled services in a category
+  const enabledCount = (category) =>
+    category.services.filter(svc => form.values.values?.[svc.key]?.enabled).length;
 
   return (
     <Paper p="md" radius="md" withBorder>
       <Stack spacing="lg">
-      <Text fw={700} size="lg" mb="md">
-      Please select the Gen3 Microservices you want to deploy</Text>
-        <SimpleGrid cols={3} spacing="lg" breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'sm', cols: 1 }]}>
-          {modulesNew.map((module) => (
-            <Group key={module?.value} position="apart">
-              <Checkbox
-                key={`values.${module.value}.enabled`}
-                label={module?.label}
-                {...form.getInputProps(`values.${module.value}.enabled`, { type: 'checkbox' })}
-              />
+        <Text fw={700} size="lg">
+          Select Gen3 Microservices to Deploy
+        </Text>
+        <Text size="sm" c="dimmed">
+          Services are grouped by category. Core services are enabled by default for a functional deployment.
+        </Text>
 
-              {module?.tooltip && (
-                <Tooltip label={module.tooltip}>
-                  <IconHelp size={16} />
-                </Tooltip>
-              )}
-            </Group>
+        <Accordion variant="separated" multiple defaultValue={expandedCategories}>
+          {SERVICE_CATEGORIES.map(category => (
+            <Accordion.Item key={category.id} value={category.id}>
+              <Accordion.Control>
+                <Group justify="space-between">
+                  <Group gap="xs">
+                    <Text fw={600}>{category.label}</Text>
+                    <Badge size="sm" variant="light">
+                      {enabledCount(category)} / {category.services.length}
+                    </Badge>
+                  </Group>
+                  <Text size="xs" c="dimmed">{category.description}</Text>
+                </Group>
+              </Accordion.Control>
+              <Accordion.Panel>
+
+                {/* Select All checkbox for this category */}
+                <Group justify="space-between" mb="xs">
+                  <Checkbox
+                    label="Select All"
+                    checked={isCategoryAllEnabled(category)}
+                    onChange={(e) => toggleCategory(category, e.currentTarget.checked)}
+                  />
+                </Group>
+
+                <SimpleGrid cols={{ base: 1, xs: 2, sm: 3 }} spacing="lg">
+                  {category.services.map(svc => (
+                    <Group key={svc.key} justify="space-between">
+                      <Checkbox
+                        key={`values.${svc.key}.enabled`}
+                        label={svc.label}
+                        {...form.getInputProps(`values.${svc.key}.enabled`, { type: 'checkbox' })}
+                      />
+                      {svc.tooltip && (
+                        <Tooltip label={svc.tooltip}>
+                          <IconHelp size={16} />
+                        </Tooltip>
+                      )}
+                    </Group>
+                  ))}
+                </SimpleGrid>
+              </Accordion.Panel>
+            </Accordion.Item>
           ))}
-        </SimpleGrid>
+        </Accordion>
       </Stack>
     </Paper>
   );

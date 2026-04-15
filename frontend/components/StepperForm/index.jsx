@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
-  Stepper, Button, Group, Container, Switch, Code, Grid, Flex, Paper, Stack, Divider, Text,
+  Stepper, Button, Group, Container, Switch, Code, Flex, Paper, Stack, Divider, Text, Alert,
   useMantineColorScheme
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconRefresh, IconInfoCircle } from '@tabler/icons-react';
+import { IconRefresh, IconInfoCircle, IconAlertTriangle } from '@tabler/icons-react';
 import { callGoApi } from '@/lib/k8s';
 import YAML from 'yaml';
 
@@ -16,9 +16,9 @@ import DatabaseStep from './steps/DatabaseStep';
 import HostnameStep from './steps/HostnameStep';
 import ModulesStep from './steps/ModulesStep';
 import AuthStep from './steps/AuthStep';
-import WorkspacesStep from './steps/WorkspacesStep';
 import YamlEditor from '../YamlEditor/YamlEditor';
 import ConfigStep from './steps/ConfigStep';
+import GlobalSettingsStep from './steps/GlobalSettingsStep';
 
 const StepperForm = () => {
   const [active, setActive] = useState(0);
@@ -28,8 +28,7 @@ const StepperForm = () => {
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
 
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
-
+  const { colorScheme } = useMantineColorScheme();
   const isDarkMode = colorScheme === 'dark';
 
   const form = useForm({
@@ -39,60 +38,168 @@ const StepperForm = () => {
         releaseName: 'gen3-test',
         namespace: '',
         useCustomNs: false,
-
+        repoUrl: 'https://helm.gen3.org',
+        chartName: 'gen3',
+        chartVersion: '',
       },
       values: {
+        // ── global (aligned with gen3-helm/helm/gen3/values.yaml lines 6-147) ──
         global: {
-          environment: "dev",
-          aws: {
-            enabled: true,
-            scheme: "internet-facing",
-            // wafv2: {
-            //   enabled: false
-            // }
-          },
-          tls: { cert: '', key: '' },
-          hostname: 'gen3.example.com',
+          environment: "default",
+          clusterName: "default",
+          hostname: "localhost",
           dev: true,
-          revproxyArn: '',
-          frontendRoot: 'gen3ff',
-          netPolicy: { enabled: false, dbSubnet: '0.0.0.0/0' },
-          postgres: { dbCreate: true, master:
-            { username: "postgres", password: "", host: "", port: "5432" }
+
+          // Cloud provider selection (UI-only helper, not sent to helm)
+          _cloudProvider: "none",
+
+          // GCP
+          gcp: {
+            enabled: false,
+            projectID: "",
+            secretStoreServiceAccount: "",
+          },
+
+          // AWS
+          aws: {
+            region: "us-east-1",
+            enabled: false,
+            awsAccessKeyId: "",
+            awsSecretAccessKey: "",
+            externalSecrets: {
+              enabled: false,
+              externalSecretAwsCreds: "",
+              pushSecret: false,
+            },
+            secretStoreServiceAccount: {
+              enabled: false,
+              name: "secret-store-sa",
+              roleArn: "",
+            },
+            useLocalSecret: {
+              enabled: false,
+              localSecretName: "",
+            },
+            _credStrategy: "keys", // UI-only: keys | irsa | localSecret | externalSecrets
+          },
+
+          // Crossplane
+          crossplane: {
+            enabled: false,
+            providerConfigName: "provider-aws",
+            oidcProviderUrl: "",
+            accountId: "",
+            s3: {
+              kmsKeyId: "",
+              versioningEnabled: false,
+            },
+          },
+
+          // Postgres
+          postgres: {
+            dbCreate: true,
+            externalSecret: "",
+            master: {
+              username: "postgres",
+              password: "",
+              host: "",
+              port: "5432",
+            },
+          },
+
+          // Core identity
+          revproxyArn: "",
+          dictionaryUrl: "https://s3.amazonaws.com/dictionary-artifacts/datadictionary/develop/schema.json",
+          portalApp: "gitops",
+
+          // Access control
+          publicDataSets: true,
+          tierAccessLevel: "private",
+          tierAccessLimit: "1000",
+          logoutInactiveUsers: true,
+          workspaceTimeoutInMinutes: 480,
+          maintenanceMode: "off",
+          dataUploadBucket: "",
+
+          // Networking
+          netPolicy: {
+            enabled: false,
+            dbSubnets: [],
           },
           pdb: false,
+          dispatcherJobNum: "10",
+
+          // Frontend
+          frontendRoot: "gen3ff",
+
+          // Observability
+          metricsEnabled: true,
+          createSlackWebhookSecret: false,
+          slackWebhook: "",
+
+          // External Secrets (global)
+          externalSecrets: {
+            deploy: false,
+            createLocalK8sSecret: false,
+            clusterSecretStoreRef: "",
+            createSlackWebhookSecret: false,
+            slackWebhookSecretName: "",
+          },
+
+          // Topology Spread
+          topologySpread: {
+            enabled: false,
+            topologyKey: "topology.kubernetes.io/zone",
+            maxSkew: 1,
+          },
+
+          manifestGlobalExtraValues: {},
         },
+
+        // ── Infrastructure charts ──
         postgresql: {
-          persistence: {
-            enabled: true
-          }
-        },
-        revproxy: {
           image: {
-            repository: "quay.io/cdis/nginx",
-            tag: "master"
-          }
+            repository: "bitnamilegacy/postgresql",
+            tag: "16.6.0-debian-12-r2",
+          },
+          primary: {
+            persistence: { enabled: false },
+          },
         },
+        elasticsearch: {
+          image: "quay.io/cdis/elasticsearch",
+          imageTag: "7.10.2",
+          clusterName: "gen3-elasticsearch",
+          maxUnavailable: 0,
+          singleNode: true,
+          replicas: 1,
+          clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s",
+          resources: { requests: { cpu: "500m" } },
+        },
+
+        // ── Service toggles (aligned with Chart.yaml conditions) ──
+        // Core services — enabled by default
+        ambassador: { enabled: true },
         arborist: { enabled: true },
         audit: { enabled: true },
         fence: {
           enabled: true,
-          "usersync": {
-            "usersync": false,
-            "schedule": "*/30 * * * *",
-            "custom_image": null,
-            "syncFromDbgap": false,
-            "addDbgap": false,
-            "onlyDbgap": false,
-            "userYamlS3Path": "s3://cdis-gen3-users/helm-test/user.yaml",
-            "slack_webhook": "None",
-            "slack_send_dbgap": false,
-            "env": null
+          usersync: {
+            usersync: false,
+            schedule: "*/30 * * * *",
+            custom_image: null,
+            syncFromDbgap: false,
+            addDbgap: false,
+            onlyDbgap: false,
+            userYamlS3Path: "s3://cdis-gen3-users/helm-test/user.yaml",
+            slack_webhook: "None",
+            slack_send_dbgap: false,
+            env: null,
           },
-          // "USER_YAML": "cloud_providers: {}\nauthz:\n  # policies automatically given to anyone, even if they are not authenticated\n  anonymous_policies:\n  - open_data_reader\n\n  # policies automatically given to authenticated users (in addition to their other policies)\n  all_users_policies: []\n\n  groups:\n  # can CRUD programs and projects and upload data files\n  - name: data_submitters\n    policies:\n    - services.sheepdog-admin\n    - data_upload\n    - MyFirstProject_submitter\n    users:\n    - username1@gmail.com\n\n  # can create/update/delete indexd records\n  - name: indexd_admins\n    policies:\n    - indexd_admin\n    users:\n    - username1@gmail.com\n\n  resources:\n  - name: workspace\n  - name: data_file\n  - name: services\n    subresources:\n    - name: sheepdog\n      subresources:\n      - name: submission\n        subresources:\n        - name: program\n        - name: project\n    - name: 'indexd'\n      subresources:\n        - name: 'admin'\n    - name: audit\n      subresources:\n        - name: presigned_url\n        - name: login\n  - name: open\n  - name: programs\n    subresources:\n    - name: MyFirstProgram\n      subresources:\n      - name: projects\n        subresources:\n        - name: MyFirstProject\n\n  policies:\n  - id: workspace\n    description: be able to use workspace\n    resource_paths:\n    - /workspace\n    role_ids:\n    - workspace_user\n  - id: data_upload\n    description: upload raw data files to S3\n    role_ids:\n    - file_uploader\n    resource_paths:\n    - /data_file\n  - id: services.sheepdog-admin\n    description: CRUD access to programs and projects\n    role_ids:\n      - sheepdog_admin\n    resource_paths:\n      - /services/sheepdog/submission/program\n      - /services/sheepdog/submission/project\n  - id: indexd_admin\n    description: full access to indexd API\n    role_ids:\n      - indexd_admin\n    resource_paths:\n      - /programs\n  - id: open_data_reader\n    role_ids:\n      - peregrine_reader\n      - guppy_reader\n      - fence_storage_reader\n    resource_paths:\n    - /open\n  - id: all_programs_reader\n    role_ids:\n    - peregrine_reader\n    - guppy_reader\n    - fence_storage_reader\n    resource_paths:\n    - /programs\n  - id: MyFirstProject_submitter\n    role_ids:\n    - reader\n    - creator\n    - updater\n    - deleter\n    - storage_reader\n    - storage_writer\n    resource_paths:\n    - /programs/MyFirstProgram/projects/MyFirstProject\n\n  roles:\n  - id: file_uploader\n    permissions:\n    - id: file_upload\n      action:\n        service: fence\n        method: file_upload\n  - id: workspace_user\n    permissions:\n    - id: workspace_access\n      action:\n        service: jupyterhub\n        method: access\n  - id: sheepdog_admin\n    description: CRUD access to programs and projects\n    permissions:\n    - id: sheepdog_admin_action\n      action:\n        service: sheepdog\n        method: '*'\n  - id: indexd_admin\n    description: full access to indexd API\n    permissions:\n    - id: indexd_admin\n      action:\n        service: indexd\n        method: '*'\n  - id: admin\n    permissions:\n      - id: admin\n        action:\n          service: '*'\n          method: '*'\n  - id: creator\n    permissions:\n      - id: creator\n        action:\n          service: '*'\n          method: create\n  - id: reader\n    permissions:\n      - id: reader\n        action:\n          service: '*'\n          method: read\n  - id: updater\n    permissions:\n      - id: updater\n        action:\n          service: '*'\n          method: update\n  - id: deleter\n    permissions:\n      - id: deleter\n        action:\n          service: '*'\n          method: delete\n  - id: storage_writer\n    permissions:\n      - id: storage_creator\n        action:\n          service: '*'\n          method: write-storage\n  - id: storage_reader\n    permissions:\n      - id: storage_reader\n        action:\n          service: '*'\n          method: read-storage\n  - id: peregrine_reader\n    permissions:\n    - id: peregrine_reader\n      action:\n        method: read\n        service: peregrine\n  - id: guppy_reader\n    permissions:\n    - id: guppy_reader\n      action:\n        method: read\n        service: guppy\n  - id: fence_storage_reader\n    permissions:\n    - id: fence_storage_reader\n      action:\n        method: read-storage\n        service: fence\n\nclients:\n  wts:\n    policies:\n    - all_programs_reader\n    - open_data_reader\n\nusers:\n  username1@gmail.com: {}\n  username2:\n    tags:\n      name: John Doe\n      email: johndoe@gmail.com\n    policies:\n    - MyFirstProject_submitter\n\ncloud_providers: {}\ngroups: {}\n",
           FENCE_CONFIG: {
             OPENID_CONNECT: {
               generic_oidc_idp: {
+                enabled: false,
                 name: '',
                 client_id: '',
                 client_secret: '',
@@ -108,6 +215,7 @@ const StepperForm = () => {
                 scope: '',
               },
               google: {
+                enabled: false,
                 discovery_url: 'https://accounts.google.com/.well-known/openid-configuration',
                 client_id: '',
                 client_secret: '',
@@ -117,87 +225,132 @@ const StepperForm = () => {
                 mock_default_user: 'test@example.com',
               },
             },
-          }
+          },
         },
-        "frontend-framework": { enabled: true },
-        guppy: { enabled: false },
+        "frontend-framework": { enabled: false, image: { repository: "quay.io/cdis/commons-frontend-app", tag: "main" } },
         hatchery: {
           enabled: true,
-          sidecarContainer: {
-            cpuLimit: "0.1",
-            memoryLimit: "256Mi",
-            image: "quay.io/cdis/ecs-ws-sidecar:master",
-            env: {
-              NAMESPACE: "{{ .Release.Namespace }}",
-              HOSTNAME: "{{ .Values.global.hostname }}"
-            },
-            args: [],
-            command: [
-              "/bin/bash",
-              "./sidecar.sh"
-            ],
-            lifecyclePreStop: [
-              "su",
-              "-c",
-              "echo test",
-              "-s",
-              "/bin/sh",
-              "root"
-            ]
-          },
-          containers: [
-            {
-              targetPort: 8888,
-              cpuLimit: "1.0",
-              memoryLimit: "2Gi",
-              name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
-              image: "quay.io/cdis/heal-notebooks:combined_tutorials__latest",
+          hatchery: {
+            sidecarContainer: {
+              "cpu-limit": "0.1",
+              "memory-limit": "256Mi",
+              image: "quay.io/cdis/ecs-ws-sidecar:master",
               env: {
-                FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}"
+                NAMESPACE: "{{ .Release.Namespace }}",
+                HOSTNAME: "{{ .Values.global.hostname }}"
               },
-              args: [
-                "--NotebookApp.base_url=/lw-workspace/proxy/",
-                "--NotebookApp.default_url=/lab",
-                "--NotebookApp.password=''",
-                "--NotebookApp.token=''",
-                "--NotebookApp.shutdown_no_activity_timeout=5400",
-                "--NotebookApp.quit_button=False"
-              ],
-              command: [
-                "start-notebook.sh"
-              ],
-              pathRewrite: "/lw-workspace/proxy/",
-              useTls: false,
-              readyProbe: "/lw-workspace/proxy/",
-              lifecyclePostStart: [
-                "/bin/sh",
-                "-c",
-                "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd/; true"
-              ],
-              userUid: 1000,
-              fsGid: 100,
-              userVolumeLocation: "/home/jovyan/pd",
-              gen3VolumeLocation: "/home/jovyan/.gen3"
-            }
-          ]
+              args: [],
+              command: ["/bin/bash", "./sidecar.sh"],
+              "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"],
+            },
+            containers: [
+              {
+                "target-port": 8888,
+                "cpu-limit": "2",
+                "memory-limit": "3Gi",
+                name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
+                image: "quay.io/cdis/jupyter-superslim:2.1.0",
+                env: { FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}" },
+                args: ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.default_url=/lab"],
+                command: ["start-notebook.sh"],
+                "path-rewrite": "/lw-workspace/proxy/",
+                "use-tls": "false",
+                "ready-probe": "/lw-workspace/proxy/",
+                "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd/; true"],
+                "user-uid": 1010,
+                "fs-gid": 100,
+                "user-volume-location": "/home/jovyan/pd",
+                "gen3-volume-location": "/home/jovyan/.gen3",
+              },
+            ],
+            reaper: {
+              enabled: true,
+              suspendCronjob: false,
+              schedule: "*/15 * * * *",
+              idleTimeoutSeconds: 3600,
+            },
+          },
         },
-        indexd: { enabled: true },
+        indexd: { enabled: true, defaultPrefix: "PREFIX/" },
+        manifestservice: { enabled: true },
         metadata: { enabled: true },
-        portal: { enabled: false },
-        peregrine: { enabled: false },
-        sheepdog: { enabled: false },
-        elasticsearch: {
-          masterService: "elasticsearch",
-          volumeClaimTemplate: {
-            resources: {
-              requests: {
-                storage: "10Gi"
-              }
-            }
-          }
+        peregrine: { enabled: true },
+        portal: { enabled: true },
+        revproxy: {
+          enabled: true,
+          ingress: {
+            enabled: false,
+            annotations: {},
+            hosts: [],
+            tls: [],
+          },
+        },
+        sheepdog: { enabled: true },
+        wts: { enabled: true },
+        etl: { enabled: true },
+
+        // Data Explorer — disabled by default
+        guppy: { enabled: false, esEndpoint: "" },
+
+        // Workspace & Workflow — disabled by default
+        "argo-wrapper": { enabled: false },
+        "gen3-workflow": { enabled: false },
+
+        // Medical Imaging — disabled by default
+        "dicom-server": { enabled: false },
+        orthanc: { enabled: false },
+        "ohif-viewer": { enabled: false },
+
+        // Observability & Security — disabled by default
+        neuvector: {
+          enabled: false,
+          policies: { include: false, policyMode: "Monitor" },
+          ingress: { controller: "nginx-ingress-controller", namespace: "nginx", class: "nginx" },
+          DB_HOST: "development-gen3-postgresql",
+          ES_HOST: "gen3-elasticsearch-master",
+        },
+        "aws-es-proxy": { enabled: false, esEndpoint: "", secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" } },
+        "aws-sigv4-proxy": { enabled: false },
+
+        // OHDSI — disabled by default
+        "ohdsi-atlas": { enabled: false },
+        "ohdsi-webapi": { enabled: false },
+
+        // Other Services — disabled by default
+        cedar: { enabled: false },
+        "cohort-middleware": { enabled: false },
+        dashboard: { enabled: false, dashboardConfig: { bucket: "generic-dashboard-bucket", prefix: "hostname.com" } },
+        "data-upload-cron": { enabled: false },
+        datareplicate: { enabled: false },
+        "embedding-management-service": { enabled: false },
+        "gen3-analysis": { enabled: false },
+        "gen3-user-data-library": { enabled: false },
+        requestor: { enabled: false },
+        sower: { enabled: false },
+        "ssjdispatcher": { enabled: false },
+        "access-backend": { enabled: false },
+        pidgin: { enabled: false },
+
+        // Misc top-level values
+        mutatingWebhook: { enabled: false, image: "quay.io/cdis/node-affinity-daemonset:feat_pods" },
+        secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" },
+        tests: {
+          TEST_LABEL: "",
+          SERVICE_TO_TEST: "",
+          resources: { requests: { memory: "6G" }, limits: { memory: "10G" } },
+          image: { tag: "master" },
+        },
+        auroraRdsCopyJob: {
+          enabled: false,
+          auroraMasterSecret: "",
+          sourceNamespace: "",
+          targetNamespace: "",
+          writeToK8sSecret: false,
+          writeToAwsSecret: false,
+          services: [],
         },
       },
-    }
+    },
   });
 
   const fetchClusters = async () => {
@@ -213,29 +366,28 @@ const StepperForm = () => {
   const fetchCerts = async () => {
     try {
       const data = await callGoApi('/aws/certificates', 'GET', null, null, accessToken);
-      console.log(data)
       const certOptions = data.map((cert) => ({
         value: cert.arn,
         label: cert.domainName,
       }));
-
       setCerts(certOptions);
-
     } catch (err) {
       console.error('Error fetching certs', err);
     }
   };
 
   const deploy = async () => {
+    const dest = form.values.destination;
     const body = {
-      repoUrl: 'https://helm.gen3.org',
-      chart: 'gen3',
-      release: form.values.destination.releaseName,
-      namespace: form.values.destination.namespace === '' ? form.values.destination.releaseName : form.values.destination.namespace,
+      repoUrl: dest.repoUrl || 'https://helm.gen3.org',
+      chart: dest.chartName || 'gen3',
+      version: dest.chartVersion || undefined,
+      release: dest.releaseName,
+      namespace: dest.namespace === '' ? dest.releaseName : dest.namespace,
       values: form.values.values,
     };
     try {
-      const res = await callGoApi(`/agent/${form.values.destination.cluster}/helm/install`, 'POST', body, null, accessToken);
+      const res = await callGoApi(`/agent/${dest.cluster}/helm/install`, 'POST', body, null, accessToken);
       console.log('Deployed', res);
       alert('Deployment started!');
     } catch (err) {
@@ -245,53 +397,90 @@ const StepperForm = () => {
   };
 
   useEffect(() => {
-    if (!accessToken) return
+    if (!accessToken) return;
     const load = async () => {
-      try {
-        await fetchClusters();
-      } catch (err) {
-        console.error('Error fetching clusters:', err);
-      }
-
-      try {
-        await fetchCerts();
-      } catch (err) {
-        console.error('Error fetching certs:', err);
-      }
+      try { await fetchClusters(); } catch (err) { console.error('Error fetching clusters:', err); }
+      try { await fetchCerts(); } catch (err) { console.error('Error fetching certs:', err); }
     };
     load();
   }, [accessToken]);
 
+  // Build validation warnings for the review step
+  const getValidationWarnings = () => {
+    const v = form.values.values;
+    const warnings = [];
+    if (!v.global.hostname || v.global.hostname === 'localhost') {
+      warnings.push('Hostname is still set to "localhost" — update it for a real deployment');
+    }
+    if (v.fence?.enabled && !v.fence?.FENCE_CONFIG?.OPENID_CONNECT?.google?.client_id && !v.fence?.FENCE_CONFIG?.OPENID_CONNECT?.generic_oidc_idp?.client_id) {
+      warnings.push('Fence is enabled but no OIDC provider is configured — users will not be able to log in');
+    }
+    if (!v.global.dev && !v.global.postgres.master.host) {
+      warnings.push('Production mode (dev=false) but no external Postgres host configured');
+    }
+    return warnings;
+  };
 
   const steps = [
-    // { label: 'Cloud', content: <CloudStep /> },
     { label: 'Destination', content: <DestinationStep form={form} clusters={clusters} fetchClusters={fetchClusters} /> },
-    { label: 'Hostname', content: <HostnameStep form={form} certs={certs} fetchCerts={fetchCerts} /> },
+    { label: 'Global Settings', content: <GlobalSettingsStep form={form} /> },
+    { label: 'Hostname & TLS', content: <HostnameStep form={form} certs={certs} fetchCerts={fetchCerts} /> },
     { label: 'Database', content: <DatabaseStep form={form} /> },
-    { label: 'Modules', content: <ModulesStep form={form} /> },
-    { label: 'Configuration', content: <ConfigStep form={form} /> },
-    // { label: 'Authentication', content: <AuthStep form={form} /> },
-    // { label: 'Workspaces', content: <WorkspacesStep form={form} /> },
+    { label: 'Services', content: <ModulesStep form={form} /> },
+    { label: 'Authentication', content: <AuthStep form={form} /> },
+    { label: 'Service Config', content: <ConfigStep form={form} /> },
     {
       label: 'Review & Deploy', content: (
         <Stack>
-          <Text> Please review the values.yaml - This is what's going to be deployed to <b>cluster: {form.values.cluster}</b> in <b>namespace: {form.values.namespace}</b></Text>
+          {/* Validation Warnings */}
+          {(() => {
+            const warnings = getValidationWarnings();
+            return warnings.length > 0 ? (
+              <Alert icon={<IconAlertTriangle size={16} />} color="yellow" title="Configuration Warnings">
+                <Stack gap="xs">
+                  {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
+                </Stack>
+              </Alert>
+            ) : null;
+          })()}
+
+          {/* Deployment Target Summary */}
+          <Paper withBorder p="md" radius="md">
+            <Group grow>
+              <div>
+                <Text size="xs" c="dimmed">Cluster</Text>
+                <Text fw={500}>{form.values.destination.cluster || '(not selected)'}</Text>
+              </div>
+              <div>
+                <Text size="xs" c="dimmed">Release</Text>
+                <Text fw={500}>{form.values.destination.releaseName}</Text>
+              </div>
+              <div>
+                <Text size="xs" c="dimmed">Namespace</Text>
+                <Text fw={500}>{form.values.destination.namespace || form.values.destination.releaseName}</Text>
+              </div>
+              <div>
+                <Text size="xs" c="dimmed">Chart</Text>
+                <Text fw={500}>{form.values.destination.repoUrl}/{form.values.destination.chartName}</Text>
+              </div>
+            </Group>
+          </Paper>
+
+          <Text>Review the generated values.yaml below — this is what will be deployed.</Text>
           <Editor
-            className='border rounded-lg h-screen'
+            className='border rounded-lg'
             value={YAML.stringify(form.values.values, null, 2)}
             defaultLanguage='yaml'
-            height={"500px"}
+            height={"600px"}
             readOnly={true}
             theme={isDarkMode ? 'vs-dark' : 'light'}
             options={{
               readOnly: true,
               scrollBeyondLastLine: false,
-              minimap: {
-                enabled: false,
-              },
+              minimap: { enabled: false },
             }}
           />
-          <Button onClick={deploy}>Deploy</Button>
+          <Button onClick={deploy} size="lg">Deploy</Button>
         </Stack>
       )
     }
@@ -308,7 +497,7 @@ const StepperForm = () => {
           ))}
         </Stepper>
 
-        <Group position="center" mt="xl">
+        <Group justify="center" mt="xl">
           {active > 0 && <Button variant="default" onClick={() => setActive((c) => c - 1)}>Back</Button>}
           {active < steps.length - 1 && <Button onClick={() => setActive((c) => c + 1)}>Next</Button>}
         </Group>
@@ -318,21 +507,16 @@ const StepperForm = () => {
         <Switch label="Debug Mode" checked={debugMode} onChange={(e) => setDebugMode(e.currentTarget.checked)} />
 
         {debugMode && (
-          <Grid mt="xl" gutter="xl">
-            <Grid.Col span={6}>
-              <Paper withBorder p="md">
-                <Text size="sm" weight={500} mb="sm">Destination Configuration</Text>
-                {/* <Code block>{JSON.stringify(form.values, null, 2)}</Code> */}
-                <YamlEditor data={form.values?.destination} button={false} readOnly={true} />
-              </Paper>
-            </Grid.Col>
-            <Grid.Col span={6}>
-              <Paper withBorder p="md">
-                <Text size="sm" weight={500} mb="sm">Generated values.yaml</Text>
-                <YamlEditor data={form.values?.values} button={false} readOnly={true} />
-              </Paper>
-            </Grid.Col>
-          </Grid>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <Paper withBorder p="md" style={{ flex: 1 }}>
+              <Text size="sm" fw={500} mb="sm">Destination Configuration</Text>
+              <YamlEditor data={form.values?.destination} button={false} readOnly={true} />
+            </Paper>
+            <Paper withBorder p="md" style={{ flex: 1 }}>
+              <Text size="sm" fw={500} mb="sm">Generated values.yaml</Text>
+              <YamlEditor data={form.values?.values} button={false} readOnly={true} />
+            </Paper>
+          </div>
         )}
       </Container>
     </>

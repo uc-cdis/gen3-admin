@@ -13,14 +13,14 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
       const domain = selectedCert.label.replace('*.', '');
       setWildcardDomain(domain);
       setSubdomain('');
-      form.setFieldValue('values.global.hostname', "."+domain);
+      form.setFieldValue('values.global.hostname', "." + domain);
     }
   };
 
   useEffect(() => {
     if (wildcardDomain && subdomain) {
       const fullHostname = `${subdomain}.${wildcardDomain}`;
-      if (form.values.hostname !== fullHostname) {
+      if (form.values.values?.global?.hostname !== fullHostname) {
         form.setFieldValue('values.global.hostname', fullHostname);
       }
     }
@@ -36,14 +36,14 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
             <Switch label="Use AWS Certificate Manager (ACM)?" checked />
           </Tooltip>
 
-          <Group position="apart" align="flex-end">
+          <Group justify="space-between" align="flex-end">
             <Select
               label="Certificates"
               description="Select your Amazon managed certificate"
               data={certs}
-              value={form.values.values.global.revproxyArn}
+              value={form.values.values?.global?.revproxyArn}
               onChange={handleCertSelect}
-              sx={{ flexGrow: 1 }}
+              style={{ flexGrow: 1 }}
             />
             <Tooltip label="Refresh certs list">
               <ActionIcon
@@ -56,15 +56,6 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
               </ActionIcon>
             </Tooltip>
           </Group>
-
-          {/* <Group position="apart" align="flex-end">
-            <TextInput
-              label="AWS ACM ARN"
-              placeholder="e.g., arn:aws:acm:us-east-1:123456789012:certificate/1234"
-              {...form.getInputProps('global.revproxyArn')}
-              withAsterisk
-            />
-          </Group> */}
         </Stack>
 
         <Divider label="Hostname Configuration" labelPosition="center" />
@@ -80,7 +71,7 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
             />
             <TextInput
               label="Resulting Hostname"
-              value={form.values.values.global.hostname}
+              value={form.values.values?.global?.hostname || ''}
               readOnly
             />
           </Group>

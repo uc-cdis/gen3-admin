@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
@@ -583,6 +584,91 @@ func CreateAgentHandler(c *gin.Context) {
 	w.Write([]byte(config))
 }
 
+func CreateLocalAgentHandler(c *gin.Context) {
+	log.Info().Msg("CreateLocalAgentHandler - creating and deploying agent to local cluster")
+
+	var requestData struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if requestData.Name == "" {
+		requestData.Name = "local-agent"
+	}
+
+	// 1. Generate agent YAML manifest (reuse existing logic)
+	yamlManifest, err := generateAgentConfig(
+		requestData.Name,
+		"",   // no rolearn for local
+		false, // not EKS
+		"",   // no assume method
+		"",   // no access key
+		"",   // no secret key
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("Error generating agent config for local agent")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate agent config: " + err.Error()})
+		return
+	}
+
+	// 2. Fix remaining %s placeholders in the YAML (the Deployment args section uses a raw
+	//    string literal that doesn't go through fmt.Sprintf in generateAgentConfig)
+	yamlManifest = strings.ReplaceAll(yamlManifest, "%s", requestData.Name)
+
+	// 3. Inject --server-address into the agent Deployment args
+	serverAddress := detectLocalServerAddress()
+	yamlManifest = injectServerAddress(yamlManifest, serverAddress)
+
+	// 3. Apply the YAML to the local K8s cluster
+	err = k8s.ApplyYAMLToCluster(yamlManifest, "csoc")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to apply agent manifest to local cluster")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to deploy agent: " + err.Error()})
+		return
+	}
+
+	log.Info().Msgf("Local agent %s deployed successfully to cluster", requestData.Name)
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Agent deployed successfully",
+		"name":          requestData.Name,
+		"serverAddress": serverAddress,
+	})
+}
+
+// detectLocalServerAddress returns the gRPC address agents should use to reach the API
+func detectLocalServerAddress() string {
+	// Single-cluster mode: agent runs in same cluster as API, use K8s service DNS
+	return "csoc-api.csoc.svc:50051"
+}
+
+// injectServerAddress appends --server-address to the agent Deployment args
+func injectServerAddress(yamlManifest string, serverAddress string) string {
+	// The generated YAML contains:  args: ["--name", "<agentName>"]
+	// We need:              args: ["--name", "<agentName>", "--server-address", "<addr>"]
+	prefix := `args: ["--name", "`
+	idx := strings.Index(yamlManifest, prefix)
+	if idx < 0 {
+		log.Warn().Msg("Could not find agent args in generated YAML")
+		return yamlManifest
+	}
+
+	afterPrefix := yamlManifest[idx+len(prefix):]
+	closeQuote := strings.Index(afterPrefix, `"`)
+	if closeQuote < 0 {
+		log.Warn().Msg("Malformed agent args in generated YAML")
+		return yamlManifest
+	}
+
+	insertPoint := idx + len(prefix) + closeQuote + 1 // right after the closing quote of name
+	result := yamlManifest[:insertPoint] +
+		fmt.Sprintf(`, "--server-address", "%s"`, serverAddress) +
+		yamlManifest[insertPoint:]
+	return result
+}
+
 func GetAgentsHandler(c *gin.Context) {
 
 	// Get user info (for logging)
@@ -739,9 +825,22 @@ func DeleteAgentHandler(c *gin.Context) {
 	}
 
 	userInfo := userInfoInterface.(map[string]interface{})
-	roles := userInfo["roles"].(map[string]bool)
+	isSuperAdmin := false
 
-	if !roles["superadmin"] {
+	// Handle roles as either []string (mock auth) or map[string]bool (real auth)
+	switch r := userInfo["roles"].(type) {
+	case map[string]bool:
+		isSuperAdmin = r["superadmin"]
+	case []string:
+		for _, role := range r {
+			if role == "superadmin" {
+				isSuperAdmin = true
+				break
+			}
+		}
+	}
+
+	if !isSuperAdmin {
 		log.Warn().
 			Str("user", fmt.Sprintf("%v", userInfo["username"])).
 			Msg("Unauthorized attempt to delete agent")
@@ -1091,13 +1190,22 @@ func SetupHTTPServer() {
 	// issuer := os.Getenv("OKTA_ISSUER")
 	// clientID := os.Getenv("OKTA_CLIENT_ID")
 
-	r.Use(keycloak.AuthMiddleware())
+	mockAuth := os.Getenv("MOCK_AUTH") == "true"
+	if mockAuth {
+		log.Warn().Msg("MOCK_AUTH mode enabled - no real authentication is being applied! This should *NEVER* be used in production.")
+		r.Use(keycloak.SuccessMiddleware())
+	} else {
+		r.Use(keycloak.AuthMiddleware())
+	}
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 		})
 	})
+
+	// Environment detection (public, no auth required)
+	r.GET("/api/environment", GetEnvironmentHandler)
 
 	routes.Routes(r)
 
@@ -1108,9 +1216,7 @@ func SetupHTTPServer() {
 	}
 
 	protected := r.Group("/")
-	mockAuth := os.Getenv("MOCK_AUTH") == "true"
 	if mockAuth {
-		log.Warn().Msg("⚠️  MOCK_AUTH mode enabled — no real authentication is being applied! This should *NEVER* be used in production.")
 		protected.Use(keycloak.SuccessMiddleware())
 	} else {
 		protected.Use(keycloak.AuthMiddleware())
@@ -1134,6 +1240,15 @@ func SetupHTTPServer() {
 	}
 
 	r.POST("/api/agents", CreateAgentHandler)
+	r.POST("/api/agents/local", CreateLocalAgentHandler)
+
+	// Bootstrap endpoints (public, for workshop/onboarding)
+	r.POST("/api/bootstrap/argocd", InstallArgoCDHandler)
+	r.POST("/api/bootstrap/apps", InstallAppsHandler)
+	r.GET("/api/bootstrap/status", BootstrapStatusHandler)
+	r.POST("/api/bootstrap/alloy", InstallAlloyHandler)
+	r.GET("/api/bootstrap/configmap", ConfigMapHandler)
+	r.POST("/api/bootstrap/configmap", ConfigMapHandler)
 
 	r.DELETE("/api/agents/:agent", DeleteAgentHandler)
 
