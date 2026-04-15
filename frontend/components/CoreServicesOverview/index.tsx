@@ -200,7 +200,7 @@ export default function CoreServicesOverview({
           ownerName = ownerRef.name;
         } else {
           // Fallback: match by name prefix (pod names usually start with owner name)
-          for (const svcName of svcNames) {
+          for (const svcName of Array.from(svcNames)) {
             if (p.metadata.name.startsWith(svcName)) {
               ownerName = svcName;
               break;
@@ -322,7 +322,7 @@ export default function CoreServicesOverview({
       refreshIntervalRef.current = setInterval(fetchServices, 15000);
     } else {
       if (refreshIntervalRef.current) {
-        clearInterval(refIntervalRef.current);
+        clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
     }
