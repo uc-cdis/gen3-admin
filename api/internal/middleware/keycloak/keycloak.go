@@ -391,7 +391,7 @@ func SuccessMiddleware() gin.HandlerFunc {
 			"groups":         fakeGroups,
 			"user_roles":     fakeRoles,
 			"account_roles":  fakeRoles,
-			"roles":         fakeRoles,
+			"roles":          fakeRoles,
 			"issuer":         "mock-issuer",
 			"audience":       "mock-client",
 			"issued_at":      time.Now(),
@@ -406,12 +406,12 @@ func SuccessMiddleware() gin.HandlerFunc {
 			groupStrings[i] = fmt.Sprintf("%v", g)
 		}
 
-		log.Warn().
-			Str("username", fakeUser).
-			Str("email", fakeEmail).
-			Strs("groups", groupStrings).
-			Strs("roles", fakeRoles).
-			Msg("⚠️  MOCK_AUTH mode active — requests are NOT authenticated! This must NEVER be used in production.")
+		// log.Warn().
+		// 	Str("username", fakeUser).
+		// 	Str("email", fakeEmail).
+		// 	Strs("groups", groupStrings).
+		// 	Strs("roles", fakeRoles).
+		// 	Msg("⚠️  MOCK_AUTH mode active — requests are NOT authenticated! This must NEVER be used in production.")
 
 		c.Next()
 	}
