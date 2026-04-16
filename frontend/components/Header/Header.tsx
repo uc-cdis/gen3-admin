@@ -175,7 +175,23 @@ export function Header({
         })
       );
 
-      setEnvironments(environmentsData.flat());
+      const flat = environmentsData.flat();
+      setEnvironments(flat);
+
+      // If stored env no longer exists in fetched list, clear stale state
+      if (activeGlobalEnv && !flat.some((e: EnvItem) => e.value === activeGlobalEnv)) {
+        setActiveGlobalEnv('');
+        setActiveCluster('');
+        setActiveEnvManager('' as any);
+        setActiveEnvAppName('');
+        setActiveClusterProvider('');
+        setActiveClusterK8sVersion('');
+        setActiveEnvironments(null);
+        localStorage.removeItem('active-cluster');
+        localStorage.removeItem('active-environment');
+        localStorage.removeItem('active-env-manager');
+        localStorage.removeItem('active-env-app-name');
+      }
     } finally {
       setEnvironmentsLoading(false);
     }
