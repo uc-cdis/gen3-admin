@@ -125,6 +125,9 @@ func HandleK8sProxyRequest(c *gin.Context) {
 			}
 
 		case <-ctx.Done():
+			if responseStarted {
+				c.Writer.Flush()
+			}
 			return
 		}
 	}
@@ -246,6 +249,9 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 			}
 
 		case <-ctx.Done():
+			if responseStarted {
+				c.Writer.Flush()
+			}
 			return
 		}
 	}

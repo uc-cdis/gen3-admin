@@ -182,7 +182,7 @@ spec:
       serviceAccount: csoc
       containers:
         - name: agent
-          image: quay.io/jawadqur/agent:latest
+          image: quay.io/cdis/csoc-agent:feat_bootstrap-onboarding-impl
           command: ["agent"]
           args: ["--name", "%s"]
           {{- if and .EKS (eq .AssumeMethod "user") }}
