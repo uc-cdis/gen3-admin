@@ -24,7 +24,6 @@ spec:
 
   storage:
     size: 2Gi
-    storageClass: ""   # use default (minikube-hostpath)
 
   bootstrap:
     initdb:
