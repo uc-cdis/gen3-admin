@@ -16,7 +16,7 @@ set -euo pipefail
 RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
-VALUES_FILE="./helm/csoc/values-test.yaml"
+VALUES_FILE="./helm/csoc/values-aws-k3s.yaml"
 HOSTNAME="csoc.aws"
 GEN3_HOSTNAME="gen3.aws"
 KEYCLOAK_HOSTNAME="keycloak.aws"
@@ -131,6 +131,9 @@ start_keycloak() {
     sed -i "s/hostname: keycloak.local/hostname: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.local/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
 
+    # Patch ingress class for k3s (traefik instead of nginx)
+    sed -i "s/ingressClassName: nginx/ingressClassName: traefik/g" "$tmp"
+
     # Patch redirect URIs for AWS
     sed -i "s|http://localhost:3000|http://${HOSTNAME}|g" "$tmp"
     sed -i "s|http://csoc.local|http://${HOSTNAME}|g" "$tmp"
@@ -169,8 +172,6 @@ deploy_csoc() {
     -f "$VALUES_FILE"
     --set "image.api.tag=${API_IMAGE_TAG}"
     --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
-    --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
-    --set "ingress.className=traefik"
   )
 
   if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
