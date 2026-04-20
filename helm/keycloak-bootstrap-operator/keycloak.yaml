@@ -1,0 +1,235 @@
+############################################################
+# Keycloak local development setup for Minikube
+# - CloudNativePG PostgreSQL cluster (single instance)
+# - Keycloak operator CR (server instance)
+# - Admin credentials secret
+# - Realm import with local users (no Google IDP)
+# - Ingress for keycloak.local
+#
+# All resources deployed in the same namespace as CSOC.
+############################################################
+
+---
+############################################################
+# PostgreSQL cluster (CloudNativePG)
+############################################################
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: csoc
+spec:
+  instances: 1
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    size: 2Gi
+    storageClass: ""   # use default (minikube-hostpath)
+
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+
+  postgresql:
+    parameters:
+      shared_buffers: "128MB"
+
+---
+############################################################
+# Keycloak admin credentials
+############################################################
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-admin-credentials
+  namespace: csoc
+type: Opaque
+stringData:
+  username: admin
+  password: admin
+
+---
+############################################################
+# Keycloak server instance
+############################################################
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: csoc
+spec:
+  instances: 1
+
+  bootstrapAdmin:
+    user:
+      secret: keycloak-admin-credentials
+
+  db:
+    vendor: postgres
+    host: keycloak-db-rw
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-app
+      key: username
+    passwordSecret:
+      name: keycloak-db-app
+      key: password
+
+  http:
+    httpEnabled: true
+
+  hostname:
+    hostname: keycloak.local
+    strict: false
+    strictBackchannel: false
+
+  proxy:
+    headers: xforwarded
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+---
+############################################################
+# Realm import — csoc-realm (local users only)
+############################################################
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: csoc-realm
+  namespace: csoc
+spec:
+  keycloakCRName: keycloak
+
+  realm:
+    id: csoc-realm
+    realm: csoc-realm
+    enabled: true
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+
+    ########################################################
+    # Client — CSOC portal
+    ########################################################
+    clients:
+      - clientId: csoc-client
+        name: CSOC Portal
+        protocol: openid-connect
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        redirectUris:
+          - http://localhost:3000/*
+          - http://csoc.local/*
+        webOrigins:
+          - http://localhost:3000
+          - http://csoc.local
+
+        attributes:
+          pkce.code.challenge.method: S256
+
+        protocolMappers:
+          - name: roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            config:
+              claim.name: roles
+              multivalued: "true"
+              access.token.claim: "true"
+              id.token.claim: "true"
+              userinfo.token.claim: "true"
+
+          - name: groups
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            config:
+              claim.name: groups
+              full.path: "false"
+              access.token.claim: "true"
+              id.token.claim: "true"
+              userinfo.token.claim: "true"
+
+    ########################################################
+    # Roles
+    ########################################################
+    roles:
+      realm:
+        - name: superadmin
+          description: Super administrator — full access
+        - name: csoc-role
+          description: CSOC application role
+
+    ########################################################
+    # Groups
+    ########################################################
+    groups:
+      - name: superadmin
+      - name: csoc-group
+
+    ########################################################
+    # Local users (no Google IDP)
+    ########################################################
+    users:
+      - username: admin
+        email: admin@example.com
+        firstName: Admin
+        lastName: User
+        enabled: true
+        emailVerified: true
+        credentials:
+          - type: password
+            value: admin
+            temporary: false
+        realmRoles:
+          - superadmin
+          - csoc-role
+        groups:
+          - superadmin
+          - csoc-group
+
+      - username: devuser
+        email: dev@example.com
+        firstName: Dev
+        lastName: User
+        enabled: true
+        emailVerified: true
+        credentials:
+          - type: password
+            value: dev
+            temporary: false
+        realmRoles:
+          - csoc-role
+        groups:
+          - csoc-group
+
+---
+############################################################
+# Ingress — keycloak.local
+############################################################
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: csoc
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: keycloak.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-service
+                port:
+                  name: http

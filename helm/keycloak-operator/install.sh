@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEYCLOAK_VERSION="26.5.2"
+KEYCLOAK_VERSION="26.6.1"
 NAMESPACE="keycloak"
 
 echo "▶ Installing Keycloak Operator ${KEYCLOAK_VERSION}"

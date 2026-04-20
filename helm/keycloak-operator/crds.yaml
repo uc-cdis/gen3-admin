@@ -8,7 +8,7 @@ metadata:
 spec:
   instances: 1
 
-  image: quay.io/keycloak/keycloak:26.5.2
+  image: quay.io/keycloak/keycloak:26.6.1
 
   http:
     httpEnabled: true

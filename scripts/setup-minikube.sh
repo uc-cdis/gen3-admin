@@ -22,8 +22,9 @@ HOSTNAME="csoc.local"
 GEN3_HOSTNAME="gen3.local"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
-KEYCLOAK_NS="keycloak"
+KEYCLOAK_NS="${NAMESPACE}"
 KEYCLOAK_HOSTNAME="keycloak.local"
+CNPG_VERSION="1.29.0"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -83,12 +84,12 @@ start_minikube() {
   minikube addons enable metrics-server -p "$MINIKUBE_PROFILE" 2>/dev/null || true
   minikube addons enable ingress         -p "$MINIKUBE_PROFILE" 2>/dev/null || true
 
-  # Wait for ingress controller
+  # Wait for ingress controller pod
   log "Waiting for nginx ingress controller..."
   local max_wait=120
   local waited=0
   while [[ $waited -lt $max_wait ]]; do
-    if kubectl get pods -A 2>/dev/null | grep -qE "(nginx-ingress|ingress-nginx).+Running"; then
+    if kubectl get pods -n ingress-nginx 2>/dev/null | grep -q "Running"; then
       break
     fi
     sleep 5
@@ -122,6 +123,25 @@ setup_hosts() {
   fi
 }
 
+# ── CloudNativePG operator ──────────────────────────────────────────────────
+install_cnpg() {
+  if kubectl get namespace cnpg-system >/dev/null 2>&1 && \
+     kubectl get pods -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg 2>/dev/null | grep -q "Running"; then
+    warn "CloudNativePG operator already installed"
+    return
+  fi
+
+  log "Installing CloudNativePG operator v${CNPG_VERSION}..."
+  kubectl apply --server-side -f \
+    "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.29/releases/cnpg-${CNPG_VERSION}.yaml"
+
+  log "Waiting for CloudNativePG controller..."
+  kubectl rollout status deployment \
+    -n cnpg-system cnpg-controller-manager --timeout=120s
+
+  ok "CloudNativePG operator ready"
+}
+
 # ── Keycloak via Operator (opt-in) ──────────────────────────────────────────
 start_keycloak() {
   if [[ "${INSTALL_KEYCLOAK:-0}" != "1" ]]; then
@@ -133,24 +153,28 @@ start_keycloak() {
   if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1 && \
      kubectl get pods -n "$KEYCLOAK_NS" -l app=keycloak 2>/dev/null | grep -q "Running"; then
     warn "Keycloak already running in cluster"
-    start_keycloak_pf
+    setup_keycloak_hosts
     return
   fi
 
   log "Installing Keycloak via Operator..."
 
-  # Step 1: Install operator (CRDs + deployment)
+  # Step 1: Install CloudNativePG operator
+  install_cnpg
+
+  # Step 2: Install Keycloak operator (CRDs + deployment)
   if [[ -f "$KEYCLOAK_OPERATOR_DIR/install.sh" ]]; then
-    log "Running operator install script..."
-    bash "$KEYCLOAK_OPERATOR_DIR/install.sh"
+    log "Running Keycloak operator install script..."
+    # The install.sh hardcodes namespace="keycloak" — override via env
+    NAMESPACE="$KEYCLOAK_NS" bash "$KEYCLOAK_OPERATOR_DIR/install.sh"
   else
     # Fallback: install manually
-    local KC_VERSION="26.5.2"
+    local KC_VERSION="26.6.1"
     kubectl create namespace "$KEYCLOAK_NS" --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml"
     kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml"
     kubectl -n "$KEYCLOAK_NS" apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/kubernetes.yml"
-    kubectl patch clusterrolebinding keycloak-operator-clusterrolebinding \
+    kubectl patch clusterrolebinding keycloak-operator-clusterrole-binding \
       --type='json' \
       -p='[{"op": "replace", "path": "/subjects/0/namespace", "value":"'"$KEYCLOAK_NS"'"}]' || true
     kubectl rollout restart deployment/keycloak-operator -n "$KEYCLOAK_NS" 2>/dev/null || true
@@ -160,15 +184,28 @@ start_keycloak() {
   log "Waiting for Keycloak operator..."
   kubectl rollout status deployment/keycloak-operator -n "$KEYCLOAK_NS" --timeout=120s
 
-  # Step 2: Apply Keycloak CRD (server + realm config)
+  # Step 3: Apply Keycloak resources (CNPG cluster + server + realm + ingress)
   if [[ -f "$KEYCLOAK_CRD_FILE" ]]; then
-    log "Applying Keycloak CRD (server + realm)..."
-    kubectl apply -f "$KEYCLOAK_CRD_FILE"
+    log "Applying Keycloak resources (PostgreSQL cluster + server + realm)..."
+    # The CRD file uses a fixed namespace — sed it to match our namespace
+    if [[ "$KEYCLOAK_NS" != "csoc" ]]; then
+      local tmp
+      tmp=$(mktemp)
+      sed "s/namespace: csoc/namespace: ${KEYCLOAK_NS}/g" "$KEYCLOAK_CRD_FILE" > "$tmp"
+      kubectl apply -f "$tmp"
+      rm -f "$tmp"
+    else
+      kubectl apply -f "$KEYCLOAK_CRD_FILE"
+    fi
   else
-    die "Keycloak CRD file not found: $KEYCLOAK_CRD_FILE"
+    die "Keycloak resource file not found: $KEYCLOAK_CRD_FILE"
   fi
 
-  # Step 3: Wait for Keycloak server pod to be ready
+  # Step 4: Wait for PostgreSQL cluster to be ready
+  log "Waiting for PostgreSQL cluster (keycloak-db) to be ready..."
+  kubectl wait --for=condition=Ready cluster/keycloak-db -n "$KEYCLOAK_NS" --timeout=300s
+
+  # Step 5: Wait for Keycloak server pod to be ready
   log "Waiting for Keycloak server pod..."
   kubectl wait --for=condition=ready pod \
     -l app=keycloak -n "$KEYCLOAK_NS" \
@@ -176,42 +213,8 @@ start_keycloak() {
 
   ok "Keycloak is ready"
 
-  # Step 4: Create ingress for Keycloak
-  create_keycloak_ingress
-
-  # Step 5: Add keycloak hostname to /etc/hosts
+  # Step 6: Add keycloak hostname to /etc/hosts
   setup_keycloak_hosts
-}
-
-# ── Keycloak ingress ────────────────────────────────────────────────────────
-create_keycloak_ingress() {
-  log "Creating ingress for Keycloak ($KEYCLOAK_HOSTNAME)..."
-
-  kubectl apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: keycloak-ingress
-  namespace: ${KEYCLOAK_NS}
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
-spec:
-  ingressClassName: nginx
-  rules:
-    - host: ${KEYCLOAK_HOSTNAME}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: keycloak-service
-                port:
-                  name: http
-EOF
-
-  ok "Keycloak ingress created → http://$KEYCLOAK_HOSTNAME"
 }
 
 # ── Keycloak /etc/hosts entry ──────────────────────────────────────────────
@@ -260,6 +263,23 @@ deploy_csoc() {
     --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
     --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
   )
+
+  # When Keycloak is enabled, switch from MOCK_AUTH to real Keycloak auth
+  if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
+    log "Configuring CSOC portal to use Keycloak (http://keycloak.local)..."
+    helm_args+=(
+      # API — disable mock, point to Keycloak
+      --set "api.env.MOCK_AUTH=false"
+      --set "api.env.KEYCLOAK_URL=http://keycloak.local"
+      --set "api.env.KEYCLOAK_REALM=csoc-realm"
+      # Frontend — disable mock, point to Keycloak
+      --set "frontend.env.MOCK_AUTH=false"
+      --set "frontend.env.ENABLE_MOCK_AUTH=false"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=http://keycloak.local"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
+    )
+  fi
 
   # Upgrade or install
   if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
@@ -377,15 +397,32 @@ teardown() {
     ok "Minikube stopped"
   fi
 
-  # Optionally stop keycloak (operator-managed)
-  if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]] && \
-     kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1; then
-    read -rp "Remove Keycloak (operator + CRDs) too? [y/N] " ans
+  # Optionally remove keycloak + CNPG
+  if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
+    if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1; then
+      read -rp "Remove Keycloak + CloudNativePG resources? [y/N] " ans
+      if [[ "$ans" =~ ^[Yy]$ ]]; then
+        log "Removing Keycloak resources..."
+        kubectl delete -f "$KEYCLOAK_CRD_FILE" --ignore-not-found=true 2>/dev/null || true
+        kubectl delete cluster keycloak-db -n "$KEYCLOAK_NS" --ignore-not-found=true 2>/dev/null || true
+        ok "Keycloak + PostgreSQL removed from namespace '$KEYCLOAK_NS'"
+      fi
+    fi
+
+    read -rp "Uninstall CloudNativePG operator too? [y/N] " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
-      log "Removing Keycloak resources..."
-      kubectl delete -f "$KEYCLOAK_CRD_FILE" --ignore-not-found=true 2>/dev/null || true
-      kubectl delete namespace "$KEYCLOAK_NS" --ignore-not-found=true 2>/dev/null || true
-      ok "Keycloak removed from cluster"
+      log "Removing CloudNativePG operator..."
+      kubectl delete -f "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.29/releases/cnpg-${CNPG_VERSION}.yaml" \
+        --ignore-not-found=true 2>/dev/null || true
+      ok "CloudNativePG operator removed"
+    fi
+
+    read -rp "Remove Keycloak operator too? [y/N] " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+      log "Removing Keycloak operator..."
+      kubectl delete deployment/keycloak-operator -n "$KEYCLOAK_NS" --ignore-not-found=true 2>/dev/null || true
+      kubectl delete crds keycloaks.k8s.keycloak.org keycloakrealmimports.k8s.keycloak.org --ignore-not-found=true 2>/dev/null || true
+      ok "Keycloak operator removed"
     fi
   fi
 
@@ -440,6 +477,20 @@ show_status() {
   echo "    API:       http://localhost:8002/ping"
   echo "    Ingress:   http://$HOSTNAME"
   echo "    Gen3:      http://$GEN3_HOSTNAME"
+  echo ""
+
+  # Keycloak status
+  if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1; then
+    echo "  Keycloak:   http://$KEYCLOAK_HOSTNAME  (admin / admin)"
+    echo "  Keycloak pods:"
+    kubectl get pods -n "$KEYCLOAK_NS" 2>/dev/null | grep -E "keycloak|keycloak-db" | sed 's/^/    /'
+    echo ""
+    echo "  Realm:      csoc-realm"
+    echo "  Client:     csoc-client"
+    echo "  Users:      admin/admin (superadmin), devuser/dev (csoc-role)"
+  else
+    echo "  Keycloak:   NOT INSTALLED (use --keycloak to enable)"
+  fi
   echo ""
 }
 
