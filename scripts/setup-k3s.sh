@@ -164,11 +164,6 @@ deploy_csoc() {
 
   log "Deploying CSOC portal via Helm..."
 
-  if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
-    kubectl create namespace "$NAMESPACE"
-    ok "Created namespace: $NAMESPACE"
-  fi
-
   local helm_args=(
     --namespace "$NAMESPACE"
     -f "$VALUES_FILE"
@@ -194,11 +189,10 @@ deploy_csoc() {
 
   if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
     log "Upgrading existing release..."
-    helm upgrade "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
   else
     log "Installing fresh release..."
-    helm install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
   fi
+  helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
