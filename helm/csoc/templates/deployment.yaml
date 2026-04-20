@@ -15,6 +15,10 @@ spec:
         {{- include "csoc.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name | default (include "csoc.serviceAccountName" .) }}
+      {{- with .Values.frontend.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 
       volumes:
         # - name: {{ .Values.volumes.config.name }}

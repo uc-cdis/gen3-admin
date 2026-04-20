@@ -45,6 +45,10 @@ api:
 frontend:
   ports:
     http: 3000
+  hostAliases:
+    - ip: "10.43.118.93"
+      hostnames:
+        - keycloak.aws
   livenessProbe:
     httpGet:
       path: /
@@ -55,10 +59,15 @@ frontend:
     failureThreshold: 3
   env:
     NEXTAUTH_URL: "http://csoc.aws"
-    NEXTAUTH_SECRET: "test-secret-change-in-production"
-    NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production"
-    MOCK_AUTH: "true"
-    ENABLE_MOCK_AUTH: "true"
+    NEXTAUTH_SECRET: "test-secret-change-in-production" #  pragma: allowlist secret
+    NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" # pragma: allowlist secret
+    MOCK_AUTH: "false"
+    ENABLE_MOCK_AUTH: "false"
+    KEYCLOAK_CLIENT_SECRET: ""
+    NEXT_KEYCLOAK_CLIENT_ID: "csoc-client"
+    NEXT_PUBLIC_KEYCLOAK_REALM: "csoc-realm"
+    NEXT_PUBLIC_KEYCLOAK_URL: "http://keycloak.aws"
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: "http://keycloak.aws/realms/csoc-realm"
   resources:
     limits:
       memory: "256Mi"
