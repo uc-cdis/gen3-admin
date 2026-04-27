@@ -229,6 +229,20 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("userInfo", userInfo)
 
 		// -------------------------
+		// Open routes (any authenticated user)
+		// -------------------------
+
+		openRoutes := []string{
+			"/api/environment",
+		}
+		for _, route := range openRoutes {
+			if url == route {
+				c.Next()
+				return
+			}
+		}
+
+		// -------------------------
 		// /api/agents listing
 		// -------------------------
 
@@ -336,6 +350,15 @@ func AuthMiddleware() gin.HandlerFunc {
 				}
 			}
 
+			c.Next()
+			return
+		}
+
+		// -------------------------
+		// Superadmin can access any route
+		// -------------------------
+
+		if roleMap["superadmin"] {
 			c.Next()
 			return
 		}
