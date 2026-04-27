@@ -149,6 +149,31 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 	// Check if the agent is already connected
 	agentsMutex.Lock()
 	existingAgent, exists := AgentConnections[agentName]
+
+	// Preserve any pending request channels from a previous disconnected session
+	preservedChannels := make(map[string]chan *pb.ProxyResponse)
+	preservedContexts := make(map[string]context.Context)
+	preservedCancelFuncs := make(map[string]context.CancelFunc)
+
+	if exists {
+		// Copy over any pending request channels from the previous connection
+		if existingAgent.requestChannels != nil {
+			for k, v := range existingAgent.requestChannels {
+				preservedChannels[k] = v
+			}
+		}
+		if existingAgent.contexts != nil {
+			for k, v := range existingAgent.contexts {
+				preservedContexts[k] = v
+			}
+		}
+		if existingAgent.cancelFuncs != nil {
+			for k, v := range existingAgent.cancelFuncs {
+				preservedCancelFuncs[k] = v
+			}
+		}
+	}
+
 	if exists && existingAgent.stream != nil {
 		// If there's an existing connection, disconnect the old one
 		log.Warn().Msgf("Agent %s is already connected. Replacing the connection.", agentName)
@@ -175,9 +200,9 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 
 	agent := &AgentConnection{
 		stream:          stream,
-		requestChannels: make(map[string]chan *pb.ProxyResponse),
-		contexts:        make(map[string]context.Context),
-		cancelFuncs:     make(map[string]context.CancelFunc),
+		requestChannels: preservedChannels,
+		contexts:        preservedContexts,
+		cancelFuncs:     preservedCancelFuncs,
 		terminalStreams: make(map[string]*websocket.Conn),
 		agent: Agent{
 			Id:              cert.Subject.SerialNumber,
@@ -205,21 +230,21 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				log.Error().Err(err).Msgf("Error receiving message from agent %s", agentName)
 			}
 
-			log.Warn().Msg("Deleting the agent connection from map.")
+			log.Warn().Msg("Agent disconnected, keeping pending requests alive")
+			// Preserve the request channels so pending requests can still receive responses
+			// when the agent reconnects
 			agentsMutex.Lock()
 			AgentConnections[agentName] = &AgentConnection{
+				requestChannels: agent.requestChannels,
+				cancelFuncs:     agent.cancelFuncs,
+				contexts:        agent.contexts,
 				agent: Agent{
 					Connected: false,
 				},
 			}
 			agentsMutex.Unlock()
 
-			agent.mutex.Lock()
-			for _, cancel := range agent.cancelFuncs {
-				cancel()
-			}
-			agent.mutex.Unlock()
-
+			// Don't cancel pending requests - they'll be fulfilled when agent reconnects
 			return err
 		}
 
@@ -227,6 +252,20 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		case *pb.AgentMessage_Registration:
 			log.Debug().Msgf("Received registration from agent %s: %v", agentName, msg.Registration)
 			agentsMutex.Lock()
+			// Preserve any pending request channels that were stored during disconnection
+			existingAgent := AgentConnections[agentName]
+			if existingAgent != nil && existingAgent.requestChannels != nil {
+				// Merge preserved channels with the new agent
+				for k, v := range existingAgent.requestChannels {
+					agent.requestChannels[k] = v
+				}
+				for k, v := range existingAgent.contexts {
+					agent.contexts[k] = v
+				}
+				for k, v := range existingAgent.cancelFuncs {
+					agent.cancelFuncs[k] = v
+				}
+			}
 			AgentConnections[agentName] = agent
 			agentsMutex.Unlock()
 
@@ -250,14 +289,10 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				select {
 				case responseChan <- proxyResp:
 					log.Trace().Msgf("Response sent to channel for stream ID: %s", proxyResp.StreamId)
-				case <-time.After(3 * time.Second):
-					log.Trace().Msgf("Timed out trying to send response for stream ID: %s", proxyResp.StreamId)
 				case <-agent.contexts[proxyResp.StreamId].Done():
 					log.Trace().Msgf("Request cancelled for stream ID: %s", proxyResp.StreamId)
 					delete(agent.requestChannels, proxyResp.StreamId)
 					delete(agent.cancelFuncs, proxyResp.StreamId)
-				default:
-					log.Warn().Msgf("Channel is full for stream ID: %s", proxyResp.StreamId)
 				}
 			} else {
 				log.Warn().Msgf("Received response for unknown stream ID: %s", proxyResp.StreamId)
