@@ -1,30 +1,49 @@
 import DataTable from '@/components/DataTable/DataTable';
 
-import { Badge, Anchor } from '@mantine/core';
-
+import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
 import Link from 'next/link'
 
-export default function Dep() {
+export default function StatefulSets() {
     const clusterName = useParams()?.clustername;
 
-    console.log("clustername", clusterName)
     return (
         <>
             <DataTable
                 agent={clusterName}
                 endpoint={`/apis/apps/v1/statefulsets`}
-                fields = {[
+                fields={[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/deployments/${Name}`}>{Name}</Anchor>) },
-                    { key: "status.readyReplicas", label: "Ready" },
-                    { key: "spec.replicas", label: "Desired" },
-                    { key: "status.updatedReplicas", label: "Updated" },
-                    { key: "status.availableReplicas", label: "Available" },
-                    { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) }
+                    {
+                        key: "metadata.name",
+                        label: "Name",
+                        render: ({ original }) => (
+                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/statefulsets/${original.metadata.namespace}/${original.metadata.name}`}>
+                                <Text fw={500}>{original.metadata.name}</Text>
+                            </Anchor>
+                        )
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Ready",
+                        render: ({ original }) => {
+                            const ready = original.status?.readyReplicas || 0;
+                            const total = original.spec?.replicas || 0;
+                            return <Text>{`${ready}/${total}`}</Text>;
+                        }
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Desired",
+                        render: ({ original }) => {
+                            const desired = original.spec?.replicas ?? '-';
+                            return <Text>{desired}</Text>;
+                        }
+                    },
+                    { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
                 ]}
             />
         </>

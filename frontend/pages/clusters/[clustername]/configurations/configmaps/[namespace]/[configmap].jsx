@@ -9,18 +9,17 @@ export default function Detail() {
     const clusterName = useParams()?.clustername;
     const namespace = useParams()?.namespace;
     const resource = useParams()?.configmap;
-    console.log("+++++++++++++++",`/api/v1/namespaces/${namespace}/configmaps/${resource}`)
 
 
     return (
         <>
-            <ResourceDetails 
-                cluster={clusterName} 
+            <ResourceDetails
+                cluster={clusterName}
                 namespace={namespace}
                 resource={resource}
-                type="configmap" 
+                type="configmap"
                 tabs={["overview", "yaml"]}
-                url={`/api/v1/namespaces/${namespace}/configmaps/${resource}`} 
+                url={`/api/v1/namespaces/${namespace}/configmaps/${resource}`}
                 columnDefinitions={[
                     { label: "Name", path: "metadata.name" },
                     { label: "Namespace", path: "metadata.namespace" },

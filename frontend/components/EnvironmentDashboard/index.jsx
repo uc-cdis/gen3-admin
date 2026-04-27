@@ -437,13 +437,16 @@ export default function EnvironmentDashboardComp({
 
 
   useEffect(() => {
-    if (!rawNodes || !rawPods || !rawMetrics || !rawNamespaces) return;
+    // Process data if at least some of it is available (not all null)
+    const hasData = rawNodes || rawPods || rawMetrics || rawNamespaces;
+    if (!hasData) return;
 
     console.log("Processing data with", { rawNodes, rawPods, rawMetrics, rawNamespaces });
-    const filteredPods = {
+
+    const filteredPods = rawPods ? {
       ...rawPods,
       items: rawPods.items?.filter(p => p.metadata?.namespace === namespace) || [],
-    };
+    } : { items: [] };
 
     const processedMetrics = processMetricsData(rawMetrics, rawNodes, filteredPods);
     const processedNodes = processNodesData(rawNodes, processedMetrics?.nodes);
@@ -457,13 +460,15 @@ export default function EnvironmentDashboardComp({
 
     const now = new Date();
 
-    setCpuData((prev) =>
-      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.cpuPercentage }].slice(-24)
-    );
+    if (processedMetrics?.cluster) {
+      setCpuData((prev) =>
+        [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.cpuPercentage }].slice(-24)
+      );
 
-    setMemoryData((prev) =>
-      [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
-    );
+      setMemoryData((prev) =>
+        [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
+      );
+    }
 
     setEventsData(rawEvents?.items ?? []);
 
@@ -471,10 +476,10 @@ export default function EnvironmentDashboardComp({
   }, [rawNodes, rawPods, rawMetrics, rawEvents, rawNamespaces, namespace]);
 
 
-  // useEffect(() => {
-  //   if (!env || !namespace || !accessToken) return;
-  //   fetchDashboardData();
-  // }, [env, namespace, accessToken]);
+  useEffect(() => {
+    if (!env || !namespace || !accessToken) return;
+    fetchDashboardData();
+  }, [env, namespace, accessToken]);
 
 
   // Dynamic metrics cards

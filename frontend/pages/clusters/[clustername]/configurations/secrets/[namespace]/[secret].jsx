@@ -12,7 +12,7 @@ export default function Secret() {
             <ResourceDetails
                 cluster={clusterName}
                 namespace={namespace}
-                resource={resource} type="secret"
+                resource={resource} type="Secret"
                 tabs={["overview", "yaml", "events"]}
                 url={`/api/v1/namespaces/${namespace}/secrets/${resource}`}
                 columnDefinitions={[

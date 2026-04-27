@@ -1,17 +1,15 @@
 import DataTable from '@/components/DataTable/DataTable';
 
-import { Badge, Anchor } from '@mantine/core';
-
+import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
 import Link from 'next/link'
 
-export default function Dep() {
+export default function Pods() {
     const clusterName = useParams()?.clustername;
 
-    console.log("clustername", clusterName)
     return (
         <>
             <DataTable
@@ -20,78 +18,54 @@ export default function Dep() {
                 metricsEndpoint={`/apis/metrics.k8s.io/v1beta1/pods`}
                 fields={[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },
                     {
-                        key: "status.phase",
+                        key: "metadata.name",
+                        label: "Name",
+                        render: ({ original }) => (
+                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${original.metadata.namespace}/${original.metadata.name}`}>
+                                <Text fw={500}>{original.metadata.name}</Text>
+                            </Anchor>
+                        )
+                    },
+                    {
+                        key: "metadata.name",
                         label: "Status",
-                        render: ({ Status, Ready }) => {
-                            // Check if pod is in CrashLoopBackOff state
-                            const hasCrashLoopBackOff = Array.isArray(Ready) && Ready.some(
-                                status => status?.state?.waiting?.reason === 'CrashLoopBackOff'
+                        render: ({ original }) => {
+                            const phase = original.status?.phase;
+                            const containerStatuses = original.status?.containerStatuses;
+                            const hasCrashLoopBackOff = Array.isArray(containerStatuses) && containerStatuses.some(
+                                s => s?.state?.waiting?.reason === 'CrashLoopBackOff'
                             );
+                            const statusText = hasCrashLoopBackOff ? 'CrashLoopBackOff' : phase || 'Unknown';
 
-                            // Determine status text to display
-                            const statusText = hasCrashLoopBackOff
-                                ? 'CrashLoopBackOff'
-                                : Status || 'Unknown';
-
-                            // Determine badge color based on status
                             let color;
                             if (hasCrashLoopBackOff) {
                                 color = 'red';
                             } else {
-                                switch (Status) {
-                                    case 'Running':
-                                        color = 'green';
-                                        break;
-                                    case 'Pending':
-                                        color = 'orange';
-                                        break;
-                                    case 'Succeeded':
-                                        color = 'gray';
-                                        break;
-                                    case 'Completed':
-                                        color = 'blue';
-                                        break;
+                                switch (phase) {
+                                    case 'Running': color = 'green'; break;
+                                    case 'Pending': color = 'orange'; break;
+                                    case 'Succeeded': color = 'gray'; break;
+                                    case 'Completed': color = 'blue'; break;
                                     case 'Failed':
-                                    case 'Error':
-                                        color = 'red';
-                                        break;
-                                    default:
-                                        color = 'gray';
+                                    case 'Error': color = 'red'; break;
+                                    default: color = 'gray';
                                 }
                             }
 
-                            return (
-                                <Badge
-                                    color={color}
-                                    variant="filled"
-                                    radius="sm"
-                                >
-                                    {statusText}
-                                </Badge>
-                            );
+                            return <Badge color={color} variant="filled" radius="sm">{statusText}</Badge>;
                         }
                     },
                     { key: "status.podIP", label: "IP" },
                     { key: "spec.nodeName", label: "Node" },
-                    { key: "", label: "CPU" },
-
-                    // Ready / Total containers (Ex 0/1 or 1/1)
                     {
-                        key: "status.containerStatuses", label: "Ready", render: ({ Ready }) => {
-                            // Handle cases where Ready might be undefined or not an array
-                            const containers = Array.isArray(Ready) ? Ready : [];
-                            let ready = 0;
-                            let total = 0;
-
-                            containers.forEach(container => {
-                                if (container.ready) ready++;
-                                total++;
-                            });
-
-                            return `${ready}/${total}`;
-
+                        key: "metadata.name",
+                        label: "Ready",
+                        render: ({ original }) => {
+                            const containers = original.status?.containerStatuses || [];
+                            let ready = 0, total = containers.length;
+                            containers.forEach(c => { if (c.ready) ready++; });
+                            return <Text>{`${ready}/${total}`}</Text>;
                         }
                     },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },

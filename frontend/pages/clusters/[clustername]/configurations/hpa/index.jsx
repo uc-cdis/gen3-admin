@@ -1,30 +1,53 @@
 import DataTable from '@/components/DataTable/DataTable';
 
-import { Badge, Anchor } from '@mantine/core';
-
+import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
 import Link from 'next/link'
 
-export default function Dep() {
+export default function HPA() {
     const clusterName = useParams()?.clustername;
 
-    console.log("clustername", clusterName)
     return (
         <>
-           <h1>Horizontal Pod Autoscalers</h1>
             <DataTable
                 agent={clusterName}
-                endpoint={`/apis/autoscaling/v1/horizontalpodautoscalers`}
-                fields = {[
+                endpoint={`/apis/autoscaling/v2/horizontalpodautoscalers`}
+                fields={[
                     { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name }) => (<Anchor component={Link} href={`/clusters/${clusterName}/pods/${Name}`}>{Name}</Anchor>) },
-                    { key: "spec.minReplicas", label: "Minimum Pods" },
-                    { key: "spec.maxReplicas", label: "Maximum Pods" },
+                    {
+                        key: "metadata.name",
+                        label: "Name",
+                        render: ({ original }) => (
+                            <Anchor component={Link} href={`/clusters/${clusterName}/configurations/hpa/${original.metadata.namespace}/${original.metadata.name}`}>
+                                <Text fw={500}>{original.metadata.name}</Text>
+                            </Anchor>
+                        )
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Target",
+                        render: ({ original }) => {
+                            const ref = original.spec?.scaleTargetRef;
+                            if (!ref) return <Text c="dimmed">-</Text>;
+                            return <Text>{ref.kind}/{ref.name}</Text>;
+                        }
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Replicas",
+                        render: ({ original }) => {
+                            const current = original.status?.currentReplicas ?? '-';
+                            const desired = original.status?.desiredReplicas ?? '-';
+                            return <Text>{current}/{desired}</Text>;
+                        }
+                    },
+                    { key: "spec.minReplicas", label: "Min" },
+                    { key: "spec.maxReplicas", label: "Max" },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                  ]}
+                ]}
             />
         </>
     )

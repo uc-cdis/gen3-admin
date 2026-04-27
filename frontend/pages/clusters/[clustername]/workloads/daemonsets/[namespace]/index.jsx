@@ -1,51 +1,58 @@
-
 import DataTable from '@/components/DataTable/DataTable';
 
-import { Badge, Anchor } from '@mantine/core';
-
+import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
 import Link from 'next/link'
 
-
 export default function Detail() {
     const clusterName = useParams()?.clustername;
     const namespace = useParams()?.namespace;
-    console.log("clustername", clusterName)
+
     return (
         <>
             <DataTable
                 agent={clusterName}
                 endpoint={`/apis/apps/v1/namespaces/${namespace}/daemonsets`}
-                fields = {[
-                    { key: "metadata.namespace", label: "Namespace" },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/workloads/pods/${Namespace}/${Name}`}>{Name}</Anchor>) },
-                    { key: "status.phase", label: "Status", render: ({ Status }) => (<Badge color={Status === 'Running' ? 'green' : Status === 'Pending' ? 'orange' : Status === 'Succeeded' ? 'grey' : 'red'}>{Status}</Badge>) },
-                    { key: "status.podIP", label: "IP" },
-                    { key: "spec.nodeName", label: "Node" },
-                    { key: "", label: "CPU" },
-
-                    // Ready / Total containers (Ex 0/1 or 1/1)
+                fields={[
                     {
-                        key: "status.containerStatuses", label: "Ready", render: ({ Ready }) => {
-                            // Handle cases where Ready might be undefined or not an array
-                            const containers = Array.isArray(Ready) ? Ready : [];
-                            let ready = 0;
-                            let total = 0;
-
-                            containers.forEach(container => {
-                                if (container.ready) ready++;
-                                total++;
-                            });
-
-                            return `${ready}/${total}`;
-
+                        key: "metadata.name",
+                        label: "Name",
+                        render: ({ original }) => (
+                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/daemonsets/${namespace}/${original.metadata.name}`}>
+                                <Text fw={500}>{original.metadata.name}</Text>
+                            </Anchor>
+                        )
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Ready",
+                        render: ({ original }) => {
+                            const ready = original.status?.numberReady || 0;
+                            const total = original.status?.desiredNumberScheduled || 0;
+                            return <Text>{`${ready}/${total}`}</Text>;
+                        }
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Up-to-date",
+                        render: ({ original }) => {
+                            const updated = original.status?.updatedNumberScheduled ?? '-';
+                            return <Text>{updated}</Text>;
+                        }
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Available",
+                        render: ({ original }) => {
+                            const available = original.status?.numberAvailable ?? '-';
+                            return <Text>{available}</Text>;
                         }
                     },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                  ]}
+                ]}
             />
         </>
     )

@@ -1,72 +1,45 @@
 import callK8sApi from "@/lib/k8s"
-import { Alert, Group, Loader, Text, Badge } from "@mantine/core";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { Alert, Group, Loader, Text, Badge, Paper, Center, Stack } from "@mantine/core";
+import { IconAlertCircle, IconActivityHeartbeat } from "@tabler/icons-react";
 import { DataTable } from "mantine-datatable";
 import { useEffect, useState } from "react";
 
 export default function Events({ resource, namespace, type, cluster, accessToken }) {
-
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [eventsData, setEventsData] = useState(null)
-
-    console.log(resource, namespace, type, cluster)
+    const [eventsData, setEventsData] = useState(null);
 
     const fetchEvents = async () => {
         setIsLoading(true);
         setError(null);
 
-        const url = `/api/v1/namespaces/${namespace}/events?fieldSelector=involvedObject.name=${resource}`
+        const url = `/api/v1/namespaces/${namespace}/events?fieldSelector=involvedObject.name=${resource}`;
 
         try {
             const response = await callK8sApi(url, 'GET', null, null, cluster, accessToken);
-            return response;
+            if (response) setEventsData(response);
         } catch (error) {
-            console.error('Failed to fetch resource:', error);
-            setError(error.message || 'Failed to fetch resource');
-            return null;
+            setError(error.message || 'Failed to fetch events');
         } finally {
             setIsLoading(false);
         }
-
-    }
-
-    useEffect(() => {
-        if (!resource || !namespace || !cluster || !type) {
-            const missing = [];
-            if (!resource) missing.push("resource");
-            if (!namespace) missing.push("namespace");
-            if (!cluster) missing.push("cluster");
-            if (!type) missing.push("type");
-
-            console.error(`Cannot fetch events: Missing required parameters: ${missing.join(", ")}`);
-            return;
-        }
-
-        fetchEvents().then((data) => {
-            if (data) {
-                setEventsData(data);
-            }
-        });
-    }, [type, resource, namespace, cluster]);
-
-    // Function to format the event time
-    const formatTime = (timestamp) => {
-        if (!timestamp) return "Unknown";
-        const date = new Date(timestamp);
-        return date.toLocaleString();
     };
 
-    // Function to determine badge color based on event type
-    const getTypeColor = (eventType) => {
-        switch (eventType) {
-            case "Normal":
-                return "green";
-            case "Warning":
-                return "orange";
-            default:
-                return "gray";
-        }
+    useEffect(() => {
+        if (!resource || !namespace || !cluster || !type) return;
+        fetchEvents();
+    }, [type, resource, namespace, cluster]);
+
+    const timeAgo = (ts) => {
+        if (!ts) return '\u2014';
+        try {
+            const diff = Date.now() - new Date(ts).getTime();
+            const d = Math.floor(diff / 86400000), h = Math.floor(diff / 3600000) % 24;
+            const m = Math.floor(diff / 60000) % 60;
+            if (d > 0) return `${d}d${h}h ago`;
+            if (h > 0) return `${h}h${m}m ago`;
+            return `${m}m ago`;
+        } catch { return ts; }
     };
 
     const columns = [
@@ -74,82 +47,70 @@ export default function Events({ resource, namespace, type, cluster, accessToken
             accessor: "type",
             title: "Type",
             render: (event) => (
-                <Badge color={getTypeColor(event.type)}>{event.type}</Badge>
+                <Badge size="sm" color={event.type === 'Normal' ? 'green' : event.type === 'Warning' ? 'orange' : 'gray'} variant="filled">
+                    {event.type}
+                </Badge>
             ),
-            width: 100,
+            width: 90,
         },
         {
             accessor: "lastTimestamp",
             title: "Time",
-            render: (event) => formatTime(event.lastTimestamp),
-            width: 180,
+            render: (event) => <Text size="sm">{timeAgo(event.lastTimestamp)}</Text>,
+            width: 110,
         },
-        {
-            accessor: "reason",
-            title: "Reason",
-            width: 150,
-        },
+        { accessor: "reason", title: "Reason", width: 140 },
         {
             accessor: "message",
             title: "Message",
-            render: (event) => <Text>{event.message}</Text>,
+            render: (event) => <Text size="sm" truncate style={{ maxWidth: 400 }}>{event.message}</Text>,
         },
         {
             accessor: "count",
             title: "Count",
-            width: 80,
-            render: (event) => (
-                <Badge variant="light" radius="sm">
-                    {event.count}
-                </Badge>
-            ),
+            width: 60,
+            render: (event) => <Badge size="xs" variant="light">{event.count}</Badge>,
         },
     ];
 
     if (isLoading) {
         return (
-            <div style={{ textAlign: "center", padding: "20px" }}>
-                <Loader size="md" />
-                <Text size="sm" mt="md">
-                    Loading events...
-                </Text>
-            </div>
+            <Center py="xl">
+                <Stack align="center" gap="xs">
+                    <Loader />
+                    <Text c="dimmed" size="sm">Loading events...</Text>
+                </Stack>
+            </Center>
         );
     }
 
     if (error) {
-        return (
-            <Alert
-                icon={<IconAlertCircle size={16} />}
-                title="Error loading events"
-                color="red"
-            >
-                {error}
-            </Alert>
-        );
+        return <Alert icon={<IconAlertCircle size={16} />} title="Error loading events" color="red">{error}</Alert>;
     }
 
+    const items = eventsData?.items || [];
+
     return (
-        <div style={{ marginTop: "1rem" }}>
-            <Group position="apart" mb="md">
-                <Text weight={700} size="lg">
-                    Events for {resource}
-                </Text>
+        <div>
+            <Group gap="xs" mb="md">
+                <IconActivityHeartbeat size={18} />
+                <Text fw={600}>Events</Text>
+                {items.length > 0 && <Badge size="sm">{items.length}</Badge>}
             </Group>
 
-            {eventsData && eventsData.items && eventsData.items.length > 0 ? (
-                <DataTable
-                    columns={columns}
-                    records={eventsData.items}
-                    striped
-                    highlightOnHover
-                    minHeight={200}
-                    noRecordsText="No events found"
-                />
+            {items.length > 0 ? (
+                <Paper withBorder radius="md">
+                    <DataTable
+                        columns={columns}
+                        records={items}
+                        striped
+                        highlightOnHover
+                        minHeight={150}
+                        noRecordsText="No events found"
+                    />
+                </Paper>
             ) : (
-                <Text c="dimmed" align="center" py="lg">
-                    No events found for this resource
-                </Text>
+                <Center py="xl"><Text c="dimmed">No events for this resource</Text></Center>
             )}
         </div>
     );

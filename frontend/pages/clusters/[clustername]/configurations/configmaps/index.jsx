@@ -1,28 +1,41 @@
-
 import DataTable from '@/components/DataTable/DataTable';
 
-import { Badge, Anchor } from '@mantine/core';
-
+import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
 import calculateAge from '@/utils/calculateAge';
 
 import Link from 'next/link'
-export default function Dep() {
+
+export default function ConfigMaps() {
     const clusterName = useParams()?.clustername;
 
-    console.log("clustername", clusterName)
     return (
         <>
             <DataTable
                 agent={clusterName}
                 endpoint={`/api/v1/configmaps`}
-                fields = {[
-                    { key: "metadata.namespace", label: "Namespace", render: ({ Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/configurations/configmaps/${Namespace}`}>{Namespace}</Anchor>) },
-                    { key: "metadata.name", label: "Name", render: ({ Name, Namespace }) => (<Anchor component={Link} href={`/clusters/${clusterName}/configurations/configmaps/${Namespace}/${Name}`}>{Name}</Anchor>) },
-                    { key: "data", label: "Data", render: ({ Data }) => { return Object.keys(Data).map(key => <div>{key}</div>) } },
+                fields={[
+                    { key: "metadata.namespace", label: "Namespace" },
+                    {
+                        key: "metadata.name",
+                        label: "Name",
+                        render: ({ original }) => (
+                            <Anchor component={Link} href={`/clusters/${clusterName}/configurations/configmaps/${original.metadata.namespace}/${original.metadata.name}`}>
+                                <Text fw={500}>{original.metadata.name}</Text>
+                            </Anchor>
+                        )
+                    },
+                    {
+                        key: "metadata.name",
+                        label: "Keys",
+                        render: ({ original }) => {
+                            const keys = original.data ? Object.keys(original.data) : [];
+                            return <Text>{keys.length}</Text>;
+                        }
+                    },
                     { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                  ]}
+                ]}
             />
         </>
     )
