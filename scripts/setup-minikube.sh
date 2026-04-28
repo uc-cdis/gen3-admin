@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-csoc}"
+MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
 RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
@@ -31,9 +31,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Quay image tags — override with env vars or CLI flags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
 FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
-
-# Port-forward PIDs file
-PF_DIR="$PROJECT_ROOT/.minikube-setup"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -267,6 +264,42 @@ deploy_csoc() {
   # When Keycloak is enabled, switch from MOCK_AUTH to real Keycloak auth
   if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
     log "Configuring CSOC portal to use Keycloak (http://keycloak.local)..."
+
+    # Create a keycloak-http service on port 80 so pods can reach keycloak.local:80
+    log "Creating keycloak-http service (port 80 -> keycloak pod:8080)..."
+    kubectl apply -n "$NAMESPACE" -f - <<EOF >/dev/null 2>&1 || true
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-http
+  labels:
+    app: keycloak
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/managed-by: keycloak-operator
+EOF
+
+    # Wait for the service to get a ClusterIP
+    local keycloak_ip
+    keycloak_ip=""
+    local waited=0
+    while [[ $waited -lt 30 && -z "$keycloak_ip" ]]; do
+      keycloak_ip=$(kubectl get svc keycloak-http -n "$NAMESPACE" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+      sleep 2
+      waited=$((waited + 2))
+    done
+    if [[ -z "$keycloak_ip" ]]; then
+      die "Failed to create keycloak-http service in namespace '$NAMESPACE'"
+    fi
+    ok "keycloak-http service ready at $keycloak_ip"
+
     helm_args+=(
       # API — disable mock, point to Keycloak
       --set "api.env.MOCK_AUTH=false"
@@ -278,6 +311,10 @@ deploy_csoc() {
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=http://keycloak.local"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=http://keycloak.local/realms/csoc-realm"
+      # HostAlias so pods can resolve keycloak.local -> Keycloak service
+      --set "frontend.hostAliases[0].ip=${keycloak_ip}"
+      --set "frontend.hostAliases[0].hostnames[0]=keycloak.local"
     )
   fi
 
@@ -315,54 +352,10 @@ wait_for_pods() {
   kubectl get svc "$RELEASE_NAME" -n "$NAMESPACE"
 }
 
-# ── Port forwarding ──────────────────────────────────────────────────────────
-port_forward() {
-  mkdir -p "$PF_DIR"
-
-  # Kill any existing port-forwards on these ports
-  for port in 8002 3000; do
-    lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null || true
-  done
-
-  log "Setting up port forwards..."
-
-  # API port-forward (background)
-  kubectl port-forward "svc/$RELEASE_NAME" -n "$NAMESPACE" 8002:api > /dev/null 2>&1 &
-  echo $! > "$PF_DIR/api-pf.pid"
-
-  # Frontend port-forward (background)
-  kubectl port-forward "svc/$RELEASE_NAME" -n "$NAMESPACE" 3000:frontend > /dev/null 2>&1 &
-  echo $! > "$PF_DIR/frontend-pf.pid"
-
-  sleep 2
-
-  # Verify they're still running
-  if kill -0 $(cat "$PF_DIR/api-pf.pid") 2>/dev/null && \
-     kill -0 $(cat "$PF_DIR/frontend-pf.pid") 2>/dev/null; then
-    ok "Port forwards active:"
-  else
-    warn "Port-forward may have failed — check pod/service names match"
-  fi
-
-  echo "  → http://localhost:3000  (Frontend)"
-  echo "  → http://localhost:8002  (API ping: http://localhost:8002/ping)"
-  echo ""
-  echo "  Or via ingress (if nginx addon is working):"
-  echo "  → http://$HOSTNAME"
-}
-
 # ── Teardown ─────────────────────────────────────────────────────────────────
 teardown() {
   cd "$PROJECT_ROOT"
   log "Tearing down..."
-
-  # Stop port-forwards
-  for pid_file in "$PF_DIR"/*.pid; do
-    if [[ -f "$pid_file" ]]; then
-      kill $(cat "$pid_file") 2>/dev/null || true
-    fi
-  done
-  rm -rf "$PF_DIR"
 
   # Uninstall helm release
   if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
@@ -567,14 +560,13 @@ main() {
   if [[ "$CLUSTER_ONLY" == "0" ]]; then
     deploy_csoc
     wait_for_pods
-    port_forward
   fi
 
   show_status
 
   if [[ "$CLUSTER_ONLY" == "0" ]]; then
     echo ""
-    ok "Setup complete! Open http://localhost:3000 in your browser"
+    ok "Setup complete! Open http://$HOSTNAME in your browser"
   else
     echo ""
     ok "Minikube ready. Deploy with:  $(basename "$0") --namespace $NAMESPACE"
