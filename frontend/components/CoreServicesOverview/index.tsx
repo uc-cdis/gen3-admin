@@ -271,38 +271,24 @@ function SinglePodDetailTabs({
 
       {/* Logs — opens sub-modal or inline */}
       <Tabs.Panel value="logs" p="md">
-        {selectedContainer ? (
-          <Box h="60vh">
-            <LogWindow namespace={namespace} pod={pod.name} cluster={cluster} containers={[selectedContainer]} />
-          </Box>
-        ) : (
-          <Stack align="center" gap="sm" py="xl">
-            <Text c="dimmed">Select a container to view logs</Text>
-            {[...initContainers, ...runningContainers, ...waitingContainers, ...terminatedContainers].map((c) => (
-              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenLogs(c.name)}>
-                {c.name}{c.isInit ? " (init)" : ""}
-              </Button>
-            ))}
-          </Stack>
-        )}
+        <Box h="60vh">
+          <LogWindow namespace={namespace} pod={pod.name} cluster={cluster}
+            containers={selectedContainer
+              ? [selectedContainer]
+              : [...runningContainers, ...waitingContainers, ...initContainers].map(c => c.name)
+            } />
+        </Box>
       </Tabs.Panel>
 
       {/* Shell — opens sub-modal or inline */}
       <Tabs.Panel value="shell" p="md">
-        {selectedContainer ? (
-          <Box h="60vh">
-            <TerminalComponent namespace={namespace} pod={pod.name} container={selectedContainer} cluster={cluster} />
-          </Box>
-        ) : (
-          <Stack align="center" gap="sm" py="xl">
-            <Text c="dimmed">Select a container to open shell</Text>
-            {[...runningContainers, ...waitingContainers].filter((c) => !c.isInit).map((c) => (
-              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenShell(c.name)}>
-                {c.name}
-              </Button>
-            ))}
-          </Stack>
-        )}
+        <Box h="60vh">
+          <TerminalComponent namespace={namespace} pod={pod.name} cluster={cluster}
+            container={selectedContainer
+              ? selectedContainer
+              : [...runningContainers, ...waitingContainers].find(c => !c.isInit)?.name || ''
+            } />
+        </Box>
       </Tabs.Panel>
     </Tabs>
   );
@@ -492,38 +478,24 @@ function MultiPodDetailView({
 
       {/* Logs panel */}
       <Tabs.Panel value="logs" p="md">
-        {selectedContainer ? (
-          <Box h="60vh">
-            <LogWindow namespace={namespace} pod={activePod.name} cluster={cluster} containers={[selectedContainer]} />
-          </Box>
-        ) : (
-          <Stack align="center" gap="sm" py="xl">
-            <Text c="dimmed">Select a container to view logs</Text>
-            {activePod.containers.filter((c) => !c.isInit).map((c) => (
-              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenLogs(activePod, c.name)}>
-                {c.name}
-              </Button>
-            ))}
-          </Stack>
-        )}
+        <Box h="60vh">
+          <LogWindow namespace={namespace} pod={activePod.name} cluster={cluster}
+            containers={selectedContainer
+              ? [selectedContainer]
+              : activePod.containers.filter(c => !c.isInit).map(c => c.name)
+            } />
+        </Box>
       </Tabs.Panel>
 
       {/* Shell panel */}
       <Tabs.Panel value="shell" p="md">
-        {selectedContainer ? (
-          <Box h="60vh">
-            <TerminalComponent namespace={namespace} pod={activePod.name} container={selectedContainer} cluster={cluster} />
-          </Box>
-        ) : (
-          <Stack align="center" gap="sm" py="xl">
-            <Text c="dimmed">Select a container to open shell</Text>
-            {activePod.containers.filter((c) => !c.isInit && c.state === "Running").map((c) => (
-              <Button key={c.name} size="xs" variant="subtle" onClick={() => onOpenShell(activePod, c.name)}>
-                {c.name}
-              </Button>
-            ))}
-          </Stack>
-        )}
+        <Box h="60vh">
+          <TerminalComponent namespace={namespace} pod={activePod.name} cluster={cluster}
+            container={selectedContainer
+              ? selectedContainer
+              : activePod.containers.find(c => !c.isInit)?.name || ''
+            } />
+        </Box>
       </Tabs.Panel>
     </Tabs>
   );

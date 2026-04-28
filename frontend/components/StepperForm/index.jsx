@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Stepper, Button, Group, Container, Switch, Code, Flex, Paper, Stack, Divider, Text, Alert,
-  Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion
+  Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion, Anchor
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
   IconRefresh, IconInfoCircle, IconAlertTriangle, IconRocket, IconCheck,
   IconCloud, IconSettings, IconShield, IconDatabase, IconPlug,
   IconListDetails, IconChevronRight, IconChevronLeft, IconBulb,
-  IconCircleCheck, IconPlayerPlay, IconLoader2
+  IconCircleCheck, IconPlayerPlay, IconLoader2,
+  IconHome, IconExternalLink
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { callGoApi } from '@/lib/k8s';
@@ -16,6 +17,10 @@ import YAML from 'yaml';
 
 import Editor from "@monaco-editor/react";
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
+
+import { useGlobalState } from '@/contexts/global';
 
 import DestinationStep from './steps/DestinationStep';
 import DatabaseStep from './steps/DatabaseStep';
@@ -44,6 +49,8 @@ const StepperForm = () => {
   const [debugMode, setDebugMode] = useState(false);
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
+  const router = useRouter();
+  const { setActiveCluster, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName } = useGlobalState();
 
   // Deploy state
   const [deploying, setDeploying] = useState(false);
@@ -53,6 +60,7 @@ const StepperForm = () => {
   const [namespaceStatus, setNamespaceStatus] = useState(null);
   const [deployComplete, setDeployComplete] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [deployedHostname, setDeployedHostname] = useState('');
 
   const form = useForm({
     initialValues: {
@@ -467,6 +475,7 @@ const StepperForm = () => {
     setReleaseStatus(null);
     setDeployComplete(false);
     setDeploying(true);
+    setDeployedHostname(form.values?.global?.hostname || form.values?.values?.global?.hostname || '');
 
     const body = {
       repoUrl: dest.repoUrl || 'https://helm.gen3.org',
@@ -824,6 +833,23 @@ const StepperForm = () => {
             Your Gen3 Data Commons <Code size="sm">{dest.releaseName}</Code> is running in namespace <Code size="sm">{ns}</Code> on cluster <Code size="sm">{dest.cluster}</Code>.
           </Text>
 
+          {/* Hostname link */}
+          {deployedHostname && deployedHostname !== 'localhost' && (
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">Access your instance at:</Text>
+              <Anchor
+                href={`https://${deployedHostname}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                fw={600}
+                size="sm"
+              >
+                {deployedHostname}
+              </Anchor>
+              <IconExternalLink size={14} />
+            </Group>
+          )}
+
           {releaseStatus && (
             <Paper withBorder p="md" radius="lg" w="100%" maw={500}>
               <SimpleGrid cols={2}>
@@ -892,6 +918,36 @@ const StepperForm = () => {
           )}
 
           <Group gap="md" mt="md">
+            <Button
+              onClick={() => {
+                console.log('[GoToDashboard] dest:', JSON.stringify(dest));
+                console.log('[GoToDashboard] setting active-cluster:', dest.cluster);
+                console.log('[GoToDashboard] setting active-environment:', dest.releaseName);
+                console.log('[GoToDashboard] setting active-env-manager: helm');
+                console.log('[GoToDashboard] setting active-env-app-name:', dest.releaseName);
+
+                localStorage.setItem('active-cluster', dest.cluster);
+                localStorage.setItem('active-environment', dest.releaseName);
+                localStorage.setItem('active-env-manager', 'helm');
+                localStorage.setItem('active-env-app-name', dest.releaseName);
+                setActiveCluster(dest.cluster);
+                setActiveGlobalEnv(dest.releaseName);
+                setActiveEnvManager('helm');
+                setActiveEnvAppName(dest.releaseName);
+
+                console.log('[GoToDashboard] localStorage after set:');
+                console.log('  active-cluster:', localStorage.getItem('active-cluster'));
+                console.log('  active-environment:', localStorage.getItem('active-environment'));
+                console.log('  active-env-manager:', localStorage.getItem('active-env-manager'));
+                console.log('  active-env-app-name:', localStorage.getItem('active-env-app-name'));
+
+                window.location.href = '/';
+              }}
+              variant="filled"
+              leftSection={<IconHome size={16} />}
+            >
+              Go to Dashboard
+            </Button>
             <Button
               onClick={() => {
                 setDeploying(false);

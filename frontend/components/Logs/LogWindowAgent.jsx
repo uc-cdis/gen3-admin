@@ -85,7 +85,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(false);
     const [wrap, setWrap] = useState(false);
-    const [container, setContainer] = useState(containers?.[0] || "");
+    const [activeContainer, setActiveContainer] = useState(null);
     const [search, setSearch] = useState("");
     const [follow, setFollow] = useState(true);
     const scrollRef = useRef(null);
@@ -95,17 +95,16 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
 
+    // Use activeContainer if explicitly selected, otherwise fall back to first available
+    const container = activeContainer || containers?.[0];
+
     const editorHeight = Math.max(height - 280, 300);
 
+    // Fetch logs whenever container resolves
     useEffect(() => {
-        if (containers?.length > 0) setContainer(containers[0]);
-    }, [containers]);
-
-    // Fetch logs
-    useEffect(() => {
-        if (!namespace || !container) return;
+        if (!namespace || !pod || !cluster || !container) return;
         setLoading(true);
-        const endpoint = `/api/v1/namespaces/${namespace}/pods/${pod}/log?container=${container}`;
+        const endpoint = `/api/v1/namespaces/${namespace}/pods/${pod}/log?container=${encodeURIComponent(container)}`;
         callK8sApi(endpoint, "GET", null, null, cluster, accessToken, "text")
             .then((data) => {
                 if (data) {
@@ -120,7 +119,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
                 setLogs([]);
             })
             .finally(() => setLoading(false));
-    }, [namespace, pod, container, cluster]);
+    }, [namespace, pod, container, cluster, accessToken]);
 
     // Auto-scroll when following
     useEffect(() => {
@@ -155,14 +154,18 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
         <Box w="100%" p="md">
             {/* Controls */}
             <Group mb="sm" wrap="nowrap">
-                <Select
-                    placeholder="Container"
-                    value={container}
-                    onChange={setContainer}
-                    data={containers}
-                    style={{ width: 200 }}
-                    size="sm"
-                />
+                {containers?.length > 1 ? (
+                    <Select
+                        placeholder="Container"
+                        value={activeContainer || container}
+                        onChange={(v) => setActiveContainer(v)}
+                        data={containers}
+                        style={{ width: 200 }}
+                        size="sm"
+                    />
+                ) : container ? (
+                    <Badge size="sm" variant="light" style={{ width: 200, justifyContent: 'flex-start' }}>{container}</Badge>
+                ) : null}
                 <TextInput
                     placeholder="Filter logs..."
                     leftSection={<IconSearch size={14} />}

@@ -63,6 +63,12 @@ frontend:
     NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" #pragma: allowlist secret
     MOCK_AUTH: "true"
     ENABLE_MOCK_AUTH: "true"
+    # Keycloak auth (used when --keycloak flag disables MOCK_AUTH above)
+    KEYCLOAK_CLIENT_SECRET: ""
+    NEXT_KEYCLOAK_CLIENT_ID: "csoc-client"
+    NEXT_PUBLIC_KEYCLOAK_REALM: "csoc-realm"
+    NEXT_PUBLIC_KEYCLOAK_URL: "http://keycloak.local"
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: "http://keycloak.local/realms/csoc-realm"
   # Minimal resources for local testing
   resources:
     limits:
@@ -118,7 +124,8 @@ service:
 ingress:
   enabled: true
   className: "nginx"
-  annotations: {}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
   hosts:
     - host: "csoc.local"
       paths:
