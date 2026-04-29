@@ -8,44 +8,37 @@ export default function Detail() {
 
     const clusterName = useParams()?.clustername;
     const namespace = useParams()?.namespace;
-    const resource = useParams()?.pod;
+    const resource = useParams()?.cronjob;
 
-
-    console.log("pod in detail page", resource)
-    console.log("namespace in detail page", namespace)
-    console.log("cluster in detail page", clusterName)
 
     return (
         <>
-            <ResourceDetails 
-                cluster={clusterName} 
-                namespace={namespace} 
-                resource={resource} 
-                type="pod"
-                tabs={["overview", "yaml", "events", "logs"]}
-                url={`/api/v1/namespaces/${namespace}/pods/${resource}`} 
+            <ResourceDetails
+                cluster={clusterName}
+                namespace={namespace}
+                resource={resource}
+                type="CronJob"
+                tabs={["overview", "yaml", "events"]}
+                url={`/apis/batch/v1/namespaces/${namespace}/cronjobs/${resource}`}
                 columnConfig={{
                     layout: {
                         leftColumns: [
                             { label: "Name", path: "metadata.name" },
                             { label: "Namespace", path: "metadata.namespace" },
                             { label: "Age", path: "metadata.creationTimestamp" },
-                            { label: "Phase", path: "status.phase" },
-                            { label: "Pod IP", path: "status.podIP" },
-                            { label: "Node Name", path: "spec.nodeName" },
-                            { label: "Priority", path: "spec.priority" },
-                            { label: "Scheduler Name", path: "spec.schedulerName" },
-                            { label: "Service Account", path: "spec.serviceAccountName" },
+                            { label: "Schedule", path: "spec.schedule" },
+                            { label: "Suspend", path: "spec.suspend" },
+                            { label: "Concurrency Policy", path: "spec.concurrencyPolicy" },
+                            { label: "Last Schedule", path: "status.lastScheduleTime" },
                         ],
                         rightColumns: [
+                            { label: "Starting Deadline", path: "spec.startingDeadlineSeconds" },
+                            { label: "Successful Jobs Hist. Limit", path: "spec.successfulJobsHistoryLimit" },
+                            { label: "Failed Jobs Hist. Limit", path: "spec.failedJobsHistoryLimit" },
+                            { label: "Job Parallelism", path: "spec.jobTemplate.spec.parallelism" },
+                            { label: "Job Completions", path: "spec.jobTemplate.spec.completions" },
                             { label: "Resource Version", path: "metadata.resourceVersion" },
                             { label: "UID", path: "metadata.uid" },
-                            { label: "Generation", path: "metadata.generation" },
-                            { label: "Host IP", path: "status.hostIP" },
-                            { label: "DNS Policy", path: "spec.dnsPolicy" },
-                            { label: "Preemption Policy", path: "spec.preemptionPolicy" },
-                            { label: "Restart Policy", path: "spec.restartPolicy" },
-                            { label: "Termination Grace Period", path: "spec.terminationGracePeriodSeconds" },
                         ]
                     }
                 }}

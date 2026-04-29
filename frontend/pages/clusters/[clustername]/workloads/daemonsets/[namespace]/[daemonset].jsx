@@ -13,35 +13,32 @@ export default function Detail() {
 
     return (
         <>
-            <ResourceDetails 
-                cluster={clusterName} 
-                namespace={namespace} 
-                resource={resource} 
-                type="Daemonset"
-                tabs={["overview", "yaml", "events", "logs"]}
-                url={`/apis/apps/v1/namespaces/${namespace}/daemonsets/${resource}`} 
+            <ResourceDetails
+                cluster={clusterName}
+                namespace={namespace}
+                resource={resource}
+                type="DaemonSet"
+                tabs={["overview", "yaml", "events"]}
+                url={`/apis/apps/v1/namespaces/${namespace}/daemonsets/${resource}`}
                 columnConfig={{
                     layout: {
                         leftColumns: [
                             { label: "Name", path: "metadata.name" },
                             { label: "Namespace", path: "metadata.namespace" },
                             { label: "Age", path: "metadata.creationTimestamp" },
-                            { label: "Phase", path: "status.phase" },
-                            { label: "Pod IP", path: "status.podIP" },
-                            { label: "Node Name", path: "spec.nodeName" },
-                            { label: "Priority", path: "spec.priority" },
-                            { label: "Scheduler Name", path: "spec.schedulerName" },
-                            { label: "Service Account", path: "spec.serviceAccountName" },
+                            { label: "Desired", path: "status.desiredNumberScheduled" },
+                            { label: "Current", path: "status.currentNumberScheduled" },
+                            { label: "Ready", path: "status.numberReady" },
+                            { label: "Updated", path: "status.updatedNumberScheduled" },
+                            { label: "Available", path: "status.numberAvailable" },
                         ],
                         rightColumns: [
+                            { label: "Selector", path: "spec.selector.matchLabels" },
+                            { label: "Min Ready Seconds", path: "spec.minReadySeconds" },
+                            { label: "Strategy Type", path: "spec.updateStrategy.type" },
                             { label: "Resource Version", path: "metadata.resourceVersion" },
                             { label: "UID", path: "metadata.uid" },
                             { label: "Generation", path: "metadata.generation" },
-                            { label: "Host IP", path: "status.hostIP" },
-                            { label: "DNS Policy", path: "spec.dnsPolicy" },
-                            { label: "Preemption Policy", path: "spec.preemptionPolicy" },
-                            { label: "Restart Policy", path: "spec.restartPolicy" },
-                            { label: "Termination Grace Period", path: "spec.terminationGracePeriodSeconds" },
                         ]
                     }
                 }}

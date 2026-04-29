@@ -1,24 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Stepper, Button, Group, Container, Switch, Code, Grid, Flex, Paper, Stack, Divider, Text,
-  useMantineColorScheme
+  Stepper, Button, Group, Container, Switch, Code, Flex, Paper, Stack, Divider, Text, Alert,
+  Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion, Anchor
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconRefresh, IconInfoCircle } from '@tabler/icons-react';
+import {
+  IconRefresh, IconInfoCircle, IconAlertTriangle, IconRocket, IconCheck,
+  IconCloud, IconSettings, IconShield, IconDatabase, IconPlug,
+  IconListDetails, IconChevronRight, IconChevronLeft, IconBulb,
+  IconCircleCheck, IconPlayerPlay, IconLoader2,
+  IconHome, IconExternalLink
+} from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import { callGoApi } from '@/lib/k8s';
 import YAML from 'yaml';
 
 import Editor from "@monaco-editor/react";
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
+
+import { useGlobalState } from '@/contexts/global';
 
 import DestinationStep from './steps/DestinationStep';
 import DatabaseStep from './steps/DatabaseStep';
 import HostnameStep from './steps/HostnameStep';
 import ModulesStep from './steps/ModulesStep';
 import AuthStep from './steps/AuthStep';
-import WorkspacesStep from './steps/WorkspacesStep';
 import YamlEditor from '../YamlEditor/YamlEditor';
 import ConfigStep from './steps/ConfigStep';
+import GlobalSettingsStep from './steps/GlobalSettingsStep';
+
+const STEP_CONFIG = [
+  { label: 'Destination', description: 'Cluster & namespace', icon: IconCloud, color: 'blue' },
+  { label: 'Globals',     description: 'Core settings',      icon: IconSettings, color: 'violet' },
+  { label: 'Hostname',    description: 'TLS & domain',        icon: IconShield, color: 'indigo' },
+  { label: 'Database',    description: 'Postgres config',     icon: IconDatabase, color: 'green' },
+  { label: 'Services',    description: 'Enable modules',      icon: IconPlug, color: 'orange' },
+  { label: 'Auth',        description: 'OIDC / login',        icon: IconShield, color: 'red' },
+  { label: 'Config',      description: 'Per-service detail',  icon: IconListDetails, color: 'grape' },
+  { label: 'Deploy',      description: 'Review & launch',    icon: IconRocket, color: 'teal' },
+];
 
 const StepperForm = () => {
   const [active, setActive] = useState(0);
@@ -27,10 +49,18 @@ const StepperForm = () => {
   const [debugMode, setDebugMode] = useState(false);
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
+  const router = useRouter();
+  const { setActiveCluster, setActiveGlobalEnv, setActiveEnvManager, setActiveEnvAppName } = useGlobalState();
 
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
-
-  const isDarkMode = colorScheme === 'dark';
+  // Deploy state
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState(null);
+  const [deployError, setDeployError] = useState(null);
+  const [releaseStatus, setReleaseStatus] = useState(null);
+  const [namespaceStatus, setNamespaceStatus] = useState(null);
+  const [deployComplete, setDeployComplete] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [deployedHostname, setDeployedHostname] = useState('');
 
   const form = useForm({
     initialValues: {
@@ -39,60 +69,168 @@ const StepperForm = () => {
         releaseName: 'gen3-test',
         namespace: '',
         useCustomNs: false,
-
+        repoUrl: 'https://helm.gen3.org',
+        chartName: 'gen3',
+        chartVersion: '',
       },
       values: {
+        // ── global (aligned with gen3-helm/helm/gen3/values.yaml lines 6-147) ──
         global: {
-          environment: "dev",
-          aws: {
-            enabled: true,
-            scheme: "internet-facing",
-            // wafv2: {
-            //   enabled: false
-            // }
-          },
-          tls: { cert: '', key: '' },
-          hostname: 'gen3.example.com',
+          environment: "default",
+          clusterName: "default",
+          hostname: "localhost",
           dev: true,
-          revproxyArn: '',
-          frontendRoot: 'gen3ff',
-          netPolicy: { enabled: false, dbSubnet: '0.0.0.0/0' },
-          postgres: { dbCreate: true, master:
-            { username: "postgres", password: "", host: "", port: "5432" }
+
+          // Cloud provider selection (UI-only helper, not sent to helm)
+          _cloudProvider: "none",
+
+          // GCP
+          gcp: {
+            enabled: false,
+            projectID: "",
+            secretStoreServiceAccount: "",
+          },
+
+          // AWS
+          aws: {
+            region: "us-east-1",
+            enabled: false,
+            awsAccessKeyId: "",
+            awsSecretAccessKey: "",
+            externalSecrets: {
+              enabled: false,
+              externalSecretAwsCreds: "",
+              pushSecret: false,
+            },
+            secretStoreServiceAccount: {
+              enabled: false,
+              name: "secret-store-sa",
+              roleArn: "",
+            },
+            useLocalSecret: {
+              enabled: false,
+              localSecretName: "",
+            },
+            _credStrategy: "keys", // UI-only: keys | irsa | localSecret | externalSecrets
+          },
+
+          // Crossplane
+          crossplane: {
+            enabled: false,
+            providerConfigName: "provider-aws",
+            oidcProviderUrl: "",
+            accountId: "",
+            s3: {
+              kmsKeyId: "",
+              versioningEnabled: false,
+            },
+          },
+
+          // Postgres
+          postgres: {
+            dbCreate: true,
+            externalSecret: "",
+            master: {
+              username: "postgres",
+              password: "",
+              host: "",
+              port: "5432",
+            },
+          },
+
+          // Core identity
+          revproxyArn: "",
+          dictionaryUrl: "https://s3.amazonaws.com/dictionary-artifacts/datadictionary/develop/schema.json",
+          portalApp: "gitops",
+
+          // Access control
+          publicDataSets: true,
+          tierAccessLevel: "private",
+          tierAccessLimit: "1000",
+          logoutInactiveUsers: true,
+          workspaceTimeoutInMinutes: 480,
+          maintenanceMode: "off",
+          dataUploadBucket: "",
+
+          // Networking
+          netPolicy: {
+            enabled: false,
+            dbSubnets: [],
           },
           pdb: false,
+          dispatcherJobNum: "10",
+
+          // Frontend
+          frontendRoot: "gen3ff",
+
+          // Observability
+          metricsEnabled: true,
+          createSlackWebhookSecret: false,
+          slackWebhook: "",
+
+          // External Secrets (global)
+          externalSecrets: {
+            deploy: false,
+            createLocalK8sSecret: false,
+            clusterSecretStoreRef: "",
+            createSlackWebhookSecret: false,
+            slackWebhookSecretName: "",
+          },
+
+          // Topology Spread
+          topologySpread: {
+            enabled: false,
+            topologyKey: "topology.kubernetes.io/zone",
+            maxSkew: 1,
+          },
+
+          manifestGlobalExtraValues: {},
         },
+
+        // ── Infrastructure charts ──
         postgresql: {
-          persistence: {
-            enabled: true
-          }
-        },
-        revproxy: {
           image: {
-            repository: "quay.io/cdis/nginx",
-            tag: "master"
-          }
+            repository: "bitnamilegacy/postgresql",
+            tag: "16.6.0-debian-12-r2",
+          },
+          primary: {
+            persistence: { enabled: false },
+          },
         },
+        elasticsearch: {
+          image: "quay.io/cdis/elasticsearch",
+          imageTag: "7.10.2",
+          clusterName: "gen3-elasticsearch",
+          maxUnavailable: 0,
+          singleNode: true,
+          replicas: 1,
+          clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s",
+          resources: { requests: { cpu: "500m" } },
+        },
+
+        // ── Service toggles (aligned with Chart.yaml conditions) ──
+        // Core services — enabled by default
+        ambassador: { enabled: false },
         arborist: { enabled: true },
         audit: { enabled: true },
         fence: {
           enabled: true,
-          "usersync": {
-            "usersync": false,
-            "schedule": "*/30 * * * *",
-            "custom_image": null,
-            "syncFromDbgap": false,
-            "addDbgap": false,
-            "onlyDbgap": false,
-            "userYamlS3Path": "s3://cdis-gen3-users/helm-test/user.yaml",
-            "slack_webhook": "None",
-            "slack_send_dbgap": false,
-            "env": null
+          usersync: {
+            usersync: false,
+            schedule: "*/30 * * * *",
+            custom_image: null,
+            syncFromDbgap: false,
+            addDbgap: false,
+            onlyDbgap: false,
+            userYamlS3Path: "s3://cdis-gen3-users/helm-test/user.yaml",
+            slack_webhook: "None",
+            slack_send_dbgap: false,
+            env: null,
           },
-          // "USER_YAML": "cloud_providers: {}\nauthz:\n  # policies automatically given to anyone, even if they are not authenticated\n  anonymous_policies:\n  - open_data_reader\n\n  # policies automatically given to authenticated users (in addition to their other policies)\n  all_users_policies: []\n\n  groups:\n  # can CRUD programs and projects and upload data files\n  - name: data_submitters\n    policies:\n    - services.sheepdog-admin\n    - data_upload\n    - MyFirstProject_submitter\n    users:\n    - username1@gmail.com\n\n  # can create/update/delete indexd records\n  - name: indexd_admins\n    policies:\n    - indexd_admin\n    users:\n    - username1@gmail.com\n\n  resources:\n  - name: workspace\n  - name: data_file\n  - name: services\n    subresources:\n    - name: sheepdog\n      subresources:\n      - name: submission\n        subresources:\n        - name: program\n        - name: project\n    - name: 'indexd'\n      subresources:\n        - name: 'admin'\n    - name: audit\n      subresources:\n        - name: presigned_url\n        - name: login\n  - name: open\n  - name: programs\n    subresources:\n    - name: MyFirstProgram\n      subresources:\n      - name: projects\n        subresources:\n        - name: MyFirstProject\n\n  policies:\n  - id: workspace\n    description: be able to use workspace\n    resource_paths:\n    - /workspace\n    role_ids:\n    - workspace_user\n  - id: data_upload\n    description: upload raw data files to S3\n    role_ids:\n    - file_uploader\n    resource_paths:\n    - /data_file\n  - id: services.sheepdog-admin\n    description: CRUD access to programs and projects\n    role_ids:\n      - sheepdog_admin\n    resource_paths:\n      - /services/sheepdog/submission/program\n      - /services/sheepdog/submission/project\n  - id: indexd_admin\n    description: full access to indexd API\n    role_ids:\n      - indexd_admin\n    resource_paths:\n      - /programs\n  - id: open_data_reader\n    role_ids:\n      - peregrine_reader\n      - guppy_reader\n      - fence_storage_reader\n    resource_paths:\n    - /open\n  - id: all_programs_reader\n    role_ids:\n    - peregrine_reader\n    - guppy_reader\n    - fence_storage_reader\n    resource_paths:\n    - /programs\n  - id: MyFirstProject_submitter\n    role_ids:\n    - reader\n    - creator\n    - updater\n    - deleter\n    - storage_reader\n    - storage_writer\n    resource_paths:\n    - /programs/MyFirstProgram/projects/MyFirstProject\n\n  roles:\n  - id: file_uploader\n    permissions:\n    - id: file_upload\n      action:\n        service: fence\n        method: file_upload\n  - id: workspace_user\n    permissions:\n    - id: workspace_access\n      action:\n        service: jupyterhub\n        method: access\n  - id: sheepdog_admin\n    description: CRUD access to programs and projects\n    permissions:\n    - id: sheepdog_admin_action\n      action:\n        service: sheepdog\n        method: '*'\n  - id: indexd_admin\n    description: full access to indexd API\n    permissions:\n    - id: indexd_admin\n      action:\n        service: indexd\n        method: '*'\n  - id: admin\n    permissions:\n      - id: admin\n        action:\n          service: '*'\n          method: '*'\n  - id: creator\n    permissions:\n      - id: creator\n        action:\n          service: '*'\n          method: create\n  - id: reader\n    permissions:\n      - id: reader\n        action:\n          service: '*'\n          method: read\n  - id: updater\n    permissions:\n      - id: updater\n        action:\n          service: '*'\n          method: update\n  - id: deleter\n    permissions:\n      - id: deleter\n        action:\n          service: '*'\n          method: delete\n  - id: storage_writer\n    permissions:\n      - id: storage_creator\n        action:\n          service: '*'\n          method: write-storage\n  - id: storage_reader\n    permissions:\n      - id: storage_reader\n        action:\n          service: '*'\n          method: read-storage\n  - id: peregrine_reader\n    permissions:\n    - id: peregrine_reader\n      action:\n        method: read\n        service: peregrine\n  - id: guppy_reader\n    permissions:\n    - id: guppy_reader\n      action:\n        method: read\n        service: guppy\n  - id: fence_storage_reader\n    permissions:\n    - id: fence_storage_reader\n      action:\n        method: read-storage\n        service: fence\n\nclients:\n  wts:\n    policies:\n    - all_programs_reader\n    - open_data_reader\n\nusers:\n  username1@gmail.com: {}\n  username2:\n    tags:\n      name: John Doe\n      email: johndoe@gmail.com\n    policies:\n    - MyFirstProject_submitter\n\ncloud_providers: {}\ngroups: {}\n",
           FENCE_CONFIG: {
             OPENID_CONNECT: {
               generic_oidc_idp: {
+                enabled: false,
                 name: '',
                 client_id: '',
                 client_secret: '',
@@ -108,6 +246,7 @@ const StepperForm = () => {
                 scope: '',
               },
               google: {
+                enabled: false,
                 discovery_url: 'https://accounts.google.com/.well-known/openid-configuration',
                 client_id: '',
                 client_secret: '',
@@ -117,87 +256,120 @@ const StepperForm = () => {
                 mock_default_user: 'test@example.com',
               },
             },
-          }
-        },
-        "frontend-framework": { enabled: true },
-        guppy: { enabled: false },
-        hatchery: {
-          enabled: true,
-          sidecarContainer: {
-            cpuLimit: "0.1",
-            memoryLimit: "256Mi",
-            image: "quay.io/cdis/ecs-ws-sidecar:master",
-            env: {
-              NAMESPACE: "{{ .Release.Namespace }}",
-              HOSTNAME: "{{ .Values.global.hostname }}"
-            },
-            args: [],
-            command: [
-              "/bin/bash",
-              "./sidecar.sh"
-            ],
-            lifecyclePreStop: [
-              "su",
-              "-c",
-              "echo test",
-              "-s",
-              "/bin/sh",
-              "root"
-            ]
           },
-          containers: [
-            {
-              targetPort: 8888,
-              cpuLimit: "1.0",
-              memoryLimit: "2Gi",
-              name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
-              image: "quay.io/cdis/heal-notebooks:combined_tutorials__latest",
-              env: {
-                FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}"
-              },
-              args: [
-                "--NotebookApp.base_url=/lw-workspace/proxy/",
-                "--NotebookApp.default_url=/lab",
-                "--NotebookApp.password=''",
-                "--NotebookApp.token=''",
-                "--NotebookApp.shutdown_no_activity_timeout=5400",
-                "--NotebookApp.quit_button=False"
-              ],
-              command: [
-                "start-notebook.sh"
-              ],
-              pathRewrite: "/lw-workspace/proxy/",
-              useTls: false,
-              readyProbe: "/lw-workspace/proxy/",
-              lifecyclePostStart: [
-                "/bin/sh",
-                "-c",
-                "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd/; true"
-              ],
-              userUid: 1000,
-              fsGid: 100,
-              userVolumeLocation: "/home/jovyan/pd",
-              gen3VolumeLocation: "/home/jovyan/.gen3"
-            }
-          ]
         },
-        indexd: { enabled: true },
+        "frontend-framework": { enabled: true, image: { repository: "quay.io/cdis/commons-frontend-app", tag: "main" } },
+        hatchery: {
+          enabled: false,
+          hatchery: {
+            sidecarContainer: {
+              "cpu-limit": "0.1",
+              "memory-limit": "256Mi",
+              image: "quay.io/cdis/ecs-ws-sidecar:master",
+              env: {
+                NAMESPACE: "{{ .Release.Namespace }}",
+                HOSTNAME: "{{ .Values.global.hostname }}"
+              },
+              args: [],
+              command: ["/bin/bash", "./sidecar.sh"],
+              "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"],
+            },
+            containers: [
+              {
+                "target-port": 8888,
+                "cpu-limit": "2",
+                "memory-limit": "3Gi",
+                name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
+                image: "quay.io/cdis/jupyter-superslim:2.1.0",
+                env: { FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}" },
+                args: ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.default_url=/lab"],
+                command: ["start-notebook.sh"],
+                "path-rewrite": "/lw-workspace/proxy/",
+                "use-tls": "false",
+                "ready-probe": "/lw-workspace/proxy/",
+                "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd; true"],
+                "user-uid": 1010,
+                "fs-gid": 100,
+                "user-volume-location": "/home/jovyan/pd",
+                "gen3-volume-location": "/home/jovyan/.gen3",
+              },
+            ],
+            reaper: {
+              enabled: true,
+              suspendCronjob: false,
+              schedule: "*/15 * * * *",
+              idleTimeoutSeconds: 3600,
+            },
+          },
+        },
+        indexd: { enabled: true, defaultPrefix: "PREFIX/" },
+        manifestservice: { enabled: false },
         metadata: { enabled: true },
+        peregrine: { enabled: true },
         portal: { enabled: false },
-        peregrine: { enabled: false },
-        sheepdog: { enabled: false },
-        elasticsearch: {
-          masterService: "elasticsearch",
-          volumeClaimTemplate: {
-            resources: {
-              requests: {
-                storage: "10Gi"
-              }
-            }
-          }
+        revproxy: {
+          enabled: true,
+          ingress: {
+            enabled: false,
+            annotations: {},
+            hosts: [],
+            tls: [],
+          },
+        },
+        sheepdog: { enabled: true },
+        wts: { enabled: true },
+        etl: { enabled: true },
+
+        // Data Explorer — disabled by default
+        guppy: { enabled: false, esEndpoint: "" },
+
+        // Workspace & Workflow — disabled by default
+        "argo-wrapper": { enabled: false },
+        "gen3-workflow": { enabled: false },
+
+        // Medical Imaging — disabled by default
+        "dicom-server": { enabled: false },
+        orthanc: { enabled: false },
+        "ohif-viewer": { enabled: false },
+
+        // Observability & Security — disabled by default
+        "aws-es-proxy": { enabled: false, esEndpoint: "", secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" } },
+        "aws-sigv4-proxy": { enabled: false },
+
+        // OHDSI — disabled by default
+        "ohdsi-atlas": { enabled: false },
+        "ohdsi-webapi": { enabled: false },
+
+        // Other Services — disabled by default
+        "cohort-middleware": { enabled: false },
+        dashboard: { enabled: false, dashboardConfig: { bucket: "generic-dashboard-bucket", prefix: "hostname.com" } },
+        "embedding-management-service": { enabled: false },
+        "gen3-analysis": { enabled: false },
+        "gen3-user-data-library": { enabled: false },
+        requestor: { enabled: false },
+        sower: { enabled: false },
+        "ssjdispatcher": { enabled: false },
+
+        // Misc top-level values
+        mutatingWebhook: { enabled: false, image: "quay.io/cdis/node-affinity-daemonset:feat_pods" },
+        secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" },
+        tests: {
+          TEST_LABEL: "",
+          SERVICE_TO_TEST: "",
+          resources: { requests: { memory: "6G" }, limits: { memory: "10G" } },
+          image: { tag: "master" },
+        },
+        auroraRdsCopyJob: {
+          enabled: false,
+          auroraMasterSecret: "",
+          sourceNamespace: "",
+          targetNamespace: "",
+          writeToK8sSecret: false,
+          writeToAwsSecret: false,
+          services: [],
         },
       },
-    }
+    },
   });
 
   const fetchClusters = async () => {
@@ -213,129 +385,716 @@ const StepperForm = () => {
   const fetchCerts = async () => {
     try {
       const data = await callGoApi('/aws/certificates', 'GET', null, null, accessToken);
-      console.log(data)
       const certOptions = data.map((cert) => ({
         value: cert.arn,
         label: cert.domainName,
       }));
-
       setCerts(certOptions);
-
     } catch (err) {
       console.error('Error fetching certs', err);
     }
   };
 
+  // Poll helm releases for deployment status
+  const pollReleaseStatus = useCallback(() => {
+    const dest = form.values.destination;
+    const ns = dest.namespace || dest.releaseName;
+    if (!dest.cluster) return;
+
+    const interval = setInterval(async () => {
+      try {
+        // Poll helm release status
+        const data = await callGoApi(`/agents/${dest.cluster}/helm/list`, 'GET', null, null, accessToken);
+        if (Array.isArray(data)) {
+          const release = data.find(r =>
+            r.name === dest.releaseName && r.namespace === ns
+          );
+          if (release) {
+            setReleaseStatus(release);
+            if (release.status === 'deployed') {
+              clearInterval(interval);
+              setDeployComplete(true);
+              setDeploying(false);
+              fetchNamespaceStatus(); // Get final rollout status
+              notifications.show({
+                title: 'Deployment Complete',
+                message: `${dest.releaseName} is deployed and running!`,
+                color: 'green',
+              });
+            }
+          }
+        }
+
+        // Poll namespace deployment/pod status via agent
+        try {
+          const nsData = await callGoApi(`/agent/${dest.cluster}/namespace/${ns}/status`, 'GET', null, null, accessToken);
+          if (nsData) {
+            setNamespaceStatus(nsData);
+          }
+        } catch (nsErr) {
+          console.error('Error polling namespace status:', nsErr);
+        }
+      } catch (err) {
+        console.error('Error polling release status:', err);
+      }
+    }, 5000);
+
+    // Timeout after 10 minutes
+    setTimeout(() => {
+      clearInterval(interval);
+      if (!deployComplete) {
+        setDeploying(false);
+        notifications.show({
+          title: 'Deployment Timeout',
+          message: 'Deployment is still in progress. Check your cluster for status.',
+          color: 'orange',
+        });
+      }
+    }, 600000);
+
+    return () => clearInterval(interval);
+  }, [accessToken, form.values.destination, deployComplete]);
+
+  // Fetch namespace deployment status (standalone, can be called anytime)
+  const fetchNamespaceStatus = useCallback(async () => {
+    const dest = form.values.destination;
+    const ns = dest.namespace || dest.releaseName;
+    if (!dest.cluster || !ns) return;
+    try {
+      const nsData = await callGoApi(`/agent/${dest.cluster}/namespace/${ns}/status`, 'GET', null, null, accessToken);
+      if (nsData) setNamespaceStatus(nsData);
+    } catch (err) {
+      console.error('Error fetching namespace status:', err);
+    }
+  }, [accessToken, form.values.destination]);
+
   const deploy = async () => {
+    const dest = form.values.destination;
+    setDeployError(null);
+    setDeployResult(null);
+    setReleaseStatus(null);
+    setDeployComplete(false);
+    setDeploying(true);
+    setDeployedHostname(form.values?.global?.hostname || form.values?.values?.global?.hostname || '');
+
     const body = {
-      repoUrl: 'https://helm.gen3.org',
-      chart: 'gen3',
-      release: form.values.destination.releaseName,
-      namespace: form.values.destination.namespace === '' ? form.values.destination.releaseName : form.values.destination.namespace,
+      repoUrl: dest.repoUrl || 'https://helm.gen3.org',
+      chart: dest.chartName || 'gen3',
+      version: dest.chartVersion || undefined,
+      release: dest.releaseName,
+      namespace: dest.namespace === '' ? dest.releaseName : dest.namespace,
       values: form.values.values,
     };
     try {
-      const res = await callGoApi(`/agent/${form.values.destination.cluster}/helm/install`, 'POST', body, null, accessToken);
-      console.log('Deployed', res);
-      alert('Deployment started!');
+      const res = await callGoApi(`/agent/${dest.cluster}/helm/install`, 'POST', body, null, accessToken);
+      setDeployResult(res);
+      // Start polling for status
+      pollReleaseStatus();
     } catch (err) {
-      console.error('Deployment failed', err);
-      alert('Deployment failed. Check console.');
+      console.error('Deployment failed:', err);
+      setDeployError(err.message || 'Deployment failed');
+      setDeploying(false);
+      notifications.show({
+        title: 'Deployment Failed',
+        message: err.message || 'Could not deploy Gen3. Check the configuration.',
+        color: 'red',
+      });
     }
   };
 
   useEffect(() => {
-    if (!accessToken) return
+    if (!accessToken) return;
     const load = async () => {
-      try {
-        await fetchClusters();
-      } catch (err) {
-        console.error('Error fetching clusters:', err);
-      }
+      try { await fetchClusters(); } catch (err) { console.error('Error fetching clusters:', err); }
 
-      try {
-        await fetchCerts();
-      } catch (err) {
-        console.error('Error fetching certs:', err);
+      // Check for edit mode params (from Projects page "Edit" button)
+      const urlParams = new URLSearchParams(window.location.search);
+      const clusterParam = urlParams.get('cluster');
+      const releaseParam = urlParams.get('release');
+      const namespaceParam = urlParams.get('namespace');
+
+      if (clusterParam && releaseParam && namespaceParam) {
+        setEditMode(true);
+        try {
+          const existingValues = await callGoApi(
+            `/agent/${clusterParam}/helm/values/${releaseParam}/${namespaceParam}`,
+            'GET', null, null, accessToken
+          );
+          if (existingValues) {
+            form.setFieldValue('destination.cluster', clusterParam);
+            form.setFieldValue('destination.releaseName', releaseParam);
+            form.setFieldValue('destination.namespace', namespaceParam);
+            // Deep merge existing values into form (preserve defaults for missing keys)
+            form.setFieldValue('values', { ...form.values.values, ...existingValues });
+          }
+        } catch (err) {
+          console.error('Error loading existing deployment values:', err);
+          notifications.show({
+            title: 'Load Warning',
+            message: 'Could not load existing values. Starting with defaults.',
+            color: 'orange',
+          });
+          // Fetch current rollout status for this deployment
+          setTimeout(() => fetchNamespaceStatus(), 500);
+        }
       }
     };
     load();
   }, [accessToken]);
 
+  // Build validation warnings for the review step
+  const getValidationWarnings = () => {
+    const v = form.values.values;
+    const warnings = [];
+    if (!v.global.hostname || v.global.hostname === 'localhost') {
+      warnings.push('Hostname is still set to "localhost" — update it for a real deployment');
+    }
+    if (v.fence?.enabled && !v.fence?.FENCE_CONFIG?.OPENID_CONNECT?.google?.client_id && !v.fence?.FENCE_CONFIG?.OPENID_CONNECT?.generic_oidc_idp?.client_id) {
+      warnings.push('Fence is enabled but no OIDC provider is configured — users will not be able to log in');
+    }
+    if (!v.global.dev && !v.global.postgres.master.host) {
+      warnings.push('Production mode (dev=false) but no external Postgres host configured');
+    }
+    return warnings;
+  };
+
+  const progressPct = Math.round((active / (STEP_CONFIG.length - 1)) * 100);
+
+  const dest = form.values.destination;
+  const ns = dest.namespace || dest.releaseName;
+
+  // Count enabled services
+  const enabledServices = Object.entries(form.values.values)
+    .filter(([key, val]) => typeof val === 'object' && val !== null && val.enabled === true)
+    .map(([key]) => key);
+
+  // ─── Step renderers ──────────────────────────────────────────────
+
+  const renderReviewStep = () => (
+    <Stack gap="lg">
+      {/* Header */}
+      <div ta="center">
+        <ThemeIcon size={56} radius="xl" variant="light" color="teal">
+          <IconRocket size={28} stroke={1.5} />
+        </ThemeIcon>
+        <Title order={3} mt="sm">{editMode ? 'Update Deployment' : 'Ready to Deploy'}</Title>
+        <Text c="dimmed" mt={4} maw={500} mx="auto">
+          {editMode
+            ? `Review and update your ${dest.releaseName} deployment.`
+            : 'Review your configuration below, then launch your Gen3 Data Commons.'}
+        </Text>
+      </div>
+
+      {/* Validation warnings */}
+      {(() => {
+        const warnings = getValidationWarnings();
+        return warnings.length > 0 ? (
+          <Alert icon={<IconAlertTriangle size={18} />} variant="light" color="orange" radius="md">
+            <Text size="sm" fw={600}>Configuration Warnings</Text>
+            <Stack gap={4} mt="xs">
+              {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
+            </Stack>
+          </Alert>
+        ) : null;
+      })()}
+
+      {/* Deployment summary cards */}
+      <SimpleGrid cols={4} w="100%">
+        <Paper withBorder p="md" radius="lg">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700} ls="lg">Cluster</Text>
+          <Text size="sm" fw={600} mt={4}>{dest.cluster || '(not selected)'}</Text>
+        </Paper>
+        <Paper withBorder p="md" radius="lg">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700} ls="lg">Release</Text>
+          <Text size="sm" fw={600} mt={4}>{dest.releaseName}</Text>
+        </Paper>
+        <Paper withBorder p="md" radius="lg">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700} ls="lg">Namespace</Text>
+          <Text size="sm" fw={600} mt={4}>{ns}</Text>
+        </Paper>
+        <Paper withBorder p="md" radius="lg">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700} ls="lg">Services</Text>
+          <Text size="sm" fw={600} mt={4}>{enabledServices.length} enabled</Text>
+        </Paper>
+      </SimpleGrid>
+
+      {/* Not yet deploying — show review + deploy button */}
+      {!deploying && !deployComplete && !deployResult && (
+        <>
+          <Paper withBorder p="lg" radius="lg">
+            <Group justify="space-between" mb="sm">
+              <Text size="sm" fw={600}>Generated Configuration</Text>
+              <Badge size="xs" variant="light" color="gray">values.yaml</Badge>
+            </Group>
+            <Editor
+              className='border rounded-lg'
+              value={YAML.stringify(form.values.values, null, 2)}
+              defaultLanguage='yaml'
+              height={"400px"}
+              readOnly={true}
+              theme={'light'}
+              options={{
+                readOnly: true,
+                scrollBeyondLastLine: false,
+                minimap: { enabled: false },
+                fontSize: 12,
+              }}
+            />
+          </Paper>
+
+          {deployError && (
+            <Alert icon={<IconAlertTriangle size={18} />} variant="light" color="red" radius="md">
+              <Text size="sm" fw={600}>Deployment Error</Text>
+              <Text size="xs" mt={4}>{deployError}</Text>
+            </Alert>
+          )}
+
+          <Flex justify="center">
+            <Button
+              onClick={deploy}
+              size="xl"
+              color="teal"
+              leftSection={<IconRocket size={20} />}
+              rightSection={<IconChevronRight size={18} />}
+              disabled={!dest.cluster}
+            >
+              {editMode ? 'Update Deployment' : 'Deploy Gen3'}
+            </Button>
+          </Flex>
+        </>
+      )}
+
+      {/* Deploying — show live status */}
+      {(deploying || deployResult) && !deployComplete && (
+        <Stack gap="md">
+          <Paper withBorder p="xl" radius="lg" bg="blue.0">
+            <Stack align="center" gap="md">
+              <ThemeIcon size={64} radius="xl" variant="light" color="blue">
+                <Loader size={32} color="blue" />
+              </ThemeIcon>
+              <Title order={4} ta="center">{editMode ? 'Updating Deployment' : 'Deploying Gen3'}</Title>
+              <Text c="dimmed" ta="center" size="sm">
+                Sending configuration to <b>{dest.cluster}</b> — installing <b>{dest.releaseName}</b> into namespace <b>{ns}</b>...
+              </Text>
+              <Loader size="md" type="dots" color="blue" />
+            </Stack>
+          </Paper>
+
+          {/* Release status from polling */}
+          {releaseStatus ? (
+            <Paper withBorder p="md" radius="lg">
+              <Group justify="space-between" mb="sm">
+                <Group gap="sm">
+                  <ThemeIcon size="sm" radius="md" variant="filled" color={
+                    releaseStatus.status === 'deployed' ? 'green' :
+                    releaseStatus.status === 'failed' ? 'red' :
+                    releaseStatus.status === 'pending-install' ? 'orange' : 'blue'
+                  }>
+                    {releaseStatus.status === 'deployed'
+                      ? <IconCheck size={14} />
+                      : <IconLoader2 size={14} />}
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Release: {releaseStatus.name}</Text>
+                </Group>
+                <Badge
+                  size="sm"
+                  color={
+                    releaseStatus.status === 'deployed' ? 'green' :
+                    releaseStatus.status === 'failed' ? 'red' :
+                    releaseStatus.status === 'pending-install' ? 'orange' : 'blue'
+                  }
+                  variant="filled"
+                  radius="sm"
+                >
+                  {releaseStatus.status}
+                </Badge>
+              </Group>
+              {releaseStatus.revision && (
+                <Text size="xs" c="dimmed">Revision: {releaseStatus.revision} | Chart: {releaseStatus.chart} | Updated: {releaseStatus.updated}</Text>
+              )}
+            </Paper>
+          ) : (
+            <Paper withBorder p="md" radius="lg" bg="gray.0">
+              <Group gap="sm">
+                <Loader size="xs" type="dots" />
+                <Text size="sm" c="dimmed">Waiting for Helm to register the release...</Text>
+              </Group>
+            </Paper>
+          )}
+
+          {/* Namespace deployment status (per-deployment rollout tracking) — always visible during deploy */}
+          <Paper withBorder p="md" radius="lg">
+            <Group justify="space-between" mb="sm">
+              <Group gap="sm">
+                <ThemeIcon size="sm" radius="md" variant="light" color={
+                  namespaceStatus?.ready ? 'green' : 'blue'
+                }>
+                  {namespaceStatus
+                    ? (namespaceStatus.ready
+                      ? <IconCheck size={14} />
+                      : <IconLoader2 size={14} />)
+                    : <IconLoader2 size={14} />}
+                </ThemeIcon>
+                <Text size="sm" fw={600}>Deployments</Text>
+              </Group>
+              {namespaceStatus?.deployments ? (
+                <Group gap="xs">
+                  <Badge size="sm" variant="filled" color={namespaceStatus.ready ? 'green' : 'yellow'} radius="sm">
+                    {namespaceStatus.totalReady}/{namespaceStatus.totalCount} ready
+                  </Badge>
+                </Group>
+              ) : (
+                <Loader size="xs" type="dots" />
+              )}
+            </Group>
+
+            {namespaceStatus?.deployments?.length > 0 ? (
+              <SimpleGrid cols={{ base: 1, xs: 2, sm: 3, lg: 4 }} spacing="xs">
+                {namespaceStatus.deployments.map((dep) => (
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                    <Group gap="xs" justify="space-between">
+                      <Group gap="xs">
+                        <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
+                          {dep.Ready
+                            ? <IconCheck size={10} />
+                            : <IconLoader2 size={10} />}
+                        </ThemeIcon>
+                        <Text size="xs" fw={500} lineClamp={1}>{dep.name}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed">{dep.ReadyReplicas}/{dep.TotalReplicas}</Text>
+                    </Group>
+                  </Paper>
+                ))}
+              </SimpleGrid>
+            ) : (
+              <Stack align="center" py="xl" gap="xs">
+                <Text size="sm" c="dimmed">
+                  {namespaceStatus === null
+                    ? 'Scanning namespace for deployments...'
+                    : namespaceStatus.deployments.length === 0
+                      ? 'No deployments found yet — waiting for Helm to create resources...'
+                      : 'Loading...'}
+                </Text>
+                <Loader size="sm" type="dots" />
+              </Stack>
+            )}
+          </Paper>
+
+          {/* Progress timeline */}
+          <Stack gap="xs">
+            <Group gap="sm">
+              <ThemeIcon size="sm" radius="xl" variant="filled" color="green">
+                <IconCheck size={12} />
+              </ThemeIcon>
+              <Text size="sm">Configuration submitted</Text>
+            </Group>
+            <Group gap="sm">
+              <ThemeIcon size="sm" radius="xl" variant={deployResult ? 'filled' : 'outline'} color={deployResult ? 'green' : 'gray'}>
+                {deployResult ? <IconCheck size={12} /> : <IconPlayerPlay size={12} />}
+              </ThemeIcon>
+              <Text size="sm" c={deployResult ? undefined : 'dimmed'}>Agent received install request</Text>
+            </Group>
+            <Group gap="sm">
+              <ThemeIcon size="sm" radius="xl" variant={releaseStatus ? 'filled' : 'outline'} color={releaseStatus ? (releaseStatus.status === 'deployed' ? 'green' : 'blue') : 'gray'}>
+                {releaseStatus
+                  ? (releaseStatus.status === 'deployed' ? <IconCheck size={12} /> : <IconLoader2 size={12} />)
+                  : <IconPlayerPlay size={12} />}
+              </ThemeIcon>
+              <Text size="sm" c={releaseStatus ? undefined : 'dimmed'}>
+                {releaseStatus
+                  ? `Helm ${releaseStatus.status} (${releaseStatus.chart})`
+                  : 'Helm installing chart...'}
+              </Text>
+            </Group>
+            <Group gap="sm">
+              <ThemeIcon size="sm" radius="xl" variant={namespaceStatus?.ready ? 'filled' : 'outline'} color={namespaceStatus?.ready ? 'green' : 'gray'}>
+                {namespaceStatus?.ready
+                  ? <IconCheck size={12} />
+                  : <IconPlayerPlay size={12} />}
+              </ThemeIcon>
+              <Text size="sm" c={namespaceStatus?.ready ? undefined : 'dimmed'}>
+                {namespaceStatus?.ready
+                  ? `${namespaceStatus.totalCount} deployments running`
+                  : 'Pods starting up...'}
+              </Text>
+            </Group>
+          </Stack>
+        </Stack>
+      )}
+
+      {/* Deploy complete */}
+      {deployComplete && (
+        <Stack align="center" gap="lg" py="md">
+          <ThemeIcon size={80} radius="xl" variant="filled" gradient={{ from: 'teal', to: 'green', deg: 135 }}>
+            <IconCircleCheck size={42} stroke={1.5} />
+          </ThemeIcon>
+          <Title order={3} ta="center">{editMode ? 'Deployment Updated!' : 'Gen3 Deployed Successfully!'}</Title>
+          <Text c="dimmed" ta="center" maw={480}>
+            Your Gen3 Data Commons <Code size="sm">{dest.releaseName}</Code> is running in namespace <Code size="sm">{ns}</Code> on cluster <Code size="sm">{dest.cluster}</Code>.
+          </Text>
+
+          {/* Hostname link */}
+          {deployedHostname && deployedHostname !== 'localhost' && (
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">Access your instance at:</Text>
+              <Anchor
+                href={`https://${deployedHostname}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                fw={600}
+                size="sm"
+              >
+                {deployedHostname}
+              </Anchor>
+              <IconExternalLink size={14} />
+            </Group>
+          )}
+
+          {releaseStatus && (
+            <Paper withBorder p="md" radius="lg" w="100%" maw={500}>
+              <SimpleGrid cols={2}>
+                <div>
+                  <Text size="xs" c="dimmed">Status</Text>
+                  <Text size="sm" fw={600}>{releaseStatus.status}</Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">Chart</Text>
+                  <Text size="sm" fw={600}>{releaseStatus.chart}</Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">Revision</Text>
+                  <Text size="sm" fw={600}>#{releaseStatus.revision}</Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">Updated</Text>
+                  <Text size="sm" fw={600}>{releaseStatus.updated}</Text>
+                </div>
+              </SimpleGrid>
+            </Paper>
+          )}
+
+          {/* Final deployment status summary */}
+          {namespaceStatus?.deployments && namespaceStatus.deployments.length > 0 && (
+            <Paper withBorder p="md" radius="lg" w="100%" maw={560}>
+              <Group justify="space-between" mb="sm">
+                <Group gap="sm">
+                  <Text size="sm" fw={600}>Service Deployments</Text>
+                  <Badge
+                    size="sm"
+                    color={namespaceStatus.ready ? 'green' : 'yellow'}
+                    variant="filled"
+                    radius="sm"
+                  >
+                    {namespaceStatus.totalReady}/{namespaceStatus.totalCount} ready
+                  </Badge>
+                </Group>
+                <Button
+                  variant="light"
+                  size="xs"
+                  leftSection={<IconRefresh size={12} />}
+                  onClick={fetchNamespaceStatus}
+                >
+                  Refresh
+                </Button>
+              </Group>
+              <SimpleGrid cols={{ base: 2, xs: 3 }} spacing="sm">
+                {namespaceStatus.deployments.map((dep) => (
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                    <Group gap={6} justify="space-between">
+                      <Group gap={6}>
+                        <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
+                          {dep.Ready
+                            ? <IconCheck size={10} />
+                            : <IconLoader2 size={10} />}
+                        </ThemeIcon>
+                        <Text size="xs" fw={500} lineClamp={1}>{dep.name}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" fw={500}>{dep.ReadyReplicas}/{dep.TotalReplicas}</Text>
+                    </Group>
+                  </Paper>
+                ))}
+              </SimpleGrid>
+            </Paper>
+          )}
+
+          <Group gap="md" mt="md">
+            <Button
+              onClick={() => {
+                console.log('[GoToDashboard] dest:', JSON.stringify(dest));
+                console.log('[GoToDashboard] setting active-cluster:', dest.cluster);
+                console.log('[GoToDashboard] setting active-environment:', dest.releaseName);
+                console.log('[GoToDashboard] setting active-env-manager: helm');
+                console.log('[GoToDashboard] setting active-env-app-name:', dest.releaseName);
+
+                localStorage.setItem('active-cluster', dest.cluster);
+                localStorage.setItem('active-environment', dest.releaseName);
+                localStorage.setItem('active-env-manager', 'helm');
+                localStorage.setItem('active-env-app-name', dest.releaseName);
+                setActiveCluster(dest.cluster);
+                setActiveGlobalEnv(dest.releaseName);
+                setActiveEnvManager('helm');
+                setActiveEnvAppName(dest.releaseName);
+
+                console.log('[GoToDashboard] localStorage after set:');
+                console.log('  active-cluster:', localStorage.getItem('active-cluster'));
+                console.log('  active-environment:', localStorage.getItem('active-environment'));
+                console.log('  active-env-manager:', localStorage.getItem('active-env-manager'));
+                console.log('  active-env-app-name:', localStorage.getItem('active-env-app-name'));
+
+                window.location.href = '/';
+              }}
+              variant="filled"
+              leftSection={<IconHome size={16} />}
+            >
+              Go to Dashboard
+            </Button>
+            <Button
+              onClick={() => {
+                setDeploying(false);
+                setDeployResult(null);
+                setDeployComplete(false);
+                setReleaseStatus(null);
+                setDeployError(null);
+              }}
+              variant="light"
+              leftSection={<IconRefresh size={16} />}
+            >
+              {editMode ? 'Edit Another' : 'Deploy Another'}
+            </Button>
+          </Group>
+        </Stack>
+      )}
+    </Stack>
+  );
 
   const steps = [
-    // { label: 'Cloud', content: <CloudStep /> },
-    { label: 'Destination', content: <DestinationStep form={form} clusters={clusters} fetchClusters={fetchClusters} /> },
-    { label: 'Hostname', content: <HostnameStep form={form} certs={certs} fetchCerts={fetchCerts} /> },
-    { label: 'Database', content: <DatabaseStep form={form} /> },
-    { label: 'Modules', content: <ModulesStep form={form} /> },
-    { label: 'Configuration', content: <ConfigStep form={form} /> },
-    // { label: 'Authentication', content: <AuthStep form={form} /> },
-    // { label: 'Workspaces', content: <WorkspacesStep form={form} /> },
-    {
-      label: 'Review & Deploy', content: (
-        <Stack>
-          <Text> Please review the values.yaml - This is what's going to be deployed to <b>cluster: {form.values.cluster}</b> in <b>namespace: {form.values.namespace}</b></Text>
-          <Editor
-            className='border rounded-lg h-screen'
-            value={YAML.stringify(form.values.values, null, 2)}
-            defaultLanguage='yaml'
-            height={"500px"}
-            readOnly={true}
-            theme={isDarkMode ? 'vs-dark' : 'light'}
-            options={{
-              readOnly: true,
-              scrollBeyondLastLine: false,
-              minimap: {
-                enabled: false,
-              },
-            }}
-          />
-          <Button onClick={deploy}>Deploy</Button>
-        </Stack>
-      )
-    }
+    { component: <DestinationStep form={form} clusters={clusters} fetchClusters={fetchClusters} /> },
+    { component: <GlobalSettingsStep form={form} /> },
+    { component: <HostnameStep form={form} certs={certs} fetchCerts={fetchCerts} /> },
+    { component: <DatabaseStep form={form} /> },
+    { component: <ModulesStep form={form} /> },
+    { component: <AuthStep form={form} /> },
+    { component: <ConfigStep form={form} /> },
+    { component: renderReviewStep() },
   ];
 
   return (
-    <>
-      <form onSubmit={form.onSubmit(() => deploy())}>
-        <Stepper active={active} onStepClick={setActive} breakpoint="sm" orientation="horizontal">
-          {steps.map((step, idx) => (
-            <Stepper.Step key={idx} label={step.label}>
-              {step.content}
-            </Stepper.Step>
-          ))}
-        </Stepper>
-
-        <Group position="center" mt="xl">
-          {active > 0 && <Button variant="default" onClick={() => setActive((c) => c - 1)}>Back</Button>}
-          {active < steps.length - 1 && <Button onClick={() => setActive((c) => c + 1)}>Next</Button>}
+    <div style={{ maxWidth: 1100, margin: '0 auto', paddingTop: 24, paddingBottom: 48 }}>
+      {/* Header bar */}
+      <Paper p="xs" radius="lg" mb="lg" withBorder bg="gray.0">
+        <Group justify="space-between">
+          <Group gap="md">
+            <ThemeIcon size="sm" radius="md" variant="filled" gradient={{ from: 'teal', to: 'green' }}>
+              <IconRocket size={14} />
+            </ThemeIcon>
+            <Text size="sm" fw={600}>Gen3 Deployment Wizard</Text>
+            {editMode && (
+              <Badge size="sm" variant="filled" color="violet" radius="sm">Editing {form.values.destination.releaseName}</Badge>
+            )}
+          </Group>
+          <Group gap="md">
+            <Text size="xs" c="dimmed">Step {active + 1} of {STEP_CONFIG.length}</Text>
+            <Progress value={progressPct} size="xs" w={120} radius="xl" color="teal" />
+          </Group>
         </Group>
-      </form>
+      </Paper>
 
+      <Paper shadow="xl" radius="xl" p={0} overflow="hidden">
+        <div style={{ display: 'flex', minHeight: 560 }}>
+
+          {/* Sidebar */}
+          <div style={{
+            width: 240,
+            background: 'linear-gradient(180deg, #f8f9fc 0%, #f1f3f9 100%)',
+            borderRight: '1px solid #e9ecf2',
+            padding: '24px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            <Stepper active={active} orientation="vertical" iconSize={28} size="sm"
+              allowNextStepsSelect={true}
+              onStepClick={setActive}
+              styles={{
+                stepBody: { paddingLeft: 10 },
+                stepLabel: { fontWeight: 600, fontSize: 13, lineHeight: 1.2 },
+                stepDescription: { fontSize: 11, color: '#868e96', marginTop: 2 },
+                stepIcon: { borderWidth: 2, cursor: 'pointer' },
+                completedIcon: { background: 'transparent' },
+                step: { cursor: 'pointer' },
+                stepCompleted: { '& .mantine-Stepper-stepIcon': { borderColor: '#40c057', color: '#40c057' } },
+              }}
+            >
+              {STEP_CONFIG.map((step, i) => (
+                <Stepper.Step
+                  key={i}
+                  label={step.label}
+                  description={step.description}
+                  icon={<step.icon size={14} stroke={2} />}
+                />
+              ))}
+            </Stepper>
+
+            <div style={{ flex: 1 }} />
+
+            <Box mt="md">
+              <Progress value={progressPct} size="xs" radius="xl" color="teal" />
+              <Text size="xs" c="dimmed" ta="center" mt={4}>{progressPct}% complete</Text>
+            </Box>
+          </div>
+
+          {/* Main content area */}
+          <div style={{ flex: 1, padding: '32px 36px', overflowY: 'auto', background: '#fff' }}>
+            {steps[active]?.component}
+
+            {/* Bottom nav */}
+            <Box mt="xl">
+              <Divider my="lg" />
+              <Group justify="space-between">
+                <Button
+                  variant="default"
+                  onClick={() => setActive((c) => Math.max(c - 1, 0))}
+                  disabled={active === 0}
+                  leftSection={<IconChevronLeft size={16} />}
+                >
+                  Back
+                </Button>
+                {active < steps.length - 1 && (
+                  <Button
+                    onClick={() => setActive((c) => Math.min(c + 1, steps.length - 1))}
+                    rightSection={<IconChevronRight size={16} />}
+                  >
+                    Next
+                  </Button>
+                )}
+              </Group>
+            </Box>
+          </div>
+
+        </div>
+      </Paper>
+
+      {/* Debug mode toggle */}
       <Container fluid mt="xl">
         <Switch label="Debug Mode" checked={debugMode} onChange={(e) => setDebugMode(e.currentTarget.checked)} />
 
         {debugMode && (
-          <Grid mt="xl" gutter="xl">
-            <Grid.Col span={6}>
-              <Paper withBorder p="md">
-                <Text size="sm" weight={500} mb="sm">Destination Configuration</Text>
-                {/* <Code block>{JSON.stringify(form.values, null, 2)}</Code> */}
+          <Accordion variant="separated" mt="md" defaultValue="">
+            <Accordion.Item value="destination">
+              <Accordion.Control>Destination Configuration</Accordion.Control>
+              <Accordion.Panel>
                 <YamlEditor data={form.values?.destination} button={false} readOnly={true} />
-              </Paper>
-            </Grid.Col>
-            <Grid.Col span={6}>
-              <Paper withBorder p="md">
-                <Text size="sm" weight={500} mb="sm">Generated values.yaml</Text>
+              </Accordion.Panel>
+            </Accordion.Item>
+            <Accordion.Item value="values">
+              <Accordion.Control>Generated values.yaml</Accordion.Control>
+              <Accordion.Panel>
                 <YamlEditor data={form.values?.values} button={false} readOnly={true} />
-              </Paper>
-            </Grid.Col>
-          </Grid>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
         )}
       </Container>
-    </>
+    </div>
   );
 };
 

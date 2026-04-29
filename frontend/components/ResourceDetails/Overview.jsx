@@ -1,624 +1,509 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Card,
-    Grid,
     Text,
     Stack,
     Group,
     Code,
-    Pill,
     SimpleGrid,
-    Title,
-    Collapse,
     Table,
     Box,
     Badge,
     Accordion,
-    Divider,
+    Button,
+    ScrollArea,
+    Textarea,
+    Modal,
+    Alert,
 } from '@mantine/core';
-import { IconBox, IconDisc, IconServer, IconClipboardCheck, IconLock, IconSettings, IconDatabase, IconMapPin, IconFolderPlus, IconFolder, IconContainer, IconVariable, IconAlertCircle, IconPackage, IconCircleCheck } from '@tabler/icons-react';
+import { IconBox, IconDisc, IconClipboardCheck, IconDatabase, IconFolderPlus, IconContainer, IconVariable, IconAlertCircle, IconCircleCheck, IconTag, IconInfoCircle, IconPencil, IconDeviceFloppy } from '@tabler/icons-react';
 
-const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type }) => {
-    // Default to showing columns in single group if no config provided
-    const defaultConfig = {
-        leftColumns: columns,
-        rightColumns: [],
-        expandable: false,
-        transforms: {},
-        validations: {},
+const SecretValueCell = ({ raw, decoded, secretKey, onSave }) => {
+    const [showRaw, setShowRaw] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
+    const [draft, setDraft] = useState(decoded);
+    const [saving, setSaving] = useState(false);
+    const value = showRaw ? raw : decoded;
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await onSave(secretKey, draft);
+            setEditOpen(false);
+        } finally {
+            setSaving(false);
+        }
     };
 
-    // Use provided column configuration or default
-    const { leftColumns = [], rightColumns = [] } = columnConfig.layout || defaultConfig;
+    return (
+        <>
+            <Stack gap="xs">
+                <Group justify="flex-end" gap="xs" px="sm" pt="sm">
+                    <Button variant="subtle" size="compact-xs" onClick={() => setShowRaw(!showRaw)}>
+                        {showRaw ? 'Show decoded' : 'Show base64'}
+                    </Button>
+                    {onSave && (
+                        <Button
+                            variant="light"
+                            size="compact-xs"
+                            leftSection={<IconPencil size={14} />}
+                            onClick={() => {
+                                setDraft(decoded);
+                                setEditOpen(true);
+                            }}
+                        >
+                            Edit decoded value
+                        </Button>
+                    )}
+                </Group>
+                <pre style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    margin: 0,
+                    padding: '8px 12px 14px',
+                    color: 'var(--mantine-color-text)',
+                }}>
+                    {value}
+                </pre>
+            </Stack>
 
-    // Helper to get nested value from object using dot notation
+            <Modal
+                opened={editOpen}
+                onClose={() => setEditOpen(false)}
+                title={`Edit ${secretKey}`}
+                size="xl"
+                centered
+            >
+                <Stack gap="md">
+                    <Alert color="orange" icon={<IconAlertCircle size={16} />} title="This changes the live Secret">
+                        This value will be base64-encoded and patched into the cluster. If this Secret is managed by Helm or ArgoCD, the next Helm install/upgrade or ArgoCD sync may overwrite this change. Copy the decoded value into source control or values files if it should persist.
+                    </Alert>
+                    <Textarea
+                        label="Decoded value"
+                        value={draft}
+                        onChange={(event) => setDraft(event.currentTarget.value)}
+                        autosize
+                        minRows={12}
+                        maxRows={24}
+                        styles={{
+                            input: {
+                                fontFamily: 'var(--mantine-font-family-monospace)',
+                                fontSize: 13,
+                            },
+                        }}
+                    />
+                    <Group justify="flex-end">
+                        <Button variant="subtle" onClick={() => setEditOpen(false)}>Cancel</Button>
+                        <Button color="orange" leftSection={<IconDeviceFloppy size={16} />} loading={saving} onClick={save}>
+                            Encode and save Secret
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
+        </>
+    );
+};
+
+const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type, onUpdateSecretKey }) => {
+    const { leftColumns = [], rightColumns = [] } = columnConfig.layout || { leftColumns: columns, rightColumns: [] };
+
     const getNestedValue = (obj, path) => {
         return path.split('.').reduce((current, key) => {
             return current && current[key] !== undefined ? current[key] : null;
         }, obj);
     };
 
-    // Format the value for display
-    const formatValue = (value) => {
-        if (value === undefined || value === null) return '-';
-        if (typeof value === 'boolean') return value.toString();
-        if (typeof value === 'number') return value.toString();
-        if (Array.isArray(value)) return value.join(', ');
-        return value;
+    const codeStyle = {
+        fontFamily: 'var(--mantine-font-family-monospace)',
+        wordBreak: 'break-word',
     };
 
-    // Detail item component
+    // --- Summary Section ---
     const DetailItem = ({ column }) => {
         const value = getNestedValue(resource, column.path);
-        const displayValue = formatValue(value);
+        if (value === undefined || value === null) return null;
 
-        const context = { resource }; // Pass the entire resource for context
+        const renderValue = () => {
+            if (typeof value === 'boolean') {
+                return <Badge size="sm" color={value ? 'green' : 'gray'} variant="filled">{value ? 'Yes' : 'No'}</Badge>;
+            }
 
-        // If a render function is provided, use it
-        if (column.render) {
-            return (
-                <Group gap="sm" justify="space-between" w="100%">
-                    <Text size="sm" c="dimmed">{column.label}</Text>
-                    <Text size="sm" className="font-mono">
-                        {column.render({ value, ...context })}
-                    </Text>
-                </Group>
-            );
-        }
+            if (Array.isArray(value)) {
+                const display = value.map(v =>
+                    typeof v === 'object' ? JSON.stringify(v) : String(v)
+                ).join(', ');
+                return <Text size="sm" style={codeStyle}>{display}</Text>;
+            }
 
-        return (
-            <Group gap="sm" justify="space-between" w="100%">
-                <Text size="sm" c="dimmed">{column.label}</Text>
-                <Text size="sm" className="font-mono">
-                    {displayValue}
-                </Text>
-            </Group>
-        );
-
-    };
-
-    // Display resource summary
-    const renderResourceSummary = () => {
-        if (!columns.length && !Object.keys(columnConfig).length) {
-            return null;
-        }
+            return <Text size="sm" style={codeStyle}>{String(value)}</Text>;
+        };
 
         return (
-            <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                <Text fw={500}>Resource Summary</Text>
-                <Grid gutter="xl" mt="md">
-                    <>
-                        <Grid.Col span={6}>
-                            <Stack gap="xs">
-                                {leftColumns.map((column) => (
-                                    <DetailItem
-                                        key={column.path}
-                                        column={column}
-                                    />
-                                ))}
-                            </Stack>
-                        </Grid.Col>
-
-                        {rightColumns.length > 0 && (
-                            <Grid.Col span={6}>
-                                <Stack gap="xs">
-                                    {rightColumns.map((column) => (
-                                        <DetailItem
-                                            key={column.path}
-                                            column={column}
-                                        />
-                                    ))}
-                                </Stack>
-                            </Grid.Col>
-                        )}
-                    </>
-                </Grid>
+            <Card withBorder radius="sm" p="sm">
+                <Text size="xs" c="dimmed" mb={4}>{column.label}</Text>
+                {renderValue()}
             </Card>
         );
     };
 
-    // Display resource metadata
+    const renderSummary = () => {
+        const summaryColumns = [...leftColumns, ...rightColumns];
+        if (!summaryColumns.length) return null;
+        return (
+            <Card p="lg" radius="md" withBorder>
+                <Group gap="xs" mb="md">
+                    <IconInfoCircle size={18} />
+                    <Text fw={600} size="lg">Summary</Text>
+                </Group>
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                    {summaryColumns.map((col) => <DetailItem key={col.path} column={col} />)}
+                </SimpleGrid>
+            </Card>
+        );
+    };
+
+    // --- Metadata Section (Labels / Annotations) ---
     const renderMetadata = () => {
         const annotations = resource?.metadata?.annotations || {};
         const labels = resource?.metadata?.labels || {};
 
-        return (
-            <Stack spacing={0}>
-                {(Object.keys(annotations).length > 0 || Object.keys(labels).length > 0) && (
-                    <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                        <Text fw={500}>Resource Metadata</Text>
-                        <Stack mt="md">
-                            {Object.keys(labels).length > 0 && (
-                                <Group gap="sm" justify="space-between" w="100%">
-                                    <Text fw={500}>Labels</Text>
-                                    <Group gap="sm" justify="space-between" w="100%">
-                                        {Object.entries(labels).map(([key, value]) => (
-                                            <Pill key={key}>
-                                                {key}: {value}
-                                            </Pill>
-                                        ))}
-                                    </Group>
-                                </Group>
-                            )}
-                            {Object.keys(annotations).length > 0 && (
-                                <Group gap="sm" justify="space-between" w="100%">
-                                    <Text fw={500}>Annotations</Text>
-                                    <Group gap="sm" justify="space-between" w="100%">
-                                        {Object.entries(annotations).map(([key, value]) => (
-                                            <Pill key={key}>
-                                                {key}: {value}
-                                            </Pill>
-                                        ))}
-                                    </Group>
-                                </Group>
-                            )}
-                        </Stack>
-                    </Card>
-                )}
-            </Stack>
+        const hasContent = Object.keys(annotations).length > 0 || Object.keys(labels).length > 0;
+        if (!hasContent) return null;
+
+        const KeyValueTable = ({ data, title }) => (
+            <Accordion.Item value={title.toLowerCase()}>
+                <Accordion.Control>
+                    <Group justify="space-between">
+                        <Group gap="xs">
+                            <IconTag size={16} />
+                            <Text fw={500}>{title}</Text>
+                            <Badge size="sm" variant="light">{Object.keys(data).length}</Badge>
+                        </Group>
+                    </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                    <ScrollArea.Autosize mah={300}>
+                        <Table striped highlightOnHover size="xs">
+                            <thead>
+                                <tr><th>Key</th><th>Value</th></tr>
+                            </thead>
+                            <tbody>
+                                {Object.entries(data).map(([key, value]) => (
+                                    <tr key={key}>
+                                        <td className="font-mono" style={{ maxWidth: 300 }}><Text size="sm" truncate>{key}</Text></td>
+                                        <td className="font-mono"><Code block>{String(value)}</Code></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </ScrollArea.Autosize>
+                </Accordion.Panel>
+            </Accordion.Item>
         );
-    };
-
-    // Display resource-specific data
-    const renderData = () => {
-        if (!resource?.data) return null;
 
         return (
-            <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                <Text fw={500}>Resource Data</Text>
-                <Group gap="sm" w="100%" mt="md">
-                    {Object.entries(resource?.data).map(([key, value]) => (
-                        <React.Fragment key={key}>
-                            <Group gap="sm" align="flex-start">
-                                <Text size="sm" c="dimmed">{key}</Text>
-                                <Text size="sm" className="font-mono">
-                                    <Code>{value}</Code>
-                                </Text>
-                            </Group>
-                            <Divider mx={-15} my="sm" />
-                        </React.Fragment>
-                    ))}
-                </Group>
+            <Card p="lg" radius="md" withBorder>
+                <Accordion variant="contained" radius="md">
+                    {Object.keys(labels).length > 0 && <KeyValueTable data={labels} title="Labels" />}
+                    {Object.keys(annotations).length > 0 && <KeyValueTable data={annotations} title="Annotations" />}
+                </Accordion>
             </Card>
         );
     };
 
+    // --- Resource Data Section (ConfigMaps, Secrets, etc.) ---
+    const renderData = () => {
+        const data = resource?.data;
+        if (!data || typeof data !== 'object') return null;
 
-    const renderContainers = (containersSpec, containersStatus = [], title = 'Containers', type = 'containers') => {
+        const entries = Object.entries(data);
+        if (entries.length === 0) return null;
+
+        const isSecret = type === 'Secret';
+
+        const decodeValue = (val) => {
+            if (!isSecret) return String(val);
+            try {
+                return atob(String(val));
+            } catch {
+                return String(val);
+            }
+        };
+
+        const isMultiline = (val) => val.includes('\n') || val.length > 200;
+
+        return (
+            <Card p="lg" radius="md" withBorder>
+                <Group gap="xs" mb="md">
+                    <IconDatabase size={18} />
+                    <Text fw={600} size="lg">Data</Text>
+                </Group>
+                <Stack gap="md">
+                    {entries.map(([key, value]) => {
+                        const raw = String(value);
+                        const decoded = decodeValue(value);
+                        const longValue = isMultiline(decoded);
+                        const valueHeight = longValue ? (isSecret ? 760 : 560) : undefined;
+
+                        return (
+                            <Box
+                                key={key}
+                                style={{
+                                    border: '1px solid var(--mantine-color-gray-3)',
+                                    borderRadius: 8,
+                                    overflow: 'hidden',
+                                }}
+                            >
+                                <Box
+                                    style={{
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 1,
+                                        background: 'var(--mantine-color-body)',
+                                        borderBottom: '1px solid var(--mantine-color-gray-3)',
+                                        padding: '8px 12px',
+                                    }}
+                                >
+                                    <Group justify="space-between">
+                                        <Group gap="xs">
+                                            <Text fw={600} size="sm" style={codeStyle}>{key}</Text>
+                                        </Group>
+                                    </Group>
+                                </Box>
+
+                                <Box
+                                    style={{
+                                        minWidth: 0,
+                                        maxHeight: valueHeight,
+                                        overflow: longValue ? 'auto' : undefined,
+                                        background: 'var(--mantine-color-gray-0)',
+                                    }}
+                                >
+                                    {isSecret ? (
+                                        <SecretValueCell raw={raw} decoded={decoded} secretKey={key} onSave={onUpdateSecretKey} />
+                                    ) : longValue ? (
+                                        <Code block style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, lineHeight: 1.5 }}>
+                                            {decoded}
+                                        </Code>
+                                    ) : (
+                                        <Code block style={{ fontSize: 13, wordBreak: 'break-word' }}>{decoded}</Code>
+                                    )}
+                                </Box>
+                            </Box>
+                        );
+                    })}
+                </Stack>
+            </Card>
+        );
+    };
+
+    // --- Containers ---
+    const renderContainers = (containersSpec, containersStatus = [], title = 'Containers', containerType = 'containers') => {
         if (!containersSpec || containersSpec.length === 0) return null;
 
-        // Combine spec and status information
         const containers = containersSpec.map(container => {
             const status = containersStatus.find(s => s.name === container.name) || {};
             return { ...container, ...status };
         });
 
-        console.log(containers)
-
-        // Container details component
         const ContainerCard = ({ container }) => {
-            // Helper for key-value pairs
-            const InfoItem = ({ label, value, divider = true }) => (
-                <>
-                    <Group position="apart" mb={5}>
-                        <Text size="sm" c="dimmed" fw={500}>{label}</Text>
-                        <Text size="sm" className="font-mono" truncate>
-                            {value || "—"}
-                        </Text>
-                    </Group>
-                    {divider && <Divider my="xs" />}
-                </>
-            );
-
-            // Render environment variables
-            const EnvVarsTable = ({ envVars }) => {
-                if (!envVars || envVars.length === 0) return <Text size="sm" fs="italic">No environment variables</Text>;
-
-                return (
-                    <Table striped highlightOnHover size="xs">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {envVars.map((env, i) => (
-                                <tr key={`env-${i}`}>
-                                    <td className="font-mono">{env.name}</td>
-                                    <td className="font-mono">
-                                        {env.valueFrom ? (
-                                            <Badge color="blue" variant="dot">From Reference</Badge>
-                                        ) : (
-                                            env.value || "—"
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                );
-            };
-
-            // Determine ready state from status
             const isReady = container.ready === true;
 
+            const InfoRow = ({ label, value }) => (
+                <Group justify="space-between" mb={4}>
+                    <Text size="xs" c="dimmed">{label}</Text>
+                    <Text size="xs" className="font-mono" truncate style={{ maxWidth: '60%' }}>{value || '\u2014'}</Text>
+                </Group>
+            );
+
             return (
-                <Card key={container.name} p="md" radius="md" withBorder mb="md">
-                    <Card.Section inheritPadding py="xs" withBorder>
-                        <Group position="apart">
-                            <Group>
-                                <IconBox size={18} />
-                                <Text fw={600}>{container.name}</Text>
-                                {type === 'init' && <Badge size="sm" color="grape">Init</Badge>}
-                            </Group>
-                            {type === 'Pod' ?
-
-                                <Badge
-                                    color={container.ready ? "green" : "orange"}
-                                    variant="light"
-                                    leftSection={container.ready ? <IconCircleCheck size={14} /> : <IconAlertCircle size={14} />}
-                                >
-                                    {container.ready ? "Ready" : "Not Ready"}
-                                </Badge> : null
-                            }
+                <Card key={container.name} p="md" radius="md" withBorder mb="sm">
+                    <Group justify="space-between" mb="sm">
+                        <Group gap="xs">
+                            <IconBox size={16} />
+                            <Text fw={600}>{container.name}</Text>
+                            {containerType === 'init' && <Badge size="xs" color="grape">Init</Badge>}
                         </Group>
-                    </Card.Section>
+                        {type === 'Pod' && (
+                            <Badge size="sm" color={isReady ? 'green' : 'orange'} variant="filled"
+                                leftSection={isReady ? <IconCircleCheck size={12} /> : <IconAlertCircle size={12} />}>
+                                {isReady ? 'Ready' : 'Not Ready'}
+                            </Badge>
+                        )}
+                    </Group>
 
-                    <SimpleGrid cols={2} mt="md" breakpoints={[{ maxWidth: 'sm', cols: 1 }]}>
+                    <SimpleGrid cols={2} spacing="xs">
                         <div>
-                            <Title order={5} mb="md">Configuration</Title>
-                            <InfoItem label="Image" value={container.image} />
-                            <InfoItem label="ImagePullPolicy" value={container.imagePullPolicy} />
-                            <InfoItem label="Command" value={container.command?.join(' ')} />
-                            <InfoItem label="Arguments" value={container.args?.join(' ')} />
+                            <InfoRow label="Image" value={container.image} />
+                            <InfoRow label="Pull Policy" value={container.imagePullPolicy} />
                         </div>
-                        {type === 'Pod' ?
-                        <div>
-                            <Title order={5} mb="md">Status</Title>
-                            <InfoItem label="Restarts" value={container.restartCount || "0"} />
-                            <InfoItem label="State" value={Object.keys(container.state || {})[0] || "Unknown"} />
-                            {container.lastState && Object.keys(container.lastState).length > 0 && (
-                                <InfoItem label="Last State" value={Object.keys(container.lastState)[0]} />
-                            )}
-                        </div> : null
-                        }
+                        {type === 'Pod' && (
+                            <div>
+                                <InfoRow label="Restarts" value={String(container.restartCount || 0)} />
+                                <InfoRow label="State" value={Object.keys(container.state || {})[0] || 'Unknown'} />
+                            </div>
+                        )}
                     </SimpleGrid>
 
-                    {/* Environment Variables Section - Simplified */}
-                    <Accordion variant="separated" mt="md">
-                        <Accordion.Item value="env-vars">
-                            <Accordion.Control>
-                                <Group>
-                                    <IconVariable size={16} />
-                                    <Text fw={500}>Environment Variables</Text>
-                                    {container.env && <Badge size="sm" color="cyan">{container.env.length}</Badge>}
-                                </Group>
-                            </Accordion.Control>
-                            <Accordion.Panel>
-                                <EnvVarsTable envVars={container.env} />
-                            </Accordion.Panel>
-                        </Accordion.Item>
-                    </Accordion>
+                    {container.env && container.env.length > 0 && (
+                        <Accordion variant="separated" mt="xs">
+                            <Accordion.Item value="env">
+                                <Accordion.Control>
+                                    <Group gap="xs">
+                                        <IconVariable size={14} />
+                                        <Text size="sm" fw={500}>Environment ({container.env.length})</Text>
+                                    </Group>
+                                </Accordion.Control>
+                                <Accordion.Panel>
+                                    <Table striped highlightOnHover size="xs">
+                                        <thead><tr><th>Name</th><th>Value</th></tr></thead>
+                                        <tbody>
+                                            {container.env.map((e, i) => (
+                                                <tr key={i}>
+                                                    <td className="font-mono" style={{ fontSize: 12 }}>{e.name}</td>
+                                                    <td className="font-mono" style={{ fontSize: 12 }}>
+                                                        {e.valueFrom
+                                                            ? <Badge size="xs" color="blue">From Reference</Badge>
+                                                            : <span>{e.value || '\u2014'}</span>}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </Table>
+                                </Accordion.Panel>
+                            </Accordion.Item>
+                        </Accordion>
+                    )}
                 </Card>
             );
         };
 
         return (
-            <Accordion variant="contained" defaultValue={title.toLowerCase()} radius="md" mb="lg">
+            <Accordion variant="contained" radius="md" mb="lg">
                 <Accordion.Item value={title.toLowerCase()}>
                     <Accordion.Control>
-                        <Group>
-                            {type === 'init' ? <IconPackage size={18} /> : <IconContainer size={18} />}
+                        <Group gap="xs">
+                            <IconContainer size={18} />
                             <Text fw={600}>{title}</Text>
-                            <Badge size="sm" color="blue">{containers.length}</Badge>
+                            <Badge size="sm">{containers.length}</Badge>
                         </Group>
                     </Accordion.Control>
                     <Accordion.Panel>
-                        {containers.map(container => <ContainerCard key={container.name} container={container} />)}
+                        {containers.map(c => <ContainerCard key={c.name} container={c} />)}
                     </Accordion.Panel>
                 </Accordion.Item>
             </Accordion>
         );
     };
 
-    const renderVolumes = (volumes = [], volumeMounts = [], title = 'Volumes') => {
+    // --- Volumes ---
+    const renderVolumes = (volumes = [], volumeMounts = []) => {
         if (!volumes || volumes.length === 0) return null;
 
-        // Volume details component
-        const VolumeCard = ({ volume, mounts = [] }) => {
-            // Helper for key-value pairs
-            const InfoItem = ({ label, value, divider = true }) => (
-                <>
-                    <Group position="apart" mb={5}>
-                        <Text size="sm" c="dimmed" fw={500}>{label}</Text>
-                        <Text size="sm" className="font-mono" truncate>
-                            {value || "—"}
-                        </Text>
-                    </Group>
-                    {divider && <Divider my="xs" />}
-                </>
-            );
+        const getVolumeType = (vol) => {
+            for (const t of ['configMap', 'secret', 'persistentVolumeClaim', 'emptyDir', 'hostPath', 'csi', 'nfs']) {
+                if (vol[t]) return t;
+            }
+            return 'unknown';
+        };
 
-            // Get related mounts for this volume
-            const relatedMounts = mounts.filter(mount => mount.name === volume.name);
+        const VolumeCard = ({ vol }) => {
+            const vType = getVolumeType(vol);
+            const mounts = volumeMounts.filter(m => m.name === vol.name);
 
-            // Determine volume type based on which field is present
-            const getVolumeType = () => {
-                const types = [
-                    'configMap', 'secret', 'persistentVolumeClaim', 'emptyDir',
-                    'hostPath', 'projected', 'downwardAPI', 'csi', 'nfs'
-                ];
-
-                for (const type of types) {
-                    if (volume[type]) return type;
-                }
-                return 'unknown';
-            };
-
-            const volumeType = getVolumeType();
-
-            // Get volume source details based on type
-            const getVolumeSourceDetails = () => {
-                switch (volumeType) {
-                    case 'configMap':
-                        return `ConfigMap: ${volume.configMap.name}`;
-                    case 'secret':
-                        return `Secret: ${volume.secret.secretName}`;
-                    case 'persistentVolumeClaim':
-                        return `PVC: ${volume.persistentVolumeClaim.claimName}`;
-                    case 'emptyDir':
-                        return 'Empty Directory';
-                    case 'hostPath':
-                        return `Host Path: ${volume.hostPath.path}`;
-                    default:
-                        return volumeType.charAt(0).toUpperCase() + volumeType.slice(1);
-                }
-            };
-
-            // Get icon based on volume type
-            const getVolumeIcon = () => {
-                switch (volumeType) {
-                    case 'configMap':
-                        return <IconSettings size={18} />;
-                    case 'secret':
-                        return <IconLock size={18} />;
-                    case 'persistentVolumeClaim':
-                        return <IconDatabase size={18} />;
-                    case 'emptyDir':
-                        return <IconFolderPlus size={18} />;
-                    case 'hostPath':
-                        return <IconServer size={18} />;
-                    default:
-                        return <IconFolder size={18} />;
-                }
-            };
-
-            // Mount points table
-            const MountPointsTable = ({ mounts }) => {
-                if (!mounts || mounts.length === 0) return <Text size="sm" fs="italic">Not mounted by any container</Text>;
-
-                return (
-                    <Table striped highlightOnHover size="xs">
-                        <thead>
-                            <tr>
-                                <th>Container</th>
-                                <th>Mount Path</th>
-                                <th>Read Only</th>
-                                <th>Sub-Path</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {mounts.map((mount, i) => (
-                                <tr key={`mount-${i}`}>
-                                    <td className="font-mono">{mount.containerName || "—"}</td>
-                                    <td className="font-mono">{mount.mountPath}</td>
-                                    <td>{mount.readOnly ? <Badge color="orange">Yes</Badge> : <Badge color="green">No</Badge>}</td>
-                                    <td className="font-mono">{mount.subPath || "—"}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                );
-            };
+            let source = '';
+            switch (vType) {
+                case 'configMap': source = `ConfigMap: ${vol.configMap.name}`; break;
+                case 'secret': source = `Secret: ${vol.secret.secretName}`; break;
+                case 'persistentVolumeClaim': source = `PVC: ${vol.persistentVolumeClaim.claimName}`; break;
+                case 'emptyDir': source = 'Empty Directory'; break;
+                case 'hostPath': source = `Host Path: ${vol.hostPath.path}`; break;
+                default: source = vType;
+            }
 
             return (
-                <Card key={volume.name} p="md" radius="md" withBorder mb="md">
-                    <Card.Section inheritPadding py="xs" withBorder>
-                        <Group position="apart">
-                            <Group>
-                                {getVolumeIcon()}
-                                <Text fw={600}>{volume.name}</Text>
-                                <Badge size="sm" color="indigo">{volumeType}</Badge>
-                            </Group>
-                            <Badge color="blue" variant="light">
-                                {relatedMounts.length ? `${relatedMounts.length} mounts` : 'Not mounted'}
-                            </Badge>
+                <Card key={vol.name} p="md" radius="md" withBorder mb="sm">
+                    <Group justify="space-between" mb="xs">
+                        <Group gap="xs">
+                            <IconDisc size={16} />
+                            <Text fw={600}>{vol.name}</Text>
                         </Group>
-                    </Card.Section>
-
-                    <Box mt="md">
-                        <Title order={5} mb="md">Configuration</Title>
-                        <InfoItem label="Volume Type" value={volumeType} />
-                        <InfoItem label="Source" value={getVolumeSourceDetails()} />
-
-                        {/* Volume-type specific details */}
-                        {volumeType === 'persistentVolumeClaim' && (
-                            <InfoItem
-                                label="Access Mode"
-                                value={volume.persistentVolumeClaim.readOnly ? 'ReadOnly' : 'ReadWrite'}
-                            />
-                        )}
-
-                        {volumeType === 'configMap' && volume.configMap.items && (
-                            <InfoItem
-                                label="Item Count"
-                                value={volume.configMap.items.length}
-                            />
-                        )}
-                    </Box>
-
-                    {/* Mount Points Section */}
-                    <Accordion variant="separated" mt="md">
-                        <Accordion.Item value="mount-points">
-                            <Accordion.Control>
-                                <Group>
-                                    <IconMapPin size={16} />
-                                    <Text fw={500}>Mount Points</Text>
-                                    {relatedMounts.length > 0 && (
-                                        <Badge size="sm" color="cyan">{relatedMounts.length}</Badge>
-                                    )}
-                                </Group>
-                            </Accordion.Control>
-                            <Accordion.Panel>
-                                <MountPointsTable mounts={relatedMounts} />
-                            </Accordion.Panel>
-                        </Accordion.Item>
-                    </Accordion>
+                        <Badge size="xs" color="indigo">{vType}</Badge>
+                    </Group>
+                    <Group justify="space-between" mb="xs">
+                        <Text size="xs" c="dimmed">Source</Text>
+                        <Text size="xs" className="font-mono">{source}</Text>
+                    </Group>
+                    {mounts.length > 0 && (
+                        <Group gap="xs">
+                            <Text size="xs" c="dimmed">Mounts:</Text>
+                            {mounts.map((m, i) => (
+                                <Code key={i} size="xs">{m.mountPath}{m.readOnly ? ' (RO)' : ''}</Code>
+                            ))}
+                        </Group>
+                    )}
                 </Card>
             );
         };
 
-        // Process volume mounts to add container names
-        const processedMounts = containers?.reduce((acc, container) => {
-            const containerMounts = (container.volumeMounts || []).map(mount => ({
-                ...mount,
-                containerName: container.name
-            }));
-            return [...acc, ...containerMounts];
-        }, []) || volumeMounts;
-
         return (
-            <Accordion variant="contained" defaultValue={title.toLowerCase()} radius="md" mb="lg">
-                <Accordion.Item value={title.toLowerCase()}>
+            <Accordion variant="contained" radius="md" mb="lg">
+                <Accordion.Item value="volumes">
                     <Accordion.Control>
-                        <Group>
-                            <IconDisc size={18} />
-                            <Text fw={600}>{title}</Text>
-                            <Badge size="sm" color="blue">{volumes.length}</Badge>
+                        <Group gap="xs">
+                            <IconFolderPlus size={18} />
+                            <Text fw={600}>Volumes</Text>
+                            <Badge size="sm">{volumes.length}</Badge>
                         </Group>
                     </Accordion.Control>
                     <Accordion.Panel>
-                        {volumes.map(volume => (
-                            <VolumeCard
-                                key={volume.name}
-                                volume={volume}
-                                mounts={processedMounts}
-                            />
-                        ))}
+                        {volumes.map(v => <VolumeCard key={v.name} vol={v} />)}
                     </Accordion.Panel>
                 </Accordion.Item>
             </Accordion>
         );
     };
 
-    // Render conditions function for Kubernetes resources
-    const renderConditions = (conditions = [], title = 'Conditions') => {
+    // --- Conditions ---
+    const renderConditions = (conditions = []) => {
         if (!conditions || conditions.length === 0) return null;
 
-        // Get appropriate color based on condition status
-        const getStatusColor = (status, type) => {
-            if (status === 'True') {
-                // Special case for certain negative conditions
-                if (['Unschedulable', 'PodScheduled', 'ContainersReady'].includes(type)) {
-                    return 'green';
-                }
-                return 'green';
-            } else if (status === 'False') {
-                // Special case for certain negative conditions
-                if (['Unschedulable'].includes(type)) {
-                    return 'green';
-                }
-                return 'red';
-            } else if (status === 'Unknown') {
-                return 'yellow';
-            }
-            return 'gray';
-        };
-
-        // Format timestamp to readable format
-        const formatTimestamp = (timestamp) => {
-            if (!timestamp) return '—';
+        const timeAgo = (ts) => {
+            if (!ts) return '\u2014';
             try {
-                const date = new Date(timestamp);
-                return date.toLocaleString();
-            } catch (e) {
-                return timestamp;
-            }
-        };
-
-        // Calculate time since last transition
-        const getTimeSince = (timestamp) => {
-            if (!timestamp) return '—';
-            try {
-                const transitionTime = new Date(timestamp);
-                const now = new Date();
-                const diffMs = now - transitionTime;
-
-                const diffSecs = Math.floor(diffMs / 1000);
-                const diffMins = Math.floor(diffSecs / 60);
-                const diffHours = Math.floor(diffMins / 60);
-                const diffDays = Math.floor(diffHours / 24);
-
-                if (diffDays > 0) return `${diffDays}d ago`;
-                if (diffHours > 0) return `${diffHours}h ago`;
-                if (diffMins > 0) return `${diffMins}m ago`;
-                return `${diffSecs}s ago`;
-            } catch (e) {
-                return '—';
-            }
+                const diff = Date.now() - new Date(ts).getTime();
+                const d = Math.floor(diff / 86400000), h = Math.floor(diff / 3600000) % 24;
+                const m = Math.floor(diff / 60000) % 60;
+                if (d > 0) return `${d}d${h}h ago`;
+                if (h > 0) return `${h}h${m}m ago`;
+                return `${m}m ago`;
+            } catch { return ts; }
         };
 
         return (
-            <Card p="lg" radius="md" withBorder className="bg-gray-900 text-white">
-                <Group mb="md">
-                    <IconClipboardCheck size={20} />
-                    <Text fw={600}>{title}</Text>
+            <Card p="lg" radius="md" withBorder>
+                <Group gap="xs" mb="md">
+                    <IconClipboardCheck size={18} />
+                    <Text fw={600} size="lg">Conditions</Text>
                 </Group>
-
-                <Table striped highlightOnHover>
+                <Table striped highlightOnHover size="xs">
                     <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Last Transition</th>
-                            <th>Reason</th>
-                            <th>Message</th>
-                        </tr>
+                        <tr><th>Type</th><th>Status</th><th>Last Transition</th><th>Reason</th><th>Message</th></tr>
                     </thead>
                     <tbody>
-                        {conditions.map((condition, index) => (
-                            <tr key={`condition-${index}`}>
+                        {conditions.map((c, i) => (
+                            <tr key={i}>
+                                <td><Text fw={500} size="sm">{c.type}</Text></td>
                                 <td>
-                                    <Text fw={500}>{condition.type}</Text>
-                                </td>
-                                <td>
-                                    <Badge
-                                        color={getStatusColor(condition.status, condition.type)}
-                                        variant="filled"
-                                    >
-                                        {condition.status}
+                                    <Badge size="sm" color={c.status === 'True' ? 'green' : c.status === 'False' ? 'red' : 'yellow'} variant="filled">
+                                        {c.status}
                                     </Badge>
                                 </td>
-                                <td>
-                                    <Group spacing={5}>
-                                        <Text size="sm">{getTimeSince(condition.lastTransitionTime)}</Text>
-                                        <Badge
-                                            size="xs"
-                                            color="gray"
-                                            variant="outline"
-                                            title={formatTimestamp(condition.lastTransitionTime)}
-                                        >
-                                            {formatTimestamp(condition.lastTransitionTime).split(',')[0]}
-                                        </Badge>
-                                    </Group>
-                                </td>
-                                <td>
-                                    <Text size="sm" fw={500}>{condition.reason || '—'}</Text>
-                                </td>
-                                <td>
-                                    <Text size="sm">{condition.message || '—'}</Text>
-                                </td>
+                                <td><Text size="sm">{timeAgo(c.lastTransitionTime)}</Text></td>
+                                <td><Text size="sm">{c.reason || '\u2014'}</Text></td>
+                                <td><Text size="sm" truncate style={{ maxWidth: 300 }}>{c.message || '\u2014'}</Text></td>
                             </tr>
                         ))}
                     </tbody>
@@ -627,30 +512,23 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
         );
     };
 
-    // Extract container specs and statuses
+    // --- Main Render ---
     const podSpec = resource?.spec?.template?.spec || resource?.spec;
     const podStatus = resource?.status;
-
-    // Get containers from different possible locations
     const containers = podSpec?.containers || [];
     const initContainers = podSpec?.initContainers || [];
-
-    // Get container statuses
     const containerStatuses = podStatus?.containerStatuses || [];
     const initContainerStatuses = podStatus?.initContainerStatuses || [];
 
     return (
-        <Stack spacing={20}>
-            {/* Other render functions can go here */}
-            {renderResourceSummary()}
+        <Stack spacing="lg">
+            {renderSummary()}
             {renderMetadata()}
             {renderData()}
             {renderContainers(containers, containerStatuses, 'Containers', 'regular')}
             {renderContainers(initContainers, initContainerStatuses, 'Init Containers', 'init')}
-            {/* Add the new renderers */}
-            {renderVolumes(podSpec?.volumes, null, 'Volumes')}
-            {renderConditions(podStatus?.conditions, 'Conditions')}
-
+            {renderVolumes(podSpec?.volumes, containers.flatMap(c => (c.volumeMounts || []).map(m => ({ ...m, containerName: c.name }))))}
+            {renderConditions(podStatus?.conditions)}
         </Stack>
     );
 };

@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM quay.io/cdis/golang-build-base:master AS go-builder
 
 # RUN yum update -y
@@ -9,10 +11,17 @@ FROM quay.io/cdis/golang-build-base:master AS go-builder
 
 WORKDIR /go
 
-COPY api /go/src/api
 WORKDIR /go/src/api
 
-RUN go build -o /go/bin/csoc
+COPY api/go.mod api/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY api ./
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /go/bin/csoc
 
 RUN chmod +x /go/bin/csoc
 
@@ -21,8 +30,10 @@ CMD ["/go/bin/csoc"]
 
 FROM quay.io/cdis/golang-build-base:master AS final
 
-# need it for bootstrap
-RUN yum install -y docker
+# need these for bootstrap (kubectl) and agent proxy
+RUN yum install -y docker && \
+    curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && mv kubectl /usr/local/bin/kubectl
 
 WORKDIR /go/src/api
 

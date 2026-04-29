@@ -72,7 +72,7 @@ func detectProvider(clientset *kubernetes.Clientset) (string, error) {
 			return strings.HasPrefix(providerID, "oci://")
 		}},
 		{"Minikube", func(node corev1.Node, providerID string) bool {
-			return strings.Contains(node.Name, "minikube")
+			return strings.Contains(node.Name, "minikube") || node.Labels["minikube.k8s.io/name"] != ""
 		}},
 		{"KIND", func(node corev1.Node, providerID string) bool {
 			return strings.HasPrefix(providerID, "kind://")
@@ -91,6 +91,9 @@ func detectProvider(clientset *kubernetes.Clientset) (string, error) {
 		}},
 		{"Linode", func(node corev1.Node, providerID string) bool {
 			return strings.HasPrefix(providerID, "linode://")
+		}},
+		{"Docker", func(node corev1.Node, providerID string) bool {
+			return strings.HasPrefix(providerID, "docker://") || strings.HasPrefix(providerID, "docker-desktop://")
 		}},
 	}
 

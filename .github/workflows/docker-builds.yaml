@@ -5,12 +5,12 @@ on: push
 jobs:
   build-frontend:
     name: Build Frontend Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.frontend"
       OVERRIDE_REPO_NAME: "csoc-frontend"
       USE_QUAY_ONLY: true
-      BUILD_PLATFORMS: "linux/amd64"
+      BUILD_PLATFORMS: "linux/amd64,linux/arm64"
 
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
@@ -21,12 +21,12 @@ jobs:
 
   build-api:
     name: Build API Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.api"
       OVERRIDE_REPO_NAME: "csoc-api"
       USE_QUAY_ONLY: true
-      BUILD_PLATFORMS: "linux/amd64"
+      BUILD_PLATFORMS: "linux/amd64,linux/arm64"
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
@@ -35,12 +35,12 @@ jobs:
 
   build-agent:
     name: Build Agent Image
-    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@master
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@fix/upload-digest
     with:
       DOCKERFILE_LOCATION: "./Dockerfile.agent"
       OVERRIDE_REPO_NAME: "csoc-agent"
       USE_QUAY_ONLY: true
-      BUILD_PLATFORMS: "linux/amd64"
+      BUILD_PLATFORMS: "linux/amd64,linux/arm64"
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}

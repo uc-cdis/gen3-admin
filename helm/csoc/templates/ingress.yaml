@@ -35,9 +35,15 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "csoc.fullname" $ }}
+                name: {{ .backend.service.name | default (include "csoc.fullname" $) }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  {{- if .backend.service.port.name }}
+                  name: {{ .backend.service.port.name }}
+                  {{- else if .backend.service.port.number }}
+                  number: {{ .backend.service.port.number }}
+                  {{- else }}
+                  {{- fail "ingress.hosts[].paths[].backend.service.port.name or number is required" }}
+                  {{- end }}
           {{- end }}
     {{- end }}
 {{- end }}

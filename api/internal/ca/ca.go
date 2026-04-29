@@ -54,7 +54,7 @@ func LoadOrCreateServerCert(caCert *x509.Certificate, caKey *ecdsa.PrivateKey, s
 	// Generate a Certificate Signing Request (CSR)
 	serverTemplate := &x509.CertificateRequest{
 		Subject:  pkix.Name{CommonName: "csoc.gen3.org"}, // TODO: Change the CommonName
-		DNSNames: []string{"localhost", "csoc.gen3.org"},
+		DNSNames: []string{"localhost:50051", "csoc.gen3.org"},
 	}
 	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, serverTemplate, serverPrivKey)
 	if err != nil {

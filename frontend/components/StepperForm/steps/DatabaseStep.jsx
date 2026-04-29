@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { Switch, Stack, Paper, Divider, Radio, Group, Collapse, TextInput } from '@mantine/core';
+import { Stack, Paper, Divider, Radio, Group, Collapse, TextInput, NumberInput, Switch } from '@mantine/core';
+
 const DatabaseStep = ({ form }) => {
-  console.log(form.values.values)
-  const [value, setValue] = useState('react');
   const isLocal = Boolean(form.values.values?.global?.dev);
   return (
     <Paper p="md" radius="md" withBorder>
@@ -36,10 +34,10 @@ const DatabaseStep = ({ form }) => {
             onChange={(e) => form.setFieldValue('values.global.pdb', e.currentTarget.checked)}
             />
             <Switch
-            checked={Boolean(form.values.values.postgresql.persistence.enabled)}
+            checked={Boolean(form.values.values.postgresql?.primary?.persistence?.enabled)}
             label="Enable Persistence?"
             description="Would you like your Postgres pod to persist your data using a PVC?"
-            onChange={(e) => form.setFieldValue('values.postgresql.persistence.enabled', e.currentTarget.checked)}
+            onChange={(e) => form.setFieldValue('values.postgresql.primary.persistence.enabled', e.currentTarget.checked)}
             />
         </Collapse>
         <Collapse in={!isLocal}>
@@ -59,6 +57,7 @@ const DatabaseStep = ({ form }) => {
                 />
                 <TextInput
                 label={`Postgres Master Password`}
+                type="password"
                 placeholder="test123"
                  {...form.getInputProps('values.global.postgres.master.password')}
                 withAsterisk
@@ -70,7 +69,45 @@ const DatabaseStep = ({ form }) => {
                 withAsterisk
                 />
             </Group>
+            <TextInput
+              label="External Secret Name"
+              description="Name of an existing K8s secret containing postgres master credentials (optional)"
+              mt="md"
+              {...form.getInputProps('values.global.postgres.externalSecret')}
+            />
         </Collapse>
+
+        {/* Elasticsearch Configuration (dev mode only) */}
+        {isLocal && (
+          <>
+            <Divider variant="dashed" label="Elasticsearch Configuration (Dev Mode)" labelPosition="center" />
+            <Group grow>
+              <TextInput label="Image Tag" placeholder="7.10.2" {...form.getInputProps('values.elasticsearch.imageTag')} />
+              <Switch
+                label="Single Node"
+                checked={Boolean(form.values.values?.elasticsearch?.singleNode)}
+                onChange={(e) => form.setFieldValue('values.elasticsearch.singleNode', e.currentTarget.checked)}
+              />
+            </Group>
+            <TextInput
+              label="CPU Request"
+              mt="md"
+              placeholder="500m"
+              {...form.getInputProps('values.elasticsearch.resources.requests.cpu')}
+            />
+          </>
+        )}
+
+        {/* PostgreSQL Image Config (local mode) */}
+        {isLocal && (
+          <>
+            <Divider variant="dashed" label="PostgreSQL Image Configuration" labelPosition="center" />
+            <Group grow>
+              <TextInput label="Image Repository" {...form.getInputProps('values.postgresql.image.repository')} />
+              <TextInput label="Image Tag" {...form.getInputProps('values.postgresql.image.tag')} />
+            </Group>
+          </>
+        )}
         </Stack>
     </Paper>
     );

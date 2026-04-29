@@ -8,6 +8,7 @@ import { useDisclosure } from '@mantine/hooks';
 // import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
 
 // import { KeycloakProvider } from '@/contexts/KeycloakContext';
+   import { datadogRum } from "@datadog/browser-rum";
 
 
 import SpotLight from '@/components/Spotlight/Spotlight';
@@ -204,12 +205,9 @@ export default function App({
     <GlobalStateProvider>
       <SessionProvider
         session={session}
-        // Enable automatic session polling every 5 seconds
-        refetchInterval={5}
+        refetchInterval={150}
         // Refetch session when window regains focus
         refetchOnWindowFocus={true}
-        // Refetch when browser comes back online
-        refetchWhenOffline={false}
       >
         {/* <KeycloakProvider> */}
         <BootstrapAuthGate>

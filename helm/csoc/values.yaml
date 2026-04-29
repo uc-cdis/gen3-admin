@@ -7,17 +7,17 @@ replicaCount: 1
 
 # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   api:
     repository: quay.io/cdis/csoc-api
     # This sets the pull policy for images.
     # Overrides the image tag whose default is the chart appVersion.
-    tag: ""
+    tag: "master"
   frontend:
     repository: quay.io/cdis/csoc-frontend
     # This sets the pull policy for images.
     # Overrides the image tag whose default is the chart appVersion.
-    tag: ""
+    tag: "master"
 
 # This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
@@ -25,6 +25,66 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+api:
+  workingDir: /go/src/api
+  env:
+    MOCK_AUTH: "true"
+  ports:
+    http: 8002
+    grpc: 50051
+  livenessProbe:
+    httpGet:
+      path: /ping
+      port: 8002
+    initialDelaySeconds: 3
+  resources:
+    limits:
+      memory: "512Mi"
+      cpu: "1"
+    requests:
+      memory: "64Mi"
+      cpu: "250m"
+  volumeMounts:
+    - name: data-volume
+      mountPath: /go/src/api/certs
+    # - name: config-volume
+    #   mountPath: /go/src/api/.env
+    #   subPath: .env
+
+frontend:
+  ports:
+    http: 3000
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 3
+    periodSeconds: 3
+  env:
+    NEXTAUTH_URL: "https://csoc.planx-pla.net"
+    NEXTAUTH_SECRET: "secret" #pragma: allowlist secret
+    NEXTAUTH_JWT_SECRET: "secret" #pragma: allowlist secret
+  resources:
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+    requests:
+      memory: "64Mi"
+      cpu: "250m"
+
+persistence:
+  enabled: true
+
+  name: csoc-pvc
+
+  accessModes:
+    - ReadWriteOnce
+
+  size: 5Gi
+
+  storageClassName: ""   # empty = default storage class
+
+  annotations: {}
 #This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
   # Specifies whether a service account should be created
@@ -36,6 +96,10 @@ serviceAccount:
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
+
+# RBAC — ClusterRole + ClusterRoleBinding for the API pod
+rbac:
+  create: true
 
 # This is for setting Kubernetes Annotations to a Pod.
 # For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
@@ -57,23 +121,62 @@ securityContext: {}
 
 # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: ClusterIP
-  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-  port: 80
+
+  grpc:
+    port: 50051      # Service port
+    targetPort: 50051  # api containerPort
+    type: LoadBalancer
+
+  frontend:
+    port: 80          # Service port
+    targetPort: 3000  # frontend containerPort
+
+  api:
+    port: 8002        # Service port
+    targetPort: 8002  # api containerPort
 
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:433568766270:certificate/8cd01903-a34d-41c3-9800-34584e8e32c7
   hosts:
-    - host: chart-example.local
+    - host: csoc.planx-pla.net
       paths:
+        - path: /api/auth
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: frontend
+        - path: /api/loki
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: frontend
+
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: api
+
         - path: /
-          pathType: ImplementationSpecific
+          pathType: Prefix
+          backend:
+            service:
+              name: csoc
+              port:
+                name: frontend
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
@@ -110,12 +213,13 @@ autoscaling:
   # targetMemoryUtilizationPercentage: 80
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
-
+volumes:
+  config:
+    name: config-volume
+    configMapName: csoc
+  data:
+    name: data-volume
+    pvcName: csoc-pvc
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts: []
 # - name: foo

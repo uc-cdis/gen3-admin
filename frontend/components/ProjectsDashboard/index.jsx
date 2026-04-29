@@ -389,16 +389,28 @@ const ClusterDashboard = () => {
             {
               "accessor": "Edit",
               "id": "name",
-              // Add a button to edit / view the values of the deployment
+              // Navigate to deploy wizard pre-loaded with existing release values
               render: ({ name, namespace, clusterName, helm }) => (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  color="blue"
-                  onClick={() => viewValues(name, namespace, clusterName, helm, accessToken)}
-                >
-                  Edit
-                </Button>
+                helm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    color="blue"
+                    component={Link}
+                    href={`/helm/gen3/deploy?cluster=${encodeURIComponent(clusterName)}&release=${encodeURIComponent(name)}&namespace=${encodeURIComponent(namespace)}`}
+                  >
+                    Edit
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    color="blue"
+                    onClick={() => viewValues(name, namespace, clusterName, helm, accessToken)}
+                  >
+                    View
+                  </Button>
+                )
               )
             },
             {

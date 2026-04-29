@@ -11,19 +11,15 @@ export default function Detail() {
     const resource = useParams()?.pod;
 
 
-    console.log("pod in detail page", resource)
-    console.log("namespace in detail page", namespace)
-    console.log("cluster in detail page", clusterName)
-
     return (
         <>
-            <ResourceDetails 
-                cluster={clusterName} 
-                namespace={namespace} 
-                resource={resource} 
+            <ResourceDetails
+                cluster={clusterName}
+                namespace={namespace}
+                resource={resource}
                 type="Pod"
                 tabs={["overview", "yaml", "events", "logs"]}
-                url={`/api/v1/namespaces/${namespace}/pods/${resource}`} 
+                url={`/api/v1/namespaces/${namespace}/pods/${resource}`}
                 columnConfig={{
                     layout: {
                         leftColumns: [

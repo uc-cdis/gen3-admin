@@ -78,7 +78,8 @@ export default async function handler(req, res) {
       clientId: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
-      authorization: { params: { scope: "openid profile email groups roles" } },
+      httpOptions: { timeout: 15000 },
+      authorization: { params: { scope: "openid profile email roles" } },
       profile(profile) {
         return {
           id: profile.sub,

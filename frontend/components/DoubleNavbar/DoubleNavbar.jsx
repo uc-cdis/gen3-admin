@@ -43,11 +43,17 @@ export function NavBar() {
       links: [
         { label: 'Clusters', link: '/clusters' },
         ...(activeCluster ? [
-          { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs` },
-          { label: 'Deployments', link: `/clusters/${activeCluster}/deployments` },
-          { label: 'Pods', link: `/clusters/${activeCluster}/pods` },
+          { label: 'Overview', link: `/clusters/${activeCluster}` },
+          { label: 'Pods', link: `/clusters/${activeCluster}/workloads/pods` },
+          { label: 'Deployments', link: `/clusters/${activeCluster}/workloads/deployments` },
+          { label: 'CronJobs', link: `/clusters/${activeCluster}/workloads/cronjobs` },
+          { label: 'Services', link: `/clusters/${activeCluster}/network/services` },
+          { label: 'Ingresses', link: `/clusters/${activeCluster}/network/ingresses` },
+          { label: 'ConfigMaps', link: `/clusters/${activeCluster}/configurations/configmaps` },
+          { label: 'Secrets', link: `/clusters/${activeCluster}/configurations/secrets` },
           { label: 'Storage', link: `/clusters/${activeCluster}/storage` },
-          { label: 'Networking', link: `/clusters/${activeCluster}/networking` }
+          { label: 'Nodes', link: `/clusters/${activeCluster}/cluster/nodes` },
+          { label: 'Namespaces', link: `/clusters/${activeCluster}/cluster/namespaces` },
         ] : [])
       ],
     },
@@ -56,7 +62,6 @@ export function NavBar() {
       icon: "/images/icons/favicon.png",
       links: [
         { label: 'Projects', link: '/projects' },
-        ...(activeCluster ? [{ label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs` }] : []),
         { label: 'Databases', link: '/databases' },
         { label: 'Workspaces', link: '/workspaces' },
       ],

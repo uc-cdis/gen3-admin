@@ -1,0 +1,31 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "csoc.fullname" . }}-admin
+  labels:
+    {{- include "csoc.labels" . | nindent 4 }}
+rules:
+  # Agent creation / management
+  - apiGroups: [""]
+    resources: [namespaces, secrets, serviceaccounts, configmaps]
+    verbs: [get, list, create, update, patch, delete, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, create, update, patch, delete, watch]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+    verbs: [get, list, create, update, patch, delete, watch]
+  - apiGroups: [""]
+    resources: [pods, pods/log, pods/exec, events, services, endpoints]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses]
+    verbs: [get, list, create, update, patch, delete, watch]
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, create, update, patch, delete, watch]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: [nodes, pods]
+    verbs: [get, list, watch]
+{{- end }}

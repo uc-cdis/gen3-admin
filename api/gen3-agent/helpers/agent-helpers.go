@@ -61,7 +61,16 @@ type Agent struct {
 	Version              string
 	client               pb.TunnelServiceClient
 	stream               pb.TunnelService_ConnectClient
+	sendMu               sync.Mutex
 	statusUpdateInterval time.Duration
+	proxyCancelMu        sync.Mutex
+	proxyCancelFuncs     map[string]context.CancelFunc
+}
+
+func (a *Agent) sendMessage(msg *pb.AgentMessage) error {
+	a.sendMu.Lock()
+	defer a.sendMu.Unlock()
+	return a.stream.Send(msg)
 }
 
 var activeExecSessions sync.Map // sessionId -> *io.PipeWriter
@@ -123,6 +132,7 @@ func NewAgent(name, version, serverAddress string, statusInterval time.Duration)
 		Version:              version,
 		client:               client,
 		statusUpdateInterval: statusInterval,
+		proxyCancelFuncs:     make(map[string]context.CancelFunc),
 	}, nil
 }
 
@@ -140,7 +150,7 @@ func (a *Agent) Connect(ctx context.Context) error {
 		}
 		log.Info().Msg("Established connection with the server")
 
-		err = a.stream.Send(&pb.AgentMessage{
+		err = a.sendMessage(&pb.AgentMessage{
 			Message: &pb.AgentMessage_Registration{
 				Registration: &pb.RegistrationRequest{
 					AgentName:    a.Name,
@@ -203,7 +213,7 @@ func (a *Agent) sendStatusUpdates(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			status := a.collectAgentStatus()
-			err := a.stream.Send(&pb.AgentMessage{
+			err := a.sendMessage(&pb.AgentMessage{
 				Message: &pb.AgentMessage_Status{
 					Status: status,
 				},
@@ -292,7 +302,7 @@ func (a *Agent) sendProxyResponse(streamID string, status pb.ProxyResponseType, 
 	}
 
 	// log.Debug().Msg("Sending proxy response")
-	err := a.stream.Send(&pb.AgentMessage{
+	err := a.sendMessage(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
 		},
@@ -313,7 +323,7 @@ func (a *Agent) sendErrorResponse(streamID string, err error) error {
 		Body:       []byte(err.Error()),
 	}
 	log.Debug().Msgf("Sending error response: %v", resp)
-	sendErr := a.stream.Send(&pb.AgentMessage{
+	sendErr := a.sendMessage(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
 		},
@@ -415,64 +425,98 @@ func getClientConfig() (*rest.Config, error) {
 }
 
 func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
-	// log.Debug().Msgf("Handling k8s proxy request: %v", req.Path)
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	streamID := req.StreamId
+	log.Info().
+		Str("stream_id", streamID).
+		Str("method", req.Method).
+		Str("path", req.Path).
+		Int("body_len", len(req.Body)).
+		Msg("[k8s-proxy] Received proxy request")
 
-	// log.Debug().Msgf("Handling k8s proxy request: %v", req)
+	// Check for cancellation message from server
 	if req.Method == "CANCEL" {
-		log.Info().Msgf("Received cancellation for stream ID: %s", req.StreamId)
-		// Implement cancellation logic here
+		log.Info().
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Received CANCEL - stopping in-flight request")
+
+		a.proxyCancelMu.Lock()
+		if cancelFn, exists := a.proxyCancelFuncs[streamID]; exists {
+			cancelFn()
+			delete(a.proxyCancelFuncs, streamID)
+			log.Info().
+				Str("stream_id", streamID).
+				Msg("[k8s-proxy] Cancelled in-flight request via cancel func")
+		}
+		a.proxyCancelMu.Unlock()
 		return
 	}
+
+	// Create a cancellable context for this request so the server can abort it
+	proxyCtx, cancel := context.WithCancel(context.Background())
+
+	// Register the cancel function so CANCEL messages can stop us
+	a.proxyCancelMu.Lock()
+	a.proxyCancelFuncs[streamID] = cancel
+	a.proxyCancelMu.Unlock()
+
+	// Always clean up the cancel func registration when we're done
+	defer func() {
+		cancel()
+		a.proxyCancelMu.Lock()
+		delete(a.proxyCancelFuncs, streamID)
+		a.proxyCancelMu.Unlock()
+		log.Debug().
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Cleaned up request state")
+	}()
 
 	// Setup k8s auth
 	restConfig, err := k8s.GetConfig()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to setup k8s auth")
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to setup k8s auth: %v", err))
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to setup k8s auth")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to setup k8s auth: %v", err))
 		return
 	}
 
-	// Create HTTP request
-	// Remove the last slash from the host
+	// Build the target URL
 	host := strings.TrimSuffix(restConfig.Host, "/")
 	url := fmt.Sprintf("%s%s", host, req.Path)
-	// url := fmt.Sprintf("%s%s", restConfig.Host, req.Path)
-	// log.Debug().Msg("Creating request to url: " + url)
+
+	log.Info().
+		Str("stream_id", streamID).
+		Str("method", req.Method).
+		Str("url", url).
+		Msg("[k8s-proxy] Forwarding request to k8s API server")
 
 	bodyReader := bytes.NewReader(req.Body)
-	httpReq, err := http.NewRequest(req.Method, url, bodyReader)
-
-	// httpReq, err := http.NewRequest(req.Method, url, nil)
+	httpReq, err := http.NewRequestWithContext(proxyCtx, req.Method, url, bodyReader)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create request")
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to create request: %v", err))
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to create HTTP request")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to create request: %v", err))
 		return
 	}
-
-	// // Set headers
-	// for k, v := range req.Headers {
-	// 	log.Debug().Msg(fmt.Sprintf("Setting header %s to %s", k, v))
-	// 	httpReq.Header.Set(k, v)
-	// }
-
-	// // Set content type if needed
-	// // httpReq.Header.Set("Content-Type", "application/json")
 
 	// Set Content-Type header from req.Headers if present; else fallback to application/json
 	if contentType, ok := req.Headers["Content-Type"]; ok {
 		httpReq.Header.Set("Content-Type", contentType)
 	} else {
-		// log.Debug().Msg("Content-Type header not found in request headers, defaulting to application/json")
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
 	// Set up the transport using the REST configuration
 	transport, err := rest.TransportFor(restConfig)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get transport for REST config")
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to get transport for REST config: %v", err))
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to get transport for REST config")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to get transport for REST config: %v", err))
 		return
 	}
 
@@ -484,55 +528,100 @@ func (a *Agent) handleK8sProxyRequest(req *pb.ProxyRequest) {
 		t.TLSClientConfig.NextProtos = []string{"h2", "http/1.1"}
 	}
 
-	// Execute request
+	// Execute request with our cancellable context
 	client := &http.Client{
 		Transport: transport,
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		log.Error().Err(err).Msgf("Failed to execute request: %v", err)
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to execute request: %v", err))
+		// Check if this was a cancellation
+		if proxyCtx.Err() == context.Canceled {
+			log.Warn().
+				Str("stream_id", streamID).
+				Msg("[k8s-proxy] Request cancelled by server before response received")
+			return
+		}
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to execute request to k8s API")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to execute request: %v", err))
 		return
 	}
 
-	// log.Debug().Msgf("Response Status: %s", resp.Status)
+	log.Info().
+		Str("stream_id", streamID).
+		Int("status_code", resp.StatusCode).
+		Msg("[k8s-proxy] Received response from k8s API")
+
 	defer resp.Body.Close()
 
-	// Print all response headers to debug log
-	// for k, v := range resp.Header {
-	// 	log.Debug().Msgf("Response Header: %s: %s", k, v)
-	// }
-
-	// // Send headers
-	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
-
 	// Send status code and headers
-	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
+	if err := a.sendProxyResponse(streamID, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil); err != nil {
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to send HEADERS response")
+		return
+	}
 
-	// readBody, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	log.Error().Err(err).Msg("Error reading response body")
-	// 	return
-	// }
-
+	// Stream response body in chunks
 	buffer := make([]byte, 16384)
+	totalBytes := 0
+	chunkCount := 0
 	for {
+		// Check if cancelled between chunks
+		select {
+		case <-proxyCtx.Done():
+			log.Warn().
+				Str("stream_id", streamID).
+				Int64("bytes_sent", int64(totalBytes)).
+				Int("chunks_sent", chunkCount).
+				Msg("[k8s-proxy] Request cancelled during body streaming, stopping")
+			return
+		default:
+		}
+
 		n, err := resp.Body.Read(buffer)
 		if n > 0 {
-			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
+			totalBytes += n
+			chunkCount++
+			if err := a.sendProxyResponse(streamID, pb.ProxyResponseType_DATA, 0, nil, buffer[:n]); err != nil {
+				log.Error().
+					Err(err).
+					Str("stream_id", streamID).
+					Int64("bytes_sent_so_far", int64(totalBytes)).
+					Msg("[k8s-proxy] Failed to send DATA chunk, aborting stream")
+				return
+			}
 		}
 		if err == io.EOF {
-			// log.Debug().Msg("Request completed - EOF")
 			break
 		}
 		if err != nil {
-			log.Error().Err(err).Msg("Error reading response body")
+			log.Error().
+				Err(err).
+				Str("stream_id", streamID).
+				Int64("bytes_sent", int64(totalBytes)).
+				Msg("[k8s-proxy] Error reading response body")
 			break
 		}
 	}
 
-	// log.Debug().Msg("Request completed")
-	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
+	log.Info().
+		Str("stream_id", streamID).
+		Int64("total_bytes", int64(totalBytes)).
+		Int("total_chunks", chunkCount).
+		Msg("[k8s-proxy] Request completed successfully")
+
+	// Send END
+	if err := a.sendProxyResponse(streamID, pb.ProxyResponseType_END, 0, nil, nil); err != nil {
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[k8s-proxy] Failed to send END response")
+		return
+	}
 }
 
 func (a *Agent) handleProjectsRequest(req *pb.ProjectsRequest) {
@@ -1429,14 +1518,17 @@ func (a *Agent) startK8sExec(ctx context.Context, namespace, pod, container stri
 				log.Info().Msg("exec output closed")
 				return
 			}
-			a.stream.Send(&pb.AgentMessage{
+			if err := a.sendMessage(&pb.AgentMessage{
 				Message: &pb.AgentMessage_TerminalStream{
 					TerminalStream: &pb.TerminalStream{
 						SessionId: streamID,
 						Data:      buf[:n],
 					},
 				},
-			})
+			}); err != nil {
+				log.Warn().Err(err).Msg("failed to send exec output")
+				return
+			}
 		}
 	}()
 

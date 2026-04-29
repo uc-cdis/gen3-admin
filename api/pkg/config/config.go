@@ -5,31 +5,51 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
 
+// AWSConfig creates an AWS SDK v2 config from static credentials.
+func AWSConfig(accessKeyID, secretAccessKey, region string) (aws.Config, error) {
+	return aws.Config{
+		Region: region,
+		Credentials: credentials.NewStaticCredentialsProvider(
+			accessKeyID,
+			secretAccessKey,
+			"",
+		),
+	}, nil
+}
+
+// NewS3Client creates an S3 client from an AWS config.
+func NewS3Client(cfg aws.Config) *s3.Client {
+	return s3.NewFromConfig(cfg)
+}
+
 func K8sClient() (*kubernetes.Clientset, *string, error) {
 	var (
-		config *rest.Config
-		err    error
+		kubeConfig *rest.Config
+		err       error
 	)
 
 	// 1. Try in-cluster config (works when running inside Kubernetes)
-	config, err = rest.InClusterConfig()
+	kubeConfig, err = rest.InClusterConfig()
 	if err != nil {
 		// 2. Fall back to kubeconfig (local dev)
 		kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		kubeConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
 	// Create clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		return nil, nil, err
 	}
