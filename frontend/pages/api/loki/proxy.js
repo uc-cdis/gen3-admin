@@ -1,90 +1,80 @@
-// pages/api/loki/proxy.js
-
-import { NextResponse } from 'next/server';
-
 export const config = {
-  runtime: 'edge',
+  api: {
+    bodyParser: false,
+  },
 };
 
-const LOKI_BASE_URL = 'https://loki.planx-pla.net';
-// const LOKI_BASE_URL = 'http://monitoring-loki-gateway.monitoring';
-// const LOKI_BASE_URL = 'http://localhost:8085'
+const DEFAULT_LOKI_BASE_URL = 'http://monitoring-loki-gateway.monitoring';
 
-export default async function handler(req) {
+const getLokiBaseUrl = () => (
+  process.env.LOKI_BASE_URL ||
+  process.env.NEXT_PUBLIC_LOKI_BASE_URL ||
+  DEFAULT_LOKI_BASE_URL
+).replace(/\/+$/, '');
+
+const readBody = async (req) => {
+  const chunks = [];
+
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+
+  return Buffer.concat(chunks);
+};
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
   try {
-    // Extract the path and query parameters from the request
-    const { searchParams } = new URL(req.url);
+    const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const { searchParams } = requestUrl;
     const path = searchParams.get('path') || '';
 
-    // Remove the path parameter from the search params
+    if (!path.startsWith('/loki/api/')) {
+      res.status(400).json({ error: 'path must target /loki/api/*' });
+      return;
+    }
+
     searchParams.delete('path');
 
-    // Construct the URL for the Loki API
-    const lokiUrl = new URL(`${LOKI_BASE_URL}${path}`);
+    const lokiUrl = new URL(`${getLokiBaseUrl()}${path}`);
 
-    // Copy all other query parameters to the Loki URL
     searchParams.forEach((value, key) => {
       lokiUrl.searchParams.append(key, value);
     });
 
-    // Get the request method
-    const method = req.method;
-
-    // Prepare headers for the Loki request
-    const headers = new Headers();
-    for (const [key, value] of req.headers) {
-      // Skip headers that are not needed or might cause issues
-      if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
-        headers.append(key, value);
+    const headers = {};
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (!['host', 'connection', 'content-length'].includes(key.toLowerCase()) && value !== undefined) {
+        headers[key] = Array.isArray(value) ? value.join(',') : value;
       }
-    }
+    });
 
-    // Create options for the fetch request
     const options = {
-      method,
+      method: req.method,
       headers,
     };
 
-    // Include the body for POST, PUT, PATCH requests
-    if (['POST', 'PUT', 'PATCH'].includes(method)) {
-      const contentType = req.headers.get('content-type');
-      if (contentType) {
-        options.headers.set('Content-Type', contentType);
-      }
-      options.body = await req.text();
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      options.body = await readBody(req);
     }
 
-    // Make the request to the Loki API
     const response = await fetch(lokiUrl.toString(), options);
+    const responseData = Buffer.from(await response.arrayBuffer());
 
-    // Get the response data
-    const responseData = await response.text();
-
-    // Create a new response with the Loki API response
-    const newResponse = new NextResponse(responseData, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
-
-    return newResponse;
+    res.status(response.status);
+    res.setHeader('Content-Type', response.headers.get('Content-Type') || 'application/json');
+    res.send(responseData);
   } catch (error) {
     console.error('Error proxying request to Loki:', error);
 
-    return new NextResponse(
-      JSON.stringify({ error: 'Failed to proxy request to Loki API' }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
-    );
+    res.status(500).json({ error: 'Failed to proxy request to Loki API' });
   }
 }

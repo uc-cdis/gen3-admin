@@ -64,6 +64,7 @@ frontend:
     NEXTAUTH_URL: "https://csoc.planx-pla.net"
     NEXTAUTH_SECRET: "secret" #pragma: allowlist secret
     NEXTAUTH_JWT_SECRET: "secret" #pragma: allowlist secret
+    LOKI_BASE_URL: "https://loki.planx-pla.net"
   resources:
     limits:
       memory: "512Mi"

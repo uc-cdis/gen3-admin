@@ -63,6 +63,7 @@ frontend:
     NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" #pragma: allowlist secret
     MOCK_AUTH: "true"
     ENABLE_MOCK_AUTH: "true"
+    LOKI_BASE_URL: "http://monitoring-loki-gateway.monitoring"
     # Keycloak auth (used when --keycloak flag disables MOCK_AUTH above)
     KEYCLOAK_CLIENT_SECRET: ""
     NEXT_KEYCLOAK_CLIENT_ID: "csoc-client"

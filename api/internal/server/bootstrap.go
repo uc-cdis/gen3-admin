@@ -57,7 +57,7 @@ func InstallArgoCDHandler(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{
 			"message":   "ArgoCD installation had errors",
 			"namespace": "argocd",
-			"error":    installErr.Error(),
+			"error":     installErr.Error(),
 		})
 		return
 	}
@@ -135,7 +135,7 @@ func InstallAppsHandler(c *gin.Context) {
 	var lokiEndpoint string
 	if req.Mode == "lightweight" {
 		appCR = buildLightweightMonitoringAppCR(req.StorageType, req.S3Bucket, req.S3Region)
-		lokiEndpoint = "http://monitoring-loki-gateway.monitoring:8080/loki/api/v1/push"
+		lokiEndpoint = "http://monitoring-loki-gateway.monitoring/loki/api/v1/push"
 	} else {
 		appCR = buildMonitoringAppCR(req.StorageType, req.S3Bucket, req.S3Region)
 		lokiEndpoint = "http://monitoring-loki-distributor.monitoring:3100/loki/api/v1/push"
@@ -211,13 +211,13 @@ func buildLightweightMonitoringAppCR(storageType, s3Bucket, s3Region string) str
             type: s3
             s3:
               bucketName: %s
-              endpoint: s3.%%s.amazonaws.com
-              region: %%s
+              endpoint: s3.%s.amazonaws.com
+              region: %s
               insecure: true
             bucketNames:
-              chunks: %%s-chunks
-              ruler: %%s-ruler
-              admin: %%s-admin
+              chunks: %s-chunks
+              ruler: %s-ruler
+              admin: %s-admin
         minio:
           enabled: true`, s3Bucket, s3Region, s3Region, s3Bucket, s3Bucket, s3Bucket)
 	} else {
@@ -669,7 +669,7 @@ func InstallAlloyHandler(c *gin.Context) {
 	}
 
 	if req.LokiAddress == "" {
-		req.LokiAddress = "http://monitoring-loki-distributor.monitoring:3100/loki/api/v1/push"
+		req.LokiAddress = "http://monitoring-loki-gateway.monitoring/loki/api/v1/push"
 	}
 	if req.Cluster == "" {
 		req.Cluster = "csoc"
@@ -737,8 +737,8 @@ spec:
             key: config
           resources:
             requests:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 100m
+              memory: 256Mi
   syncPolicy:
     syncOptions:
     - CreateNamespace=true
