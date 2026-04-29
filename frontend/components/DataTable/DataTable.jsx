@@ -419,6 +419,21 @@ const GenericDataTable = ({
             sortable: true,
         };
 
+        // Use custom render if provided
+        if (field.render) {
+            return {
+                ...baseColumn,
+                render: (record) => {
+                    try {
+                        return field.render(record);
+                    } catch (e) {
+                        console.error('Error in custom render function:', e);
+                        return safeStringify(record[field.label]);
+                    }
+                }
+            };
+        }
+
         // Special handling for Status column
         if (field.label.toLowerCase() === 'status' || field.key.toLowerCase().includes('status')) {
             return {
@@ -434,21 +449,6 @@ const GenericDataTable = ({
                             accessToken={accessToken}
                         />
                     );
-                }
-            };
-        }
-
-        // Use custom render if provided
-        if (field.render) {
-            return {
-                ...baseColumn,
-                render: (record) => {
-                    try {
-                        return field.render(record);
-                    } catch (e) {
-                        console.error('Error in custom render function:', e);
-                        return safeStringify(record[field.label]);
-                    }
                 }
             };
         }

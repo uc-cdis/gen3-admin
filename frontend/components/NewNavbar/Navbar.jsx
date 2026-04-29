@@ -43,7 +43,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 
 
-import { callGoApi } from '@/lib/k8s';
+import callK8sApi from '@/lib/k8s';
 
 const clusterData = [
     { icon: IconHome2, label: 'Cluster 1' },
@@ -148,6 +148,7 @@ export function NavBar() {
 
     const [cluster, namespace] = activeGlobalEnv.split('/');
     const [clusters, setClusters] = useState([]);
+    const [customResourceLinks, setCustomResourceLinks] = useState([]);
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
 
@@ -169,6 +170,51 @@ export function NavBar() {
     //         }
     //     });
     // }, []);
+
+    useEffect(() => {
+        if (!activeCluster) return;
+
+        let cancelled = false;
+
+        const fetchCrds = async () => {
+            try {
+                const response = await callK8sApi(
+                    '/apis/apiextensions.k8s.io/v1/customresourcedefinitions',
+                    'GET',
+                    null,
+                    null,
+                    activeCluster,
+                    accessToken
+                );
+
+                if (cancelled) return;
+
+                const links = (response?.items || [])
+                    .map((crd) => {
+                        const kind = crd.spec?.names?.kind || crd.metadata?.name;
+                        const group = crd.spec?.group?.split('.')?.[0];
+
+                        return {
+                            label: group ? `${kind} / ${group}` : kind,
+                            link: `/clusters/${activeCluster}/configurations/crds/${crd.metadata?.name}`,
+                        };
+                    })
+                    .filter((link) => link.label && link.link)
+                    .sort((a, b) => a.label.localeCompare(b.label));
+
+                setCustomResourceLinks(links);
+            } catch (error) {
+                console.error('Failed to fetch CRDs for navigation:', error);
+                setCustomResourceLinks([]);
+            }
+        };
+
+        fetchCrds();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeCluster, accessToken]);
 
     const clusterLinks = clusters.map((link, index) => {
         return (
@@ -243,7 +289,8 @@ export function NavBar() {
                     label: 'Custom Resources',
                     icon: IconSettings,
                     links: [
-                        { label: 'Definitions (CRDs)', link: `/clusters/${activeCluster}/configurations/crds`, icon: IconSettings },
+                        { label: 'All definitions', link: `/clusters/${activeCluster}/configurations/crds`, icon: IconSettings },
+                        ...customResourceLinks,
                     ],
                 },
                 {

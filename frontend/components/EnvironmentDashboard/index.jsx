@@ -952,9 +952,9 @@ export default function EnvironmentDashboardComp({
                   {podSummary.restarts} restarts
                 </Badge>
               )}
-              {podSummary.succeeded > 0 && (
+              {podSummary.otherPods.length > 0 && (
                 <Badge size="sm" color="blue" variant="light">
-                  {podSummary.succeeded} completed job pods
+                  {podSummary.otherPods.length} other pods
                 </Badge>
               )}
             </Group>
@@ -969,22 +969,6 @@ export default function EnvironmentDashboardComp({
             ))}
           </Group>
         </Group>
-
-        {podSummary.otherRunningPods.length > 0 && (
-          <Group gap="xs" mt="md">
-            <Text size="sm" c="dimmed">Other running pods</Text>
-            {podSummary.otherRunningPods.slice(0, 6).map((pod) => (
-              <Tooltip key={pod.name} label={`${pod.ownerKind} • ${pod.ready ? "ready" : "not ready"}`}>
-                <Badge variant="light" color={pod.ready ? "teal" : "orange"}>
-                  {pod.name}
-                </Badge>
-              </Tooltip>
-            ))}
-            {podSummary.otherRunningPods.length > 6 && (
-              <Badge variant="light" color="gray">+{podSummary.otherRunningPods.length - 6} more</Badge>
-            )}
-          </Group>
-        )}
       </Card>
 
       {/* Main metrics */}
@@ -1024,6 +1008,68 @@ export default function EnvironmentDashboardComp({
         namespace={namespace}
         accessToken={accessToken}
       />
+
+      {podSummary.otherPods.length > 0 && (
+        <Card withBorder radius="md" p="lg" mt="md">
+          <Group justify="space-between" mb="xs">
+            <Stack gap={2}>
+              <Title order={3}>Other pods</Title>
+              <Text size="sm" c="dimmed">
+                Pods not represented by the service cards above, including Jobs, completed pods, DaemonSets, and standalone/ad-hoc pods.
+              </Text>
+            </Stack>
+            <Badge variant="light" color="blue">{podSummary.otherPods.length}</Badge>
+          </Group>
+
+          <ScrollArea h={Math.min(420, 76 + podSummary.otherPods.length * 54)}>
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Owner</Table.Th>
+                  <Table.Th>Restarts</Table.Th>
+                  <Table.Th>Age</Table.Th>
+                  <Table.Th>Node</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {podSummary.otherPods.map((pod) => {
+                  const statusColor = pod.phase === "Failed"
+                    ? "red"
+                    : pod.phase === "Succeeded"
+                      ? "blue"
+                      : pod.ready
+                        ? "teal"
+                        : "orange";
+
+                  return (
+                    <Table.Tr key={`${pod.namespace}-${pod.name}`}>
+                      <Table.Td>
+                        <Anchor href={`/clusters/${env}/workloads/pods/${pod.namespace}/${pod.name}`}>
+                          <Text fw={500}>{pod.name}</Text>
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge variant="light" color={statusColor}>{pod.status}</Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{pod.ownerKind}</Text>
+                        {pod.ownerName && <Text size="xs" c="dimmed">{pod.ownerName}</Text>}
+                      </Table.Td>
+                      <Table.Td>{pod.restarts}</Table.Td>
+                      <Table.Td>{pod.age}</Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">{pod.node}</Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Card>
+      )}
 
       {/* <LogViewer hostname={hostname} /> */}
 
