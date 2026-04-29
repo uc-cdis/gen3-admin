@@ -28,6 +28,7 @@ import {
     IconFile,
     IconStar,
     IconEye,
+    IconGitBranch,
 } from '@tabler/icons-react';
 // import { UserButton } from '../UserButton/UserButton';
 // import { LinksGroup } from '../NavbarLinksGroup/NavbarLinksGroup';
@@ -242,6 +243,13 @@ export function NavBar() {
                 { label: 'Jobs', link: `/clusters/${activeCluster}/cronjobs`, icon: IconChartBar },
                 // { label: 'Workspaces', link: `/clusters/${activeCluster}/workspaces`, icon: IconChartBar },
                 // { label: 'Databases', link: '/', icon: IconChartBar },
+            ],
+        },
+        {
+            label: 'ArgoCD',
+            icon: IconGitBranch,
+            links: [
+                { label: 'Applications', link: '/argocd/applications', icon: IconGitBranch },
             ],
         },
         // {
