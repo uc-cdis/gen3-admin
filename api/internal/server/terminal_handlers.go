@@ -44,7 +44,7 @@ func HandleTerminalTest(c *gin.Context) {
 	agent.contexts[streamID] = ctx
 	agent.mutex.Unlock()
 
-	err = agent.stream.Send(&pb.ServerMessage{
+	err = agent.sendMessage(&pb.ServerMessage{
 		Message: &pb.ServerMessage_TerminalStream{
 			TerminalStream: &pb.TerminalStream{
 				Data:      []byte(fmt.Sprintf("INIT:%s", streamID)),
@@ -66,7 +66,7 @@ func HandleTerminalTest(c *gin.Context) {
 				ws.Close()
 				return
 			}
-			err = agent.stream.Send(&pb.ServerMessage{
+			err = agent.sendMessage(&pb.ServerMessage{
 				Message: &pb.ServerMessage_TerminalStream{
 					TerminalStream: &pb.TerminalStream{
 						Data: msg,
@@ -136,15 +136,14 @@ func HandleTerminalExec(c *gin.Context) {
 
 	initBytes, _ := json.Marshal(initPayload)
 
-	agent.stream.Send(&pb.ServerMessage{
+	if err := agent.sendMessage(&pb.ServerMessage{
 		Message: &pb.ServerMessage_TerminalStream{
 			TerminalStream: &pb.TerminalStream{
 				SessionId: sessionID,
 				Data:      initBytes,
 			},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		log.Error().Err(err).Msg("Failed to init exec session")
 		ws.Close()
 		return
@@ -158,14 +157,17 @@ func HandleTerminalExec(c *gin.Context) {
 				log.Warn().Err(err).Msg("WS read failed")
 				return
 			}
-			agent.stream.Send(&pb.ServerMessage{
+			if err := agent.sendMessage(&pb.ServerMessage{
 				Message: &pb.ServerMessage_TerminalStream{
 					TerminalStream: &pb.TerminalStream{
 						SessionId: sessionID,
 						Data:      msg,
 					},
 				},
-			})
+			}); err != nil {
+				log.Warn().Err(err).Msg("gRPC send failed")
+				return
+			}
 		}
 	}()
 

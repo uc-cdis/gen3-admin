@@ -1,10 +1,20 @@
+# syntax=docker/dockerfile:1.7
+
 FROM quay.io/cdis/golang-build-base:master AS go-builder
+
+WORKDIR /app
+
+COPY api/go.mod api/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY api/ /app
 
 WORKDIR /app/gen3-agent
 
-RUN go build -o agent
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o agent
 
 RUN chmod +x agent
 

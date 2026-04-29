@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM quay.io/cdis/golang-build-base:master AS go-builder
 
 # RUN yum update -y
@@ -9,10 +11,17 @@ FROM quay.io/cdis/golang-build-base:master AS go-builder
 
 WORKDIR /go
 
-COPY api /go/src/api
 WORKDIR /go/src/api
 
-RUN go build -o /go/bin/csoc
+COPY api/go.mod api/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY api ./
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /go/bin/csoc
 
 RUN chmod +x /go/bin/csoc
 

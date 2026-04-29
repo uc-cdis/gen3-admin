@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/uc-cdis/gen3-admin/internal/helm"
-	"github.com/uc-cdis/gen3-admin/pkg/config"
 	pb "github.com/uc-cdis/gen3-admin/internal/tunnel"
+	"github.com/uc-cdis/gen3-admin/pkg/config"
 )
 
 // setStreamIDOnMessage injects the given streamID into whichever inner request message
@@ -63,7 +63,7 @@ func sendAgentProxyRequest(agentID string, msg *pb.ServerMessage, parentCtx cont
 	agent.contexts[streamID] = ctx
 	agent.mutex.Unlock()
 
-	if err := agent.stream.Send(msg); err != nil {
+	if err := agent.sendMessage(msg); err != nil {
 		cleanupAgentStream(agent, streamID)
 		cancel()
 		return nil, fmt.Errorf("failed to send request to agent: %w", err)
@@ -369,10 +369,12 @@ func HandleNamespaceDeploymentStatus(c *gin.Context) {
 	var k8sResp struct {
 		Items []struct {
 			Metadata struct{ Name string } `json:"metadata"`
-			Spec     struct { Replicas *int32 `json:"replicas"` } `json:"spec"`
-			Status   struct {
+			Spec     struct {
+				Replicas *int32 `json:"replicas"`
+			} `json:"spec"`
+			Status struct {
 				AvailableReplicas int32 `json:"availableReplicas"`
-				Replicas           int32 `json:"replicas"`
+				Replicas          int32 `json:"replicas"`
 			} `json:"status"`
 		} `json:"items"`
 	}

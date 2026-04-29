@@ -53,7 +53,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 			Str("stream_id", streamID).
 			Str("reason", reason).
 			Msg("[proxy-handler] Sending CANCEL to agent")
-		_ = agent.stream.Send(&pb.ServerMessage{
+		_ = agent.sendMessage(&pb.ServerMessage{
 			Message: &pb.ServerMessage_Proxy{
 				Proxy: &pb.ProxyRequest{
 					StreamId:  streamID,
@@ -111,7 +111,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 		proxyReq.Body = body
 	}
 
-	err := agent.stream.Send(&pb.ServerMessage{
+	err := agent.sendMessage(&pb.ServerMessage{
 		Message: &pb.ServerMessage_Proxy{
 			Proxy: proxyReq,
 		},
@@ -172,6 +172,7 @@ func HandleK8sProxyRequest(c *gin.Context) {
 						Msg("[proxy-handler] Failed to write response body chunk")
 					return
 				}
+				c.Writer.Flush()
 			case pb.ProxyResponseType_END:
 				log.Info().
 					Str("stream_id", streamID).
@@ -252,7 +253,7 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 			Str("stream_id", streamID).
 			Str("reason", reason).
 			Msg("[proxy-handler] Sending CANCEL to agent")
-		_ = agent.stream.Send(&pb.ServerMessage{
+		_ = agent.sendMessage(&pb.ServerMessage{
 			Message: &pb.ServerMessage_Proxy{
 				Proxy: &pb.ProxyRequest{
 					StreamId:  streamID,
@@ -308,7 +309,7 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 		proxyReq.Body = body
 	}
 
-	err := agent.stream.Send(&pb.ServerMessage{
+	err := agent.sendMessage(&pb.ServerMessage{
 		Message: &pb.ServerMessage_Proxy{
 			Proxy: proxyReq,
 		},
@@ -369,6 +370,7 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 						Msg("[proxy-handler] Failed to write response body chunk")
 					return
 				}
+				c.Writer.Flush()
 			case pb.ProxyResponseType_END:
 				log.Info().
 					Str("stream_id", streamID).

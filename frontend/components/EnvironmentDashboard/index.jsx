@@ -115,7 +115,6 @@ export default function EnvironmentDashboardComp({
   const [networkData, setNetworkData] = useState([]);
   const [nodeStatusData, setNodeStatusData] = useState([]);
   const [namespaceStatusData, setNamespaceStatusData] = useState([]);
-  const [podData, setPodData] = useState([]);
   const [eventsData, setEventsData] = useState([]);
   const [metricsData, setMetricsData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -124,7 +123,6 @@ export default function EnvironmentDashboardComp({
 
   const [rawNodes, setRawNodes] = useState(null);
   const [rawNamespaces, setRawNamespaces] = useState(null);
-  const [rawPods, setRawPods] = useState(null);
   const [rawMetrics, setRawMetrics] = useState(null);
   const [rawEvents, setRawEvents] = useState(null);
 
@@ -309,7 +307,7 @@ export default function EnvironmentDashboardComp({
     });
   };
 
-  const processMetricsData = (metricsResponse, nodesResponse, podsResponse) => {
+  const processMetricsData = (metricsResponse, nodesResponse) => {
     if (!metricsResponse?.items) return null;
 
     // Process node metrics
@@ -322,31 +320,17 @@ export default function EnvironmentDashboardComp({
       return acc;
     }, {});
 
-    // Process pod metrics (if available in response)
-    const podMetricsMap = {};
-    if (metricsResponse.items.some((item) => item.metadata.namespace)) {
-      metricsResponse.items.forEach((podMetrics) => {
-        const key = `${podMetrics.metadata.namespace}/${podMetrics.metadata.name}`;
-        podMetricsMap[key] = {
-          cpu: podMetrics.usage.cpu,
-          memory: podMetrics.usage.memory,
-        };
-      });
-    }
-
     // Calculate cluster-wide metrics
     let totalCpu = 0;
     let totalMemory = 0;
     let usedCpu = 0;
     let usedMemory = 0;
-    let totalPods = 0;
-    let runningPods = 0;
 
     nodesResponse?.items?.forEach((node) => {
       const nodeCpu = parseCpu(node.status?.capacity?.cpu || "0");
       const nodeMemory = parseMemory(node.status?.capacity?.memory || "0");
       totalCpu += nodeCpu;
-      totalMemory += nodeMemory;
+      totalMemory += totalMemory;
 
       const nodeMetric = nodeMetricsMap[node.metadata.name];
       if (nodeMetric) {
@@ -355,19 +339,8 @@ export default function EnvironmentDashboardComp({
       }
     });
 
-    // Calculate pod status counts
-    if (podsResponse?.items) {
-      totalPods = podsResponse.items.length;
-      runningPods = podsResponse.items.filter(
-        (pod) =>
-          pod.status?.phase === "Running" &&
-          pod.status?.containerStatuses?.every((cs) => cs.ready)
-      ).length;
-    }
-
     return {
       nodes: nodeMetricsMap,
-      pods: podMetricsMap,
       cluster: {
         totalCpu: `${totalCpu.toFixed(1)} cores`,
         totalMemory: `${(totalMemory / (1024 * 1024 * 1024)).toFixed(1)} GB`,
@@ -377,10 +350,6 @@ export default function EnvironmentDashboardComp({
           totalCpu > 0 ? Math.round((usedCpu / totalCpu) * 100) : 0,
         memoryPercentage:
           totalMemory > 0 ? Math.round((usedMemory / totalMemory) * 100) : 0,
-        totalPods,
-        runningPods,
-        podPercentage:
-          totalPods > 0 ? Math.round((runningPods / totalPods) * 100) : 0,
       },
     };
   };
@@ -403,7 +372,6 @@ export default function EnvironmentDashboardComp({
       nodes: callGoApi(`/k8s/${env}/proxy/api/v1/nodes`, "GET", null, null, accessToken),
       namespaces: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces`, "GET", null, null, accessToken),
       metrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`, "GET", null, null, accessToken),
-      pods: callGoApi(`/k8s/${env}/proxy/api/v1/pods`, "GET", null, null, accessToken),
       events: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`, "GET", null, null, accessToken),
     };
 
@@ -419,7 +387,6 @@ export default function EnvironmentDashboardComp({
         if (key === "nodes") safeSet(setRawNodes)(result.value);
         if (key === "namespaces") safeSet(setRawNamespaces)(result.value);
         if (key === "metrics") safeSet(setRawMetrics)(result.value);
-        if (key === "pods") safeSet(setRawPods)(result.value);
         if (key === "events") safeSet(setRawEvents)(result.value);
       } else {
         console.error(`${key} failed`, result.reason);
@@ -438,42 +405,21 @@ export default function EnvironmentDashboardComp({
 
   useEffect(() => {
     // Process data if at least some of it is available (not all null)
-    const hasData = rawNodes || rawPods || rawMetrics || rawNamespaces;
+    const hasData = rawNodes || rawMetrics || rawNamespaces;
     if (!hasData) return;
 
-    console.log("Processing data with", { rawNodes, rawPods, rawMetrics, rawNamespaces });
+    console.log("Processing data with", { rawNodes, rawMetrics, rawNamespaces });
 
-    const filteredPods = rawPods ? {
-      ...rawPods,
-      items: rawPods.items?.filter(p => p.metadata?.namespace === namespace) || [],
-    } : { items: [] };
-
-    const processedMetrics = processMetricsData(rawMetrics, rawNodes, filteredPods);
+    const processedMetrics = processMetricsData(rawMetrics, rawNodes);
     const processedNodes = processNodesData(rawNodes, processedMetrics?.nodes);
-    const processedNamespaces = processNamespaceData(rawNamespaces, filteredPods);
-    const processedPods = processPodData(filteredPods);
 
     setMetricsData(processedMetrics);
     setNodeStatusData(processedNodes);
-    setNamespaceStatusData(processedNamespaces);
-    setPodData(processedPods);
-
-    const now = new Date();
-
-    if (processedMetrics?.cluster) {
-      setCpuData((prev) =>
-        [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.cpuPercentage }].slice(-24)
-      );
-
-      setMemoryData((prev) =>
-        [...prev, { time: now.toLocaleTimeString(), usage: processedMetrics.cluster.memoryPercentage }].slice(-24)
-      );
-    }
 
     setEventsData(rawEvents?.items ?? []);
 
 
-  }, [rawNodes, rawPods, rawMetrics, rawEvents, rawNamespaces, namespace]);
+  }, [rawNodes, rawMetrics, rawEvents, rawNamespaces]);
 
 
   useEffect(() => {

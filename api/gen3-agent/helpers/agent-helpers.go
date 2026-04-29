@@ -61,9 +61,16 @@ type Agent struct {
 	Version              string
 	client               pb.TunnelServiceClient
 	stream               pb.TunnelService_ConnectClient
+	sendMu               sync.Mutex
 	statusUpdateInterval time.Duration
 	proxyCancelMu        sync.Mutex
 	proxyCancelFuncs     map[string]context.CancelFunc
+}
+
+func (a *Agent) sendMessage(msg *pb.AgentMessage) error {
+	a.sendMu.Lock()
+	defer a.sendMu.Unlock()
+	return a.stream.Send(msg)
 }
 
 var activeExecSessions sync.Map // sessionId -> *io.PipeWriter
@@ -143,7 +150,7 @@ func (a *Agent) Connect(ctx context.Context) error {
 		}
 		log.Info().Msg("Established connection with the server")
 
-		err = a.stream.Send(&pb.AgentMessage{
+		err = a.sendMessage(&pb.AgentMessage{
 			Message: &pb.AgentMessage_Registration{
 				Registration: &pb.RegistrationRequest{
 					AgentName:    a.Name,
@@ -206,7 +213,7 @@ func (a *Agent) sendStatusUpdates(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			status := a.collectAgentStatus()
-			err := a.stream.Send(&pb.AgentMessage{
+			err := a.sendMessage(&pb.AgentMessage{
 				Message: &pb.AgentMessage_Status{
 					Status: status,
 				},
@@ -295,7 +302,7 @@ func (a *Agent) sendProxyResponse(streamID string, status pb.ProxyResponseType, 
 	}
 
 	// log.Debug().Msg("Sending proxy response")
-	err := a.stream.Send(&pb.AgentMessage{
+	err := a.sendMessage(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
 		},
@@ -316,7 +323,7 @@ func (a *Agent) sendErrorResponse(streamID string, err error) error {
 		Body:       []byte(err.Error()),
 	}
 	log.Debug().Msgf("Sending error response: %v", resp)
-	sendErr := a.stream.Send(&pb.AgentMessage{
+	sendErr := a.sendMessage(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
 		},
@@ -1511,14 +1518,17 @@ func (a *Agent) startK8sExec(ctx context.Context, namespace, pod, container stri
 				log.Info().Msg("exec output closed")
 				return
 			}
-			a.stream.Send(&pb.AgentMessage{
+			if err := a.sendMessage(&pb.AgentMessage{
 				Message: &pb.AgentMessage_TerminalStream{
 					TerminalStream: &pb.TerminalStream{
 						SessionId: streamID,
 						Data:      buf[:n],
 					},
 				},
-			})
+			}); err != nil {
+				log.Warn().Err(err).Msg("failed to send exec output")
+				return
+			}
 		}
 	}()
 

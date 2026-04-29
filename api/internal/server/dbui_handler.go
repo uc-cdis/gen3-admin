@@ -43,7 +43,7 @@ func HandleDbUiProxy(c *gin.Context) {
 	agent.contexts[streamID] = ctx
 	agent.mutex.Unlock()
 
-	agent.stream.Send(&pb.ServerMessage{
+	if err := agent.sendMessage(&pb.ServerMessage{
 		Message: &pb.ServerMessage_DbuiRequest{
 			DbuiRequest: &pb.DbUiRequest{
 				DbName:    dbName,
@@ -52,7 +52,10 @@ func HandleDbUiProxy(c *gin.Context) {
 				DbType:    dbType,
 			},
 		},
-	})
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
+		return
+	}
 
 	select {
 	case resp := <-responseChan:

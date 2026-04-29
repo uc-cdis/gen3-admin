@@ -35,12 +35,19 @@ type AgentServer struct {
 
 type AgentConnection struct {
 	stream          pb.TunnelService_ConnectServer
+	sendMutex       sync.Mutex
 	requestChannels map[string]chan *pb.ProxyResponse
 	cancelFuncs     map[string]context.CancelFunc
 	contexts        map[string]context.Context
 	mutex           sync.Mutex
 	agent           Agent
 	terminalStreams map[string]*websocket.Conn
+}
+
+func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
+	a.sendMutex.Lock()
+	defer a.sendMutex.Unlock()
+	return a.stream.Send(msg)
 }
 
 func SetupGRCPServer() {
@@ -182,7 +189,7 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		log.Warn().Msgf("Agent %s is already connected. Replacing the connection.", agentName)
 		agentsMutex.Unlock()
 
-		existingAgent.stream.Send(&pb.ServerMessage{
+		_ = existingAgent.sendMessage(&pb.ServerMessage{
 			Message: &pb.ServerMessage_Registration{
 				Registration: &pb.RegistrationResponse{
 					Message: "Agent is already connected. Replacing the connection.",
@@ -296,19 +303,19 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 					log.Trace().Msgf("Request cancelled for stream ID: %s", proxyResp.StreamId)
 					delete(agent.requestChannels, proxyResp.StreamId)
 					delete(agent.cancelFuncs, proxyResp.StreamId)
-						delete(agent.contexts, proxyResp.StreamId)
+					delete(agent.contexts, proxyResp.StreamId)
 				}
 			} else {
 				// Suppress repeated warnings for the same dead stream ID
-					s.mu.Lock()
-					if _, alreadyWarned := s.deadStreamIDs[proxyResp.StreamId]; !alreadyWarned {
-						log.Warn().
-							Str("stream_id", proxyResp.StreamId).
-							Str("response_type", proxyResp.Status.String()).
-							Msg("[grpc-server] Received response for unknown stream ID - handler already cleaned up")
-						s.deadStreamIDs[proxyResp.StreamId] = time.Now()
-					}
-					s.mu.Unlock()
+				s.mu.Lock()
+				if _, alreadyWarned := s.deadStreamIDs[proxyResp.StreamId]; !alreadyWarned {
+					log.Warn().
+						Str("stream_id", proxyResp.StreamId).
+						Str("response_type", proxyResp.Status.String()).
+						Msg("[grpc-server] Received response for unknown stream ID - handler already cleaned up")
+					s.deadStreamIDs[proxyResp.StreamId] = time.Now()
+				}
+				s.mu.Unlock()
 			}
 			agent.mutex.Unlock()
 		case *pb.AgentMessage_TerminalStream:
