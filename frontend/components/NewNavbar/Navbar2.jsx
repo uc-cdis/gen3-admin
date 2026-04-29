@@ -53,6 +53,9 @@ export const NavBar = () => {
         { label: 'Jobs', link: `/clusters/${activeCluster}/workloads/jobs` },
         { label: 'CronJobs', link: `/clusters/${activeCluster}/workloads/cronjobs` },
       ]},
+      { label: 'Custom Resources', icon: IconSettings, links: [
+        { label: 'Definitions (CRDs)', link: `/clusters/${activeCluster}/configurations/crds`, icon: IconSettings },
+      ]},
       { label: 'Configurations', icon: IconSettings, links: [
         { label: 'Secrets', link: `/clusters/${activeCluster}/configurations/secrets`, icon: IconKey },
         { label: 'ConfigMaps', link: `/clusters/${activeCluster}/configurations/configmaps`, icon: IconFile },

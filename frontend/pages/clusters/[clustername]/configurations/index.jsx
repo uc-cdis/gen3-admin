@@ -13,6 +13,7 @@ export default function Configurations() {
         { label: 'Secrets', description: 'Sensitive information such as passwords, keys, and tokens', link: `/clusters/${activeCluster}/configurations/secrets`, icon: IconLock, color: 'red' },
         { label: 'ConfigMaps', description: 'Non-confidential configuration data as key-value pairs', link: `/clusters/${activeCluster}/configurations/configmaps`, icon: IconFileDatabase, color: 'yellow' },
         { label: 'Horizontal Pod Autoscalers', description: 'Automatically scale Pod replicas based on metrics', link: `/clusters/${activeCluster}/configurations/hpa`, icon: IconChartLine, color: 'green' },
+        { label: 'Custom Resource Definitions', description: 'Browse installed Kubernetes API extensions and their versions', link: `/clusters/${activeCluster}/configurations/crds`, icon: IconSettings, color: 'blue' },
         { label: 'Priority Classes', description: 'Set priority classes for pod scheduling', link: `/clusters/${activeCluster}/configurations/priorityclasses`, icon: IconShield, color: 'indigo' },
         { label: 'Runtime Classes', description: 'Define container runtime configurations', link: `/clusters/${activeCluster}/configurations/runtimeclasses`, icon: IconDeviceDesktop, color: 'cyan' },
         { label: 'Pod Disruption Budgets', description: 'Control voluntary disruptions to Pods', link: `/clusters/${activeCluster}/configurations/poddisruptionbudgets`, icon: IconBulb, color: 'orange' },

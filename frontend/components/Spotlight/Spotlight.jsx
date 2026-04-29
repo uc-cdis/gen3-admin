@@ -122,6 +122,13 @@ export default function SpotlightComponent() {
             leftSection: <IconGauge size={18} />,
         },
         {
+            id: 'crds',
+            label: 'Custom Resource Definitions',
+            description: 'Browse Kubernetes API extensions installed in the cluster',
+            onClick: () => router.push(`/clusters/${activeCluster}/configurations/crds`),
+            leftSection: <IconSettings size={18} />,
+        },
+        {
             id: 'priorityclass',
             label: 'Priority Classes',
             description: 'Manage priority classes for workloads within the cluster',

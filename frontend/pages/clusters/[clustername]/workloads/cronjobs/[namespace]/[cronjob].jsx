@@ -8,7 +8,7 @@ export default function Detail() {
 
     const clusterName = useParams()?.clustername;
     const namespace = useParams()?.namespace;
-    const resource = useParams()?.pod;
+    const resource = useParams()?.cronjob;
 
 
     return (

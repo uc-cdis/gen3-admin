@@ -1,58 +1,112 @@
 import React, { useState } from 'react';
 import {
     Card,
-    Grid,
     Text,
     Stack,
     Group,
     Code,
     SimpleGrid,
-    Title,
     Table,
     Box,
     Badge,
     Accordion,
     Button,
-    Divider,
     ScrollArea,
+    Textarea,
+    Modal,
+    Alert,
 } from '@mantine/core';
-import { IconBox, IconDisc, IconServer, IconClipboardCheck, IconLock, IconSettings, IconDatabase, IconMapPin, IconFolderPlus, IconFolder, IconContainer, IconVariable, IconAlertCircle, IconPackage, IconCircleCheck, IconTag, IconInfoCircle } from '@tabler/icons-react';
+import { IconBox, IconDisc, IconClipboardCheck, IconDatabase, IconFolderPlus, IconContainer, IconVariable, IconAlertCircle, IconCircleCheck, IconTag, IconInfoCircle, IconPencil, IconDeviceFloppy } from '@tabler/icons-react';
 
-const SecretValueCell = ({ raw, decoded }) => {
+const SecretValueCell = ({ raw, decoded, secretKey, onSave }) => {
     const [showRaw, setShowRaw] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
+    const [draft, setDraft] = useState(decoded);
+    const [saving, setSaving] = useState(false);
     const value = showRaw ? raw : decoded;
 
+    const save = async () => {
+        setSaving(true);
+        try {
+            await onSave(secretKey, draft);
+            setEditOpen(false);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
-        <Group gap={4} align="flex-start">
-            <pre style={{
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                fontSize: 12,
-                flex: 1,
-                margin: 0,
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: 'var(--mantine-color-gray-0)',
-                border: '1px solid var(--mantine-color-gray-2)',
-                maxHeight: showRaw ? undefined : 150,
-                overflow: 'auto',
-                color: 'var(--mantine-color-text)',
-            }}>
-                {value}
-            </pre>
-            <Button
-                variant="subtle"
-                size="compact-xs"
-                onClick={() => setShowRaw(!showRaw)}
-                title={showRaw ? 'Show decoded' : 'Show base64'}
+        <>
+            <Stack gap="xs">
+                <Group justify="flex-end" gap="xs" px="sm" pt="sm">
+                    <Button variant="subtle" size="compact-xs" onClick={() => setShowRaw(!showRaw)}>
+                        {showRaw ? 'Show decoded' : 'Show base64'}
+                    </Button>
+                    {onSave && (
+                        <Button
+                            variant="light"
+                            size="compact-xs"
+                            leftSection={<IconPencil size={14} />}
+                            onClick={() => {
+                                setDraft(decoded);
+                                setEditOpen(true);
+                            }}
+                        >
+                            Edit decoded value
+                        </Button>
+                    )}
+                </Group>
+                <pre style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    margin: 0,
+                    padding: '8px 12px 14px',
+                    color: 'var(--mantine-color-text)',
+                }}>
+                    {value}
+                </pre>
+            </Stack>
+
+            <Modal
+                opened={editOpen}
+                onClose={() => setEditOpen(false)}
+                title={`Edit ${secretKey}`}
+                size="xl"
+                centered
             >
-                {showRaw ? 'b64' : 'dec'}
-            </Button>
-        </Group>
+                <Stack gap="md">
+                    <Alert color="orange" icon={<IconAlertCircle size={16} />} title="This changes the live Secret">
+                        This value will be base64-encoded and patched into the cluster. If this Secret is managed by Helm or ArgoCD, the next Helm install/upgrade or ArgoCD sync may overwrite this change. Copy the decoded value into source control or values files if it should persist.
+                    </Alert>
+                    <Textarea
+                        label="Decoded value"
+                        value={draft}
+                        onChange={(event) => setDraft(event.currentTarget.value)}
+                        autosize
+                        minRows={12}
+                        maxRows={24}
+                        styles={{
+                            input: {
+                                fontFamily: 'var(--mantine-font-family-monospace)',
+                                fontSize: 13,
+                            },
+                        }}
+                    />
+                    <Group justify="flex-end">
+                        <Button variant="subtle" onClick={() => setEditOpen(false)}>Cancel</Button>
+                        <Button color="orange" leftSection={<IconDeviceFloppy size={16} />} loading={saving} onClick={save}>
+                            Encode and save Secret
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
+        </>
     );
 };
 
-const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type }) => {
+const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, type, onUpdateSecretKey }) => {
     const { leftColumns = [], rightColumns = [] } = columnConfig.layout || { leftColumns: columns, rightColumns: [] };
 
     const getNestedValue = (obj, path) => {
@@ -61,59 +115,51 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
         }, obj);
     };
 
+    const codeStyle = {
+        fontFamily: 'var(--mantine-font-family-monospace)',
+        wordBreak: 'break-word',
+    };
+
     // --- Summary Section ---
     const DetailItem = ({ column }) => {
         const value = getNestedValue(resource, column.path);
         if (value === undefined || value === null) return null;
-        if (typeof value === 'boolean') {
-            return (
-                <Group gap="sm" justify="space-between" w="100%">
-                    <Text size="sm" c="dimmed">{column.label}</Text>
-                    <Badge size="sm" color={value ? 'green' : 'gray'} variant="filled">{value ? 'Yes' : 'No'}</Badge>
-                </Group>
-            );
-        }
-        if (Array.isArray(value)) {
-            const display = value.map(v =>
-                typeof v === 'object' ? JSON.stringify(v) : String(v)
-            ).join(', ');
-            return (
-                <Group gap="sm" justify="space-between" w="100%">
-                    <Text size="sm" c="dimmed">{column.label}</Text>
-                    <Text size="sm" className="font-mono">{display}</Text>
-                </Group>
-            );
-        }
+
+        const renderValue = () => {
+            if (typeof value === 'boolean') {
+                return <Badge size="sm" color={value ? 'green' : 'gray'} variant="filled">{value ? 'Yes' : 'No'}</Badge>;
+            }
+
+            if (Array.isArray(value)) {
+                const display = value.map(v =>
+                    typeof v === 'object' ? JSON.stringify(v) : String(v)
+                ).join(', ');
+                return <Text size="sm" style={codeStyle}>{display}</Text>;
+            }
+
+            return <Text size="sm" style={codeStyle}>{String(value)}</Text>;
+        };
+
         return (
-            <Group gap="sm" justify="space-between" w="100%">
-                <Text size="sm" c="dimmed">{column.label}</Text>
-                <Text size="sm" className="font-mono">{String(value)}</Text>
-            </Group>
+            <Card withBorder radius="sm" p="sm">
+                <Text size="xs" c="dimmed" mb={4}>{column.label}</Text>
+                {renderValue()}
+            </Card>
         );
     };
 
     const renderSummary = () => {
-        if (!leftColumns.length && !rightColumns.length) return null;
+        const summaryColumns = [...leftColumns, ...rightColumns];
+        if (!summaryColumns.length) return null;
         return (
             <Card p="lg" radius="md" withBorder>
                 <Group gap="xs" mb="md">
                     <IconInfoCircle size={18} />
                     <Text fw={600} size="lg">Summary</Text>
                 </Group>
-                <Grid gutter="xl">
-                    <Grid.Col span={{ base: 12, md: 6 }}>
-                        <Stack gap="sm">
-                            {leftColumns.map((col) => <DetailItem key={col.path} column={col} />)}
-                        </Stack>
-                    </Grid.Col>
-                    {rightColumns.length > 0 && (
-                        <Grid.Col span={{ base: 12, md: 6 }}>
-                            <Stack gap="sm">
-                                {rightColumns.map((col) => <DetailItem key={col.path} column={col} />)}
-                            </Stack>
-                        </Grid.Col>
-                    )}
-                </Grid>
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                    {summaryColumns.map((col) => <DetailItem key={col.path} column={col} />)}
+                </SimpleGrid>
             </Card>
         );
     };
@@ -193,38 +239,62 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
                 <Group gap="xs" mb="md">
                     <IconDatabase size={18} />
                     <Text fw={600} size="lg">Data</Text>
-                    <Badge size="sm" variant="light">{entries.length} keys</Badge>
-                    {isSecret && <Badge size="sm" color="indigo" variant="light">base64 decoded</Badge>}
                 </Group>
-                <ScrollArea.Autosize mah={500}>
-                    <Table striped highlightOnHover size="xs">
-                        <thead>
-                            <tr><th style={{ width: '25%', position: 'sticky', left: 0, zIndex: 1, background: 'inherit' }}>Key</th><th>Value</th></tr>
-                        </thead>
-                        <tbody>
-                            {entries.map(([key, value]) => {
-                                const raw = String(value);
-                                const decoded = decodeValue(value);
-                                return (
-                                    <tr key={key}>
-                                        <td style={{ position: 'sticky', left: 0, background: 'inherit', zIndex: 1 }} className="font-mono"><Text fw={500} size="sm">{key}</Text></td>
-                                        <td>
-                                            {isSecret ? (
-                                                <SecretValueCell raw={raw} decoded={decoded} />
-                                            ) : isMultiline(decoded) ? (
-                                                <Code block style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 12 }}>
-                                                    {decoded}
-                                                </Code>
-                                            ) : (
-                                                <Code block style={{ fontSize: 13 }}>{decoded}</Code>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </Table>
-                </ScrollArea.Autosize>
+                <Stack gap="md">
+                    {entries.map(([key, value]) => {
+                        const raw = String(value);
+                        const decoded = decodeValue(value);
+                        const longValue = isMultiline(decoded);
+                        const valueHeight = longValue ? (isSecret ? 760 : 560) : undefined;
+
+                        return (
+                            <Box
+                                key={key}
+                                style={{
+                                    border: '1px solid var(--mantine-color-gray-3)',
+                                    borderRadius: 8,
+                                    overflow: 'hidden',
+                                }}
+                            >
+                                <Box
+                                    style={{
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 1,
+                                        background: 'var(--mantine-color-body)',
+                                        borderBottom: '1px solid var(--mantine-color-gray-3)',
+                                        padding: '8px 12px',
+                                    }}
+                                >
+                                    <Group justify="space-between">
+                                        <Group gap="xs">
+                                            <Text fw={600} size="sm" style={codeStyle}>{key}</Text>
+                                        </Group>
+                                    </Group>
+                                </Box>
+
+                                <Box
+                                    style={{
+                                        minWidth: 0,
+                                        maxHeight: valueHeight,
+                                        overflow: longValue ? 'auto' : undefined,
+                                        background: 'var(--mantine-color-gray-0)',
+                                    }}
+                                >
+                                    {isSecret ? (
+                                        <SecretValueCell raw={raw} decoded={decoded} secretKey={key} onSave={onUpdateSecretKey} />
+                                    ) : longValue ? (
+                                        <Code block style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, lineHeight: 1.5 }}>
+                                            {decoded}
+                                        </Code>
+                                    ) : (
+                                        <Code block style={{ fontSize: 13, wordBreak: 'break-word' }}>{decoded}</Code>
+                                    )}
+                                </Box>
+                            </Box>
+                        );
+                    })}
+                </Stack>
             </Card>
         );
     };

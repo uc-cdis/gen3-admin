@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Center, Container, Group, Loader, Tabs, useMantineColorScheme, Modal, Text, Card, Badge, Stack, Title, Paper } from '@mantine/core';
+import { Button, Center, Group, Loader, Tabs, useMantineColorScheme, Modal, Text, Card, Badge, Stack, Title, Paper, Divider } from '@mantine/core';
 
 import callK8sApi from '@/lib/k8s';
 import { useViewportSize } from '@mantine/hooks';
@@ -65,6 +65,55 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
         }
     };
 
+    const encodeSecretValue = (value) => {
+        const bytes = new TextEncoder().encode(value);
+        let binary = '';
+        bytes.forEach((byte) => {
+            binary += String.fromCharCode(byte);
+        });
+        return btoa(binary);
+    };
+
+    const updateSecretKey = async (key, decodedValue) => {
+        if (type !== 'Secret') return;
+
+        const encodedValue = encodeSecretValue(decodedValue);
+        const patch = { data: { [key]: encodedValue } };
+
+        try {
+            const updated = await callK8sApi(
+                url,
+                'PATCH',
+                patch,
+                { 'Content-Type': 'application/merge-patch+json' },
+                cluster,
+                accessToken
+            );
+
+            setResourceData((current) => ({
+                ...(updated || current),
+                data: {
+                    ...(current?.data || {}),
+                    ...(updated?.data || {}),
+                    [key]: encodedValue,
+                },
+            }));
+
+            notifications.show({
+                title: 'Secret updated',
+                message: `${key} was saved and encoded as base64.`,
+                color: 'green',
+            });
+        } catch (error) {
+            notifications.show({
+                title: 'Secret update failed',
+                message: error.message || `Failed to update ${key}.`,
+                color: 'red',
+            });
+            throw error;
+        }
+    };
+
     useEffect(() => {
         if (!resource || !cluster || !type || !url) return;
         fetchResource().then((data) => {
@@ -94,40 +143,35 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
     const status = getStatusInfo();
 
     return (
-        <Stack spacing="lg">
-            {/* Header Card */}
-            <Card p="lg" radius="md">
-                <Group justify="space-between" wrap="wrap">
-                    <div>
-                        <Group gap="md" align="end">
+        <Stack gap="md">
+            <Stack gap="sm">
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                    <Stack gap={6}>
+                        <Group gap="sm" wrap="wrap">
                             <Title order={2}>{resource}</Title>
                             <Badge size="lg" variant="filled" color="blue">{type}</Badge>
                             {status && <Badge size="lg" variant="light" color={status.color}>{status.label}</Badge>}
                             {namespace && <Badge size="lg" variant="outline">ns: {namespace}</Badge>}
                         </Group>
-                    </div>
+                        {resourceData?.metadata?.uid && (
+                            <Text size="xs" c="dimmed">
+                                uid {resourceData.metadata.uid}
+                            </Text>
+                        )}
+                    </Stack>
 
-                    <Group gap="sm">
-                        <Button
-                            variant="default"
-                            leftSection={<IconRefresh size={16} />}
-                            onClick={fetchResource}
-                            disabled={isLoading}
-                            size="sm"
-                        >
+                    <Group gap="xs">
+                        <Button variant="default" leftSection={<IconRefresh size={16} />} onClick={fetchResource} disabled={isLoading} size="sm">
                             Refresh
                         </Button>
-                        <Button
-                            color="red"
-                            leftSection={<IconTrash size={16} />}
-                            onClick={() => setDeleteModalOpen(true)}
-                            size="sm"
-                        >
+                        <Button color="red" leftSection={<IconTrash size={16} />} onClick={() => setDeleteModalOpen(true)} size="sm">
                             Delete
                         </Button>
                     </Group>
                 </Group>
-            </Card>
+            </Stack>
+
+            <Divider />
 
             {/* Content */}
             {isLoading ? (
@@ -171,6 +215,7 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                             columns={columnDefinitions}
                             columnConfig={columnConfig}
                             type={type}
+                            onUpdateSecretKey={updateSecretKey}
                         />
                     </Tabs.Panel>
 

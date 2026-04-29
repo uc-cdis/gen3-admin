@@ -240,6 +240,13 @@ export function NavBar() {
                     ],
                 },
                 {
+                    label: 'Custom Resources',
+                    icon: IconSettings,
+                    links: [
+                        { label: 'Definitions (CRDs)', link: `/clusters/${activeCluster}/configurations/crds`, icon: IconSettings },
+                    ],
+                },
+                {
                     label: 'Configurations',
                     icon: IconSettings,
                     links: [

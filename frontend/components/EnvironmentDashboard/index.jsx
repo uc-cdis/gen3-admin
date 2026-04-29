@@ -26,6 +26,7 @@ import {
   Flex,
   Paper,
   Anchor,
+  SimpleGrid,
 } from "@mantine/core";
 import {
   IconCircleFilled,
@@ -41,6 +42,8 @@ import {
   IconInfoCircle,
   IconExclamationMark,
   IconX,
+  IconExternalLink,
+  IconContainer,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
@@ -125,6 +128,9 @@ export default function EnvironmentDashboardComp({
   const [rawNamespaces, setRawNamespaces] = useState(null);
   const [rawMetrics, setRawMetrics] = useState(null);
   const [rawEvents, setRawEvents] = useState(null);
+  const [rawPods, setRawPods] = useState(null);
+  const [rawPodMetrics, setRawPodMetrics] = useState(null);
+  const [podData, setPodData] = useState([]);
 
   const requestIdRef = useRef(0);
 
@@ -171,6 +177,119 @@ export default function EnvironmentDashboardComp({
     if (bytes >= 1024 * 1024)
       return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
     return `${(bytes / 1024).toFixed(2)} KiB`;
+  };
+
+  const formatHostnameUrl = (value) => {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    const protocol = value.includes(".local") || value.includes("localhost") ? "http" : "https";
+    return `${protocol}://${value}`;
+  };
+
+  const getPodOwnerKind = (pod) => {
+    const owner = pod?.metadata?.ownerReferences?.[0];
+    return owner?.kind || "Standalone";
+  };
+
+  const isPodReady = (pod) => {
+    const statuses = pod?.status?.containerStatuses || [];
+    return pod?.status?.phase === "Running" && statuses.length > 0 && statuses.every((cs) => cs.ready);
+  };
+
+  const getPodDisplayStatus = (pod) => {
+    const phase = pod?.status?.phase || "Unknown";
+    const statuses = pod?.status?.containerStatuses || [];
+
+    if (phase === "Running") {
+      return isPodReady(pod) ? "Running" : "NotReady";
+    }
+
+    const waiting = statuses.find((cs) => cs.state?.waiting?.reason);
+    if (waiting) return waiting.state.waiting.reason;
+
+    const terminated = statuses.find((cs) => cs.state?.terminated?.reason);
+    if (terminated) return terminated.state.terminated.reason;
+
+    return phase;
+  };
+
+  const buildPodSummary = (pods = []) => {
+    const ownerCounts = {};
+    const otherPods = [];
+
+    const summary = pods.reduce((acc, pod) => {
+      const phase = pod?.status?.phase || "Unknown";
+      const ownerKind = getPodOwnerKind(pod);
+      const ownerName = pod?.metadata?.ownerReferences?.[0]?.name || "";
+      const isCompleted = phase === "Succeeded";
+      const isActive = !isCompleted;
+      const isServicePod = ["ReplicaSet", "StatefulSet"].includes(ownerKind);
+      const restarts = (pod?.status?.containerStatuses || []).reduce(
+        (sum, cs) => sum + (cs.restartCount || 0),
+        0
+      );
+
+      acc.total += isActive ? 1 : 0;
+      acc.running += phase === "Running" ? 1 : 0;
+      acc.ready += isActive && isPodReady(pod) ? 1 : 0;
+      acc.pending += phase === "Pending" ? 1 : 0;
+      acc.failed += phase === "Failed" ? 1 : 0;
+      acc.succeeded += phase === "Succeeded" ? 1 : 0;
+
+      if (isActive) {
+        ownerCounts[ownerKind] = (ownerCounts[ownerKind] || 0) + 1;
+        acc.restarts += restarts;
+      }
+
+      if (!isServicePod) {
+        otherPods.push({
+          name: pod.metadata?.name,
+          namespace: pod.metadata?.namespace,
+          ownerKind,
+          ownerName,
+          status: getPodDisplayStatus(pod),
+          phase,
+          ready: isPodReady(pod),
+          restarts,
+          node: pod.spec?.nodeName || "N/A",
+          age: calculateAge(pod.metadata?.creationTimestamp),
+        });
+      }
+
+      return acc;
+    }, {
+      total: 0,
+      running: 0,
+      ready: 0,
+      pending: 0,
+      failed: 0,
+      succeeded: 0,
+      restarts: 0,
+    });
+
+    return {
+      ...summary,
+      notReady: Math.max(summary.total - summary.ready, 0),
+      ownerCounts,
+      ownerBreakdown: Object.entries(ownerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([kind, count]) => ({ kind, count })),
+      otherPods: otherPods.sort((a, b) => {
+        const order = { Failed: 0, Pending: 1, Running: 2, Succeeded: 3 };
+        return (order[a.phase] ?? 4) - (order[b.phase] ?? 4);
+      }),
+    };
+  };
+
+  const buildPodMetricSummary = (podMetricsResponse) => {
+    const items = podMetricsResponse?.items || [];
+    return items.reduce((acc, pod) => {
+      (pod.containers || []).forEach((container) => {
+        acc.cpu += parseCpu(container.usage?.cpu || "0");
+        acc.memory += parseMemory(container.usage?.memory || "0");
+      });
+      return acc;
+    }, { cpu: 0, memory: 0, podCount: items.length });
   };
 
   // Data processing functions
@@ -330,7 +449,7 @@ export default function EnvironmentDashboardComp({
       const nodeCpu = parseCpu(node.status?.capacity?.cpu || "0");
       const nodeMemory = parseMemory(node.status?.capacity?.memory || "0");
       totalCpu += nodeCpu;
-      totalMemory += totalMemory;
+      totalMemory += nodeMemory;
 
       const nodeMetric = nodeMetricsMap[node.metadata.name];
       if (nodeMetric) {
@@ -373,6 +492,8 @@ export default function EnvironmentDashboardComp({
       namespaces: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces`, "GET", null, null, accessToken),
       metrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/nodes`, "GET", null, null, accessToken),
       events: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/${namespace}/events`, "GET", null, null, accessToken),
+      pods: callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/${namespace}/pods`, "GET", null, null, accessToken),
+      podMetrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`, "GET", null, null, accessToken),
     };
 
     const results = await Promise.allSettled(Object.values(requests));
@@ -388,12 +509,16 @@ export default function EnvironmentDashboardComp({
         if (key === "namespaces") safeSet(setRawNamespaces)(result.value);
         if (key === "metrics") safeSet(setRawMetrics)(result.value);
         if (key === "events") safeSet(setRawEvents)(result.value);
+        if (key === "pods") safeSet(setRawPods)(result.value);
+        if (key === "podMetrics") safeSet(setRawPodMetrics)(result.value);
       } else {
         console.error(`${key} failed`, result.reason);
       }
     });
 
-    const failures = results.filter(r => r.status === "rejected").length;
+    const failures = results.filter((r, i) => (
+      r.status === "rejected" && !["metrics", "podMetrics"].includes(keys[i])
+    )).length;
     if (failures) {
       setError(`${failures} data sources failed to load`);
       setIsLoading(false);
@@ -417,9 +542,10 @@ export default function EnvironmentDashboardComp({
     setNodeStatusData(processedNodes);
 
     setEventsData(rawEvents?.items ?? []);
+    setPodData(processPodData(rawPods));
 
 
-  }, [rawNodes, rawMetrics, rawEvents, rawNamespaces]);
+  }, [rawNodes, rawMetrics, rawEvents, rawNamespaces, rawPods]);
 
 
   useEffect(() => {
@@ -608,13 +734,35 @@ export default function EnvironmentDashboardComp({
     );
   };
 
+  const podSummary = buildPodSummary(rawPods?.items || []);
+  const podMetricSummary = buildPodMetricSummary(rawPodMetrics);
+  const hostnameUrl = formatHostnameUrl(hostname);
+  const readyPodPct = podSummary.total > 0 ? Math.round((podSummary.ready / podSummary.total) * 100) : 0;
+  const cpuPct = metricsData?.cluster?.cpuPercentage || 0;
+  const memoryPct = metricsData?.cluster?.memoryPercentage || 0;
+
   return (
     <Container size="xl" mt="xl" pos="relative">
       <LoadingOverlay visible={isLoading || !env || !namespace} overlayBlur={2} />
 
       {/* Header Section */}
       <Group justify="space-between" mb="md">
-        <Title order={1}>{hostname || namespace} Dashboard</Title>
+        <Stack gap={2}>
+          <Group gap="xs" align="baseline">
+            <Title order={1}>{hostname || namespace} Dashboard</Title>
+            {hostnameUrl && (
+              <Anchor href={hostnameUrl} target="_blank" rel="noreferrer" size="sm">
+                <Group gap={4}>
+                  <Text size="sm">{hostnameUrl.replace(/^https?:\/\//, "")}</Text>
+                  <IconExternalLink size={14} />
+                </Group>
+              </Anchor>
+            )}
+          </Group>
+          <Text size="sm" c="dimmed">
+            {namespace} on {env}
+          </Text>
+        </Stack>
         <Group>
           <Button onClick={fetchDashboardData} loading={isLoading}>
             <IconRefresh />
@@ -719,6 +867,125 @@ export default function EnvironmentDashboardComp({
       }
 
       <Divider my="lg" />
+
+      <Card withBorder radius="md" p="lg" mb="lg">
+        <Group justify="space-between" mb="md">
+          <Group gap="xs">
+            <IconInfoCircle size={18} />
+            <Title order={4}>Cluster snapshot</Title>
+          </Group>
+          <Group gap="xs">
+            <Badge variant="light" color={status === "healthy" ? "teal" : colors[status]}>
+              {status}
+            </Badge>
+            {rawPodMetrics?.items && (
+              <Badge variant="light" color="blue">
+                live metrics
+              </Badge>
+            )}
+          </Group>
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+          <Card withBorder radius="sm" p="md">
+            <Group justify="space-between" mb={6}>
+              <Text size="sm" c="dimmed">Nodes</Text>
+              <IconServer size={18} color="var(--mantine-color-gray-6)" />
+            </Group>
+            <Text fw={700} size="xl">
+              {nodeStatusData.filter((n) => n.status === "Ready").length}/{nodeStatusData.length || 0}
+            </Text>
+            <Text size="xs" c="dimmed">ready</Text>
+          </Card>
+
+          <Card withBorder radius="sm" p="md">
+            <Group justify="space-between" mb={6}>
+              <Text size="sm" c="dimmed">CPU</Text>
+              <IconCpu size={18} color="var(--mantine-color-gray-6)" />
+            </Group>
+            <Group align="baseline" gap="xs">
+              <Text fw={700} size="xl">{cpuPct}%</Text>
+              <Text size="xs" c="dimmed">{metricsData?.cluster?.usedCpu || "0 cores"}</Text>
+            </Group>
+            <Progress value={cpuPct} size="xs" radius="xl" mt="xs" color={cpuPct > 85 ? "red" : cpuPct > 65 ? "yellow" : "teal"} />
+          </Card>
+
+          <Card withBorder radius="sm" p="md">
+            <Group justify="space-between" mb={6}>
+              <Text size="sm" c="dimmed">Memory</Text>
+              <IconDeviceSdCard size={18} color="var(--mantine-color-gray-6)" />
+            </Group>
+            <Group align="baseline" gap="xs">
+              <Text fw={700} size="xl">{memoryPct}%</Text>
+              <Text size="xs" c="dimmed">{metricsData?.cluster?.usedMemory || "0 GB"}</Text>
+            </Group>
+            <Progress value={memoryPct} size="xs" radius="xl" mt="xs" color={memoryPct > 85 ? "red" : memoryPct > 65 ? "yellow" : "teal"} />
+          </Card>
+
+          <Card withBorder radius="sm" p="md">
+            <Group justify="space-between" mb={6}>
+              <Text size="sm" c="dimmed">Namespace live use</Text>
+              <IconContainer size={18} color="var(--mantine-color-gray-6)" />
+            </Group>
+            <Group align="baseline" gap="xs">
+              <Text fw={700} size="xl">{podMetricSummary.cpu.toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">cores</Text>
+            </Group>
+            <Text size="xs" c="dimmed">
+              {formatMemoryUsage(podMetricSummary.memory)} memory from running pod metrics
+            </Text>
+          </Card>
+        </SimpleGrid>
+
+        <Divider my="md" />
+
+        <Group justify="space-between" align="flex-start">
+          <Stack gap={6}>
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">Active pods</Text>
+              <Text size="sm" fw={600}>{podSummary.ready}/{podSummary.total} ready</Text>
+              <Badge size="sm" color={podSummary.notReady > 0 ? "orange" : "teal"} variant="light">
+                {podSummary.notReady} need attention
+              </Badge>
+              {podSummary.restarts > 0 && (
+                <Badge size="sm" color="orange" variant="light">
+                  {podSummary.restarts} restarts
+                </Badge>
+              )}
+              {podSummary.succeeded > 0 && (
+                <Badge size="sm" color="blue" variant="light">
+                  {podSummary.succeeded} completed job pods
+                </Badge>
+              )}
+            </Group>
+            <Progress value={readyPodPct} size="xs" radius="xl" color={readyPodPct === 100 ? "teal" : "orange"} maw={360} />
+          </Stack>
+
+          <Group gap="xs" justify="flex-end">
+            {podSummary.ownerBreakdown.slice(0, 5).map(({ kind, count }) => (
+              <Badge key={kind} variant="outline" color={["Job", "CronJob"].includes(kind) ? "blue" : "gray"}>
+                {kind === "ReplicaSet" ? "Workload pods" : kind}: {count}
+              </Badge>
+            ))}
+          </Group>
+        </Group>
+
+        {podSummary.otherRunningPods.length > 0 && (
+          <Group gap="xs" mt="md">
+            <Text size="sm" c="dimmed">Other running pods</Text>
+            {podSummary.otherRunningPods.slice(0, 6).map((pod) => (
+              <Tooltip key={pod.name} label={`${pod.ownerKind} • ${pod.ready ? "ready" : "not ready"}`}>
+                <Badge variant="light" color={pod.ready ? "teal" : "orange"}>
+                  {pod.name}
+                </Badge>
+              </Tooltip>
+            ))}
+            {podSummary.otherRunningPods.length > 6 && (
+              <Badge variant="light" color="gray">+{podSummary.otherRunningPods.length - 6} more</Badge>
+            )}
+          </Group>
+        )}
+      </Card>
 
       {/* Main metrics */}
       {/* <Group align="flex-start" gap="md" mb="xl" grow>

@@ -125,7 +125,7 @@ export default function TerminalComponent({ namespace, pod, container, cluster }
               py={2}
               style={{ background: '#238636', borderRadius: 999 }}
             >
-              <Text size={9} c="white" fw={700} tt="uppercase" lh={1}>
+              <Text size="9px" c="white" fw={700} tt="uppercase" lh={1}>
                 Connected
               </Text>
             </Box>
