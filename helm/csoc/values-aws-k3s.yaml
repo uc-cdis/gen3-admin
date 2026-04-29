@@ -4,7 +4,7 @@
 replicaCount: 1
 
 image:
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   api:
     repository: quay.io/cdis/csoc-api
     tag: "feat/bootstrap-onboarding-impl"

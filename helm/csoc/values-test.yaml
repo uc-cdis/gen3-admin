@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  pullPolicy: IfNotPresent  # Pull from registry if not available locally
+  pullPolicy: Always  # Always pull latest image from registry
   api:
     repository: quay.io/cdis/csoc-api
     tag: "feat_bootstrap-onboarding-impl"

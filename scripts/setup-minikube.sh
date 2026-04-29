@@ -73,7 +73,7 @@ start_minikube() {
     --cpus=4 \
     --memory=8192 \
     --disk-size=40g \
-    --kubernetes-version=v1.30.0 \
+    --kubernetes-version=v1.35 \
     --container-runtime=docker
 
   # Enable required addons
