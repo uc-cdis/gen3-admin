@@ -82,7 +82,7 @@ start_minikube() {
   minikube addons enable ingress         -p "$MINIKUBE_PROFILE" 2>/dev/null || true
 
   # Wait for ingress controller pod
-  log "Waiting for nginx ingress controller..."
+  log "Waiting for nginx ingress controller pod..."
   local max_wait=120
   local waited=0
   while [[ $waited -lt $max_wait ]]; do
@@ -91,6 +91,22 @@ start_minikube() {
     fi
     sleep 5
     waited=$((waited + 5))
+  done
+
+  # Wait for the ingress admission webhook to be ready
+  # Helm will fail with "failed calling webhook" if the validating webhook
+  # service isn't accepting connections yet.
+  log "Waiting for nginx ingress admission webhook..."
+  waited=0
+  max_wait=120
+  while [[ $waited -lt $max_wait ]]; do
+    # Check that the webhook service is reachable
+    if kubectl get endpoints ingress-nginx-controller-admission \
+        -n ingress-nginx 2>/dev/null | grep -q "[0-9]"; then
+      break
+    fi
+    sleep 3
+    waited=$((waited + 3))
   done
 
   ok "Minikube is ready"
@@ -318,14 +334,33 @@ EOF
     )
   fi
 
-  # Upgrade or install
-  if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
-    log "Upgrading existing release..."
-    helm upgrade "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
-  else
-    log "Installing fresh release..."
-    helm install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
-  fi
+  # Upgrade or install (with retry for transient errors like webhook not ready)
+  local max_retries=5
+  local retry_delay=10
+  local attempt=1
+  while [[ $attempt -le $max_retries ]]; do
+    if helm status "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+      if [[ $attempt -gt 1 ]]; then log "Upgrading existing release (attempt $attempt/$max_retries)..."; fi
+      if [[ $attempt -eq 1 ]]; then log "Upgrading existing release..."; fi
+      if helm upgrade "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"; then
+        break
+      fi
+    else
+      if [[ $attempt -gt 1 ]]; then log "Installing fresh release (attempt $attempt/$max_retries)..."; fi
+      if [[ $attempt -eq 1 ]]; then log "Installing fresh release..."; fi
+      if helm install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"; then
+        break
+      fi
+    fi
+
+    if [[ $attempt -eq $max_retries ]]; then
+      die "Helm install/upgrade failed after $max_retries attempts"
+    fi
+
+    warn "Helm failed (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
+    sleep $retry_delay
+    attempt=$((attempt + 1))
+  done
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
