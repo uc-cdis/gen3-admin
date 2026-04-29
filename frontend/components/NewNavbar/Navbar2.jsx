@@ -89,6 +89,7 @@ export const NavBar = () => {
     ]},
     { label: 'Observability', icon: IconEye, links: [
       { label: 'Monitors', link: '/observability/monitors' },
+      { label: 'Logs', link: '/observability/logs' },
       { label: 'Dashboards', link: '/observability/dashboards' },
     ]},
     { label: 'Cloud', icon: IconNetwork, links: [

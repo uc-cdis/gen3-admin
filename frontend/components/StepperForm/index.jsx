@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Stepper, Button, Group, Container, Switch, Code, Flex, Paper, Stack, Divider, Text, Alert,
-  Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion, Anchor
+  Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion, Anchor,
+  useComputedColorScheme
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -43,6 +44,10 @@ const STEP_CONFIG = [
 ];
 
 const StepperForm = () => {
+  const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
+  const isDark = colorScheme === 'dark';
+  const neutralSurface = isDark ? 'dark.7' : 'gray.0';
+
   const [active, setActive] = useState(0);
   const [clusters, setClusters] = useState([]);
   const [certs, setCerts] = useState([]);
@@ -632,7 +637,7 @@ const StepperForm = () => {
               defaultLanguage='yaml'
               height={"400px"}
               readOnly={true}
-              theme={'light'}
+              theme={isDark ? 'vs-dark' : 'light'}
               options={{
                 readOnly: true,
                 scrollBeyondLastLine: false,
@@ -667,7 +672,7 @@ const StepperForm = () => {
       {/* Deploying — show live status */}
       {(deploying || deployResult) && !deployComplete && (
         <Stack gap="md">
-          <Paper withBorder p="xl" radius="lg" bg="blue.0">
+          <Paper withBorder p="xl" radius="lg" bg={isDark ? 'dark.8' : 'blue.0'}>
             <Stack align="center" gap="md">
               <ThemeIcon size={64} radius="xl" variant="light" color="blue">
                 <Loader size={32} color="blue" />
@@ -714,7 +719,7 @@ const StepperForm = () => {
               )}
             </Paper>
           ) : (
-            <Paper withBorder p="md" radius="lg" bg="gray.0">
+            <Paper withBorder p="md" radius="lg" bg={neutralSurface}>
               <Group gap="sm">
                 <Loader size="xs" type="dots" />
                 <Text size="sm" c="dimmed">Waiting for Helm to register the release...</Text>
@@ -751,7 +756,7 @@ const StepperForm = () => {
             {namespaceStatus?.deployments?.length > 0 ? (
               <SimpleGrid cols={{ base: 1, xs: 2, sm: 3, lg: 4 }} spacing="xs">
                 {namespaceStatus.deployments.map((dep) => (
-                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? (isDark ? 'dark.8' : 'teal.0') : undefined}>
                     <Group gap="xs" justify="space-between">
                       <Group gap="xs">
                         <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
@@ -899,7 +904,7 @@ const StepperForm = () => {
               </Group>
               <SimpleGrid cols={{ base: 2, xs: 3 }} spacing="sm">
                 {namespaceStatus.deployments.map((dep) => (
-                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? 'teal.0' : undefined}>
+                  <Paper key={dep.name} withBorder p="xs" radius="md" bg={dep.Ready ? (isDark ? 'dark.8' : 'teal.0') : undefined}>
                     <Group gap={6} justify="space-between">
                       <Group gap={6}>
                         <ThemeIcon size="xs" radius="sm" variant={dep.Ready ? 'filled' : 'outline'} color={dep.Ready ? 'green' : 'blue'}>
@@ -981,7 +986,7 @@ const StepperForm = () => {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', paddingTop: 24, paddingBottom: 48 }}>
       {/* Header bar */}
-      <Paper p="xs" radius="lg" mb="lg" withBorder bg="gray.0">
+      <Paper p="xs" radius="lg" mb="lg" withBorder bg={neutralSurface}>
         <Group justify="space-between">
           <Group gap="md">
             <ThemeIcon size="sm" radius="md" variant="filled" gradient={{ from: 'teal', to: 'green' }}>
@@ -999,14 +1004,14 @@ const StepperForm = () => {
         </Group>
       </Paper>
 
-      <Paper shadow="xl" radius="xl" p={0} overflow="hidden">
+      <Paper shadow="xl" radius="xl" p={0} overflow="hidden" bg={neutralSurface}>
         <div style={{ display: 'flex', minHeight: 560 }}>
 
           {/* Sidebar */}
           <div style={{
             width: 240,
-            background: 'linear-gradient(180deg, #f8f9fc 0%, #f1f3f9 100%)',
-            borderRight: '1px solid #e9ecf2',
+            background: isDark ? 'var(--mantine-color-dark-7)' : 'linear-gradient(180deg, #f8f9fc 0%, #f1f3f9 100%)',
+            borderRight: `1px solid ${isDark ? 'var(--mantine-color-dark-5)' : '#e9ecf2'}`,
             padding: '24px 12px',
             display: 'flex',
             flexDirection: 'column',
@@ -1017,11 +1022,11 @@ const StepperForm = () => {
               styles={{
                 stepBody: { paddingLeft: 10 },
                 stepLabel: { fontWeight: 600, fontSize: 13, lineHeight: 1.2 },
-                stepDescription: { fontSize: 11, color: '#868e96', marginTop: 2 },
+                stepDescription: { fontSize: 11, color: isDark ? 'var(--mantine-color-dimmed)' : '#868e96', marginTop: 2 },
                 stepIcon: { borderWidth: 2, cursor: 'pointer' },
                 completedIcon: { background: 'transparent' },
                 step: { cursor: 'pointer' },
-                stepCompleted: { '& .mantine-Stepper-stepIcon': { borderColor: '#40c057', color: '#40c057' } },
+                stepCompleted: { '& .mantine-Stepper-stepIcon': { borderColor: 'var(--mantine-color-green-6)', color: 'var(--mantine-color-green-6)' } },
               }}
             >
               {STEP_CONFIG.map((step, i) => (
@@ -1043,7 +1048,7 @@ const StepperForm = () => {
           </div>
 
           {/* Main content area */}
-          <div style={{ flex: 1, padding: '32px 36px', overflowY: 'auto', background: '#fff' }}>
+          <div style={{ flex: 1, padding: '32px 36px', overflowY: 'auto', background: 'var(--mantine-color-body)' }}>
             {steps[active]?.component}
 
             {/* Bottom nav */}

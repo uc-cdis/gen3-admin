@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {
   Stepper, Button, Text, Group, Paper, Container, Stack,
   Loader, Alert, Title, Code, Box, TextInput, Badge, Select, SimpleGrid, Switch,
-  Anchor, ThemeIcon, Progress, Divider, Flex
+  Anchor, ThemeIcon, Progress, Divider, Flex, useComputedColorScheme
 } from '@mantine/core';
 import {
   IconCheck, IconAlertTriangle, IconServer, IconRocket, IconPlug, IconSearch,
@@ -25,6 +25,18 @@ const STEP_CONFIG = [
 ];
 
 export function OnboardingStepper({ accessToken, onComplete }) {
+  const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
+  const isDark = colorScheme === 'dark';
+  const statusBg = (color) => `${color}.${isDark ? 9 : 0}`;
+  const neutralSurface = isDark ? 'dark.7' : 'gray.0';
+  const selectedSurface = (color, selected) => selected ? {
+    cursor: 'pointer',
+    borderColor: `var(--mantine-color-${color}-${isDark ? 5 : 6})`,
+    backgroundColor: `var(--mantine-color-${color}-${isDark ? 9 : 0})`,
+    boxShadow: `0 0 0 2px var(--mantine-color-${color}-${isDark ? 9 : 1})`,
+  } : { cursor: 'pointer' };
+  const successIconColor = 'var(--mantine-color-green-6)';
+
   const [active, setActive] = useState(0);
   const [envInfo, setEnvInfo] = useState(null);
   const [envLoading, setEnvLoading] = useState(true);
@@ -56,7 +68,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
   const [alloyResult, setAlloyResult] = useState(null);
   const [alloyStatus, setAlloyStatus] = useState(null);
   const [alloyReady, setAlloyReady] = useState(false);
-  const [lokiAddress, setLokiAddress] = useState('http://monitoring-loki-gateway.monitoring:8080/loki/api/v1/push');
+  const [lokiAddress, setLokiAddress] = useState('http://monitoring-loki-gateway.monitoring/loki/api/v1/push');
 
   // Verify state
   const [verifyStatus, setVerifyStatus] = useState(null);
@@ -453,7 +465,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
         {/* Cluster status — subtle */}
         {envInfo.connected && (
           <Group justify="center" gap="xs">
-            <IconCheck size={14} color="#40c057" />
+            <IconCheck size={14} color={successIconColor} />
             <Text size="sm" c="dimmed">
               Connected{envInfo.provider && envInfo.provider !== 'Unknown' ? ` to ${envInfo.provider}` : ''}{envInfo.version && envInfo.version !== 'Unknown' ? ` (v${envInfo.version})` : ''}
             </Text>
@@ -520,12 +532,12 @@ export function OnboardingStepper({ accessToken, onComplete }) {
       </Flex>
 
       {deployResult && (
-        <Paper withBorder p="md" radius="lg" bg="dark.0" maw={480} mx="auto">
+        <Paper withBorder p="md" radius="lg" bg={neutralSurface} maw={480} mx="auto">
           <Group gap="xs" mb="xs">
-            <IconCheck size={14} color="#40c057" />
-            <Text size="sm" fw={500} c="white">Resources applied</Text>
+            <IconCheck size={14} color={successIconColor} />
+            <Text size="sm" fw={500}>Resources applied</Text>
           </Group>
-          <Code block style={{ fontSize: 12 }}>{JSON.stringify(deployResult, null, 2)}</Code>
+          <Code block style={{ fontSize: 12, background: 'transparent' }}>{JSON.stringify(deployResult, null, 2)}</Code>
         </Paper>
       )}
     </Stack>
@@ -540,7 +552,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
       {deploying && (
         <Stack align="center" gap="sm" w="100%" maw={420}>
-          <Paper withBorder p="xl" radius="lg" bg="blue.0">
+          <Paper withBorder p="xl" radius="lg" bg={statusBg('blue')}>
             <Stack align="center" gap="md">
               <Loader size="lg" type="dots" color="blue" />
               <Text size="sm" fw={500} ta="center">{deployStatus?.text || 'Generating TLS certificates...'}</Text>
@@ -551,15 +563,15 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
       {deployResult && !agentConnected && (
         <Stack align="center" gap="md" w="100%" maw={420}>
-          <Paper withBorder p="lg" radius="lg" bg="green.0">
+          <Paper withBorder p="lg" radius="lg" bg={statusBg('green')}>
             <Group gap="sm" justify="center">
-              <IconCheck size={20} color="#40c057" />
+              <IconCheck size={20} color={successIconColor} />
               <Text size="sm" fw={500}>Resources applied to cluster</Text>
             </Group>
             <Text size="xs" c="dimmed" ta="center" mt={4}>Server: {deployResult.serverAddress}</Text>
           </Paper>
 
-          <Paper withBorder p="xl" radius="lg" w="100%">
+          <Paper withBorder p="xl" radius="lg" w="100%" bg={neutralSurface}>
             <Stack align="center" gap="md">
               <Loader size="lg" type="dots" />
               <Text size="sm" ta="center">Waiting for agent pod to start...</Text>
@@ -625,9 +637,9 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
         {argocdResult && !argocdReady && (
           <Stack gap="sm" w="100%" maw={520} mx="auto">
-            <Paper withBorder p="md" radius="lg" bg="green.0">
+            <Paper withBorder p="md" radius="lg" bg={statusBg('green')}>
               <Group gap="sm">
-                <IconCheck size={18} color="#40c057" />
+                <IconCheck size={18} color={successIconColor} />
                 <Text size="sm" fw={500}>Manifest applied — waiting for components...</Text>
               </Group>
             </Paper>
@@ -638,11 +650,11 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                   {argocdStatus.totalReady}/{argocdStatus.totalCount} components ready
                 </Text>
                 {Object.entries(argocdStatus.components).map(([key, comp]) => (
-                  <Paper key={key} withBorder p="sm" radius="md" bg={comp.ready ? 'green.0' : 'gray.0'}>
+                  <Paper key={key} withBorder p="sm" radius="md" bg={comp.ready ? statusBg('green') : statusBg('gray')}>
                     <Group justify="space-between">
                       <Group gap="xs">
                         {comp.ready
-                          ? <IconCheck size={14} color="#40c057" />
+                          ? <IconCheck size={14} color={successIconColor} />
                           : <Loader size="xs" type="dots" />}
                         <Text size="sm">{componentLabels[key] || key}</Text>
                       </Group>
@@ -660,9 +672,9 @@ export function OnboardingStepper({ accessToken, onComplete }) {
         )}
 
         {argocdReady && (
-          <Paper withBorder p="md" radius="lg" bg="green.0" w="100%" maw={400} mx="auto">
+          <Paper withBorder p="md" radius="lg" bg={statusBg('green')} w="100%" maw={400} mx="auto">
             <Group gap="sm" justify="center">
-              <IconCheck size={20} color="#40c057" />
+              <IconCheck size={20} color={successIconColor} />
               <Text size="sm" fw={500}>All ArgoCD components are running!</Text>
             </Group>
           </Paper>
@@ -690,12 +702,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
       {/* Skip option */}
       {!appsResult && !appsDeploying && (
-        <Paper withBorder p="md" radius="lg" maw={520} mx="auto"
-          style={{
-            borderColor: skipMonitoring ? '#fd7e14' : undefined,
-            backgroundColor: skipMonitoring ? '#fff8f0' : undefined,
-          }}
-        >
+        <Paper withBorder p="md" radius="lg" maw={520} mx="auto" style={selectedSurface('orange', skipMonitoring)}>
           <Group justify="space-between" align="center">
             <div>
               <Text size="sm" fw={600}>Skip Monitoring Stack</Text>
@@ -718,12 +725,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
       {!skipMonitoring && !appsResult && !appsDeploying && (
         <SimpleGrid cols={3} maw={720} mx="auto" mt="md">
           <Paper withBorder p="lg" radius="lg"
-            style={{
-              cursor: 'pointer',
-              borderColor: deployMode === 'lightweight' ? '#40c057' : undefined,
-              backgroundColor: deployMode === 'lightweight' ? '#f0fff4' : undefined,
-              boxShadow: deployMode === 'lightweight' ? '0 0 0 2px #40c05722' : undefined,
-            }}
+            style={selectedSurface('green', deployMode === 'lightweight')}
             onClick={() => { setDeployMode('lightweight'); setAppsStorageType('pvc'); }}
           >
             <Stack align="center" gap="xs">
@@ -737,12 +739,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
           </Paper>
 
           <Paper withBorder p="lg" radius="lg"
-            style={{
-              cursor: 'pointer',
-              borderColor: deployMode === 'full' && appsStorageType === 'pvc' ? '#228be6' : undefined,
-              backgroundColor: deployMode === 'full' && appsStorageType === 'pvc' ? '#ebf5ff' : undefined,
-              boxShadow: deployMode === 'full' && appsStorageType === 'pvc' ? '0 0 0 2px #228be622' : undefined,
-            }}
+            style={selectedSurface('blue', deployMode === 'full' && appsStorageType === 'pvc')}
             onClick={() => { setDeployMode('full'); setAppsStorageType('pvc'); }}
           >
             <Stack align="center" gap="xs">
@@ -756,12 +753,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
           </Paper>
 
           <Paper withBorder p="lg" radius="lg"
-            style={{
-              cursor: 'pointer',
-              borderColor: deployMode === 'full' && appsStorageType === 's3' ? '#228be6' : undefined,
-              backgroundColor: deployMode === 'full' && appsStorageType === 's3' ? '#ebf5ff' : undefined,
-              boxShadow: deployMode === 'full' && appsStorageType === 's3' ? '0 0 0 2px #228be622' : undefined,
-            }}
+            style={selectedSurface('blue', deployMode === 'full' && appsStorageType === 's3')}
             onClick={() => { setDeployMode('full'); setAppsStorageType('s3'); }}
           >
             <Stack align="center" gap="xs">
@@ -830,9 +822,9 @@ export function OnboardingStepper({ accessToken, onComplete }) {
       {/* Syncing / done state */}
       {appsResult && !appsReady && (
         <Stack gap="sm" w="100%" maw={600} mx="auto">
-          <Paper withBorder p="md" radius="lg" bg="green.0">
+          <Paper withBorder p="md" radius="lg" bg={statusBg('green')}>
             <Group gap="sm">
-              <IconCheck size={18} color="#40c057" />
+              <IconCheck size={18} color={successIconColor} />
               <Text size="sm" fw={500}>ArgoCD Application created — deploying to monitoring namespace...</Text>
             </Group>
           </Paper>
@@ -860,11 +852,11 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                 {appsStatus.totalReady ?? 0}/{appsStatus.totalCount ?? 0} pods ready
               </Text>
               {Object.entries(appsStatus.components).map(([name, comp]) => (
-                <Paper key={name} withBorder p="xs" radius="md" bg={comp.ready ? 'green.0' : 'gray.0'}>
+                <Paper key={name} withBorder p="xs" radius="md" bg={comp.ready ? statusBg('green') : statusBg('gray')}>
                   <Group justify="space-between">
                     <Group gap="xs">
                       {comp.ready
-                        ? <IconCheck size={14} color="#40c057" />
+                        ? <IconCheck size={14} color={successIconColor} />
                         : <Loader size="xs" type="dots" />}
                       <Text size="sm">{name}</Text>
                     </Group>
@@ -882,9 +874,9 @@ export function OnboardingStepper({ accessToken, onComplete }) {
       )}
 
       {appsReady && (
-        <Paper withBorder p="md" radius="lg" bg="green.0" w="100%" maw={500} mx="auto">
+        <Paper withBorder p="md" radius="lg" bg={statusBg('green')} w="100%" maw={500} mx="auto">
           <Group gap="sm" justify="center">
-            <IconCheck size={20} color="#40c057" />
+            <IconCheck size={20} color={successIconColor} />
             <Text size="sm" fw={500}>
               {skipMonitoring
                 ? 'Monitoring skipped.'
@@ -933,7 +925,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                     ? "Auto-detected from your Lightweight deployment"
                     : "Auto-detected from your Full LGTM stack deployment"
               }
-              placeholder="http://monitoring-loki-gateway.monitoring:8080/loki/api/v1/push"
+              placeholder="http://monitoring-loki-gateway.monitoring/loki/api/v1/push"
               value={lokiAddress}
               onChange={(e) => setLokiAddress(e.currentTarget.value)}
               leftSection={<IconSearch size={16} />}
@@ -970,36 +962,36 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
       {alloyResult && !alloyReady && (
         <Stack gap="sm" w="100%" maw={600} mx="auto">
-          <Paper withBorder p="md" radius="lg" bg="green.0">
+          <Paper withBorder p="md" radius="lg" bg={statusBg('green')}>
             <Group gap="sm">
-              <IconCheck size={18} color="#40c057" />
+              <IconCheck size={18} color={successIconColor} />
               <Text size="sm" fw={500}>ArgoCD Application created — deploying Alloy...</Text>
             </Group>
           </Paper>
 
           <SimpleGrid cols={3} mt="xs">
-            <Paper withBorder p="sm" radius="md" bg={alloyStatus?.configMap ? 'green.0' : 'orange.0'}>
+            <Paper withBorder p="sm" radius="md" bg={alloyStatus?.configMap ? statusBg('green') : statusBg('orange')}>
               <Group gap={6}>
-                {alloyStatus?.configMap ? <IconCheck size={14} color="#40c057" /> : <Loader size="xs" type="dots" />}
+                {alloyStatus?.configMap ? <IconCheck size={14} color={successIconColor} /> : <Loader size="xs" type="dots" />}
                 <div>
                   <Text size="xs" fw={600}>ConfigMap</Text>
                   <Text size="xs" c="dimmed">alloy-gen3</Text>
                 </div>
               </Group>
             </Paper>
-            <Paper withBorder p="sm" radius="md" bg={alloyStatus?.appCR ? 'green.0' : 'orange.0'}>
+            <Paper withBorder p="sm" radius="md" bg={alloyStatus?.appCR ? statusBg('green') : statusBg('orange')}>
               <Group gap={6}>
-                {alloyStatus?.appCR ? <IconCheck size={14} color="#40c057" /> : <Loader size="xs" type="dots" />}
+                {alloyStatus?.appCR ? <IconCheck size={14} color={successIconColor} /> : <Loader size="xs" type="dots" />}
                 <div>
                   <Text size="xs" fw={600}>App CR</Text>
                   <Text size="xs" c="dimmed">grafana-alloy</Text>
                 </div>
               </Group>
             </Paper>
-            <Paper withBorder p="sm" radius="md" bg={(alloyStatus?.totalCount ?? 0) > 0 && (alloyStatus?.totalReady ?? 0) >= (alloyStatus?.totalCount ?? 1) ? 'green.0' : (alloyStatus?.totalCount ?? 0) > 0 ? 'orange.0' : 'gray.0'}>
+            <Paper withBorder p="sm" radius="md" bg={(alloyStatus?.totalCount ?? 0) > 0 && (alloyStatus?.totalReady ?? 0) >= (alloyStatus?.totalCount ?? 1) ? statusBg('green') : (alloyStatus?.totalCount ?? 0) > 0 ? statusBg('orange') : statusBg('gray')}>
               <Group gap={6}>
                 {(alloyStatus?.totalCount ?? 0) > 0 && (alloyStatus?.totalReady ?? 0) >= (alloyStatus?.totalCount ?? 1)
-                  ? <IconCheck size={14} color="#40c057" />
+                  ? <IconCheck size={14} color={successIconColor} />
                   : (alloyStatus?.totalCount ?? 0) > 0
                     ? <Loader size="xs" type="dots" />
                     : <IconSearch size={14} c="dimmed" />}
@@ -1019,11 +1011,11 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                 {alloyStatus.totalReady ?? 0}/{alloyStatus.totalCount ?? 0} pods ready
               </Text>
               {Object.entries(alloyStatus.components).map(([name, comp]) => (
-                <Paper key={name} withBorder p="xs" radius="md" bg={comp.ready ? 'green.0' : 'gray.0'}>
+                <Paper key={name} withBorder p="xs" radius="md" bg={comp.ready ? statusBg('green') : statusBg('gray')}>
                   <Group justify="space-between">
                     <Group gap="xs">
-                      {comp.ready ? <IconCheck size={14} color="#40c057" /> : <Loader size="xs" type="dots" />}
-                      <Text size="se">{name}</Text>
+                      {comp.ready ? <IconCheck size={14} color={successIconColor} /> : <Loader size="xs" type="dots" />}
+                      <Text size="sm">{name}</Text>
                     </Group>
                     <Badge size="xs" color={comp.ready ? 'green' : 'gray'} variant="filled" radius="sm">
                       {comp.ready ? 'Ready' : `${comp.readyReplicas ?? 0}/${comp.totalReplicas ?? 1}`}
@@ -1039,9 +1031,9 @@ export function OnboardingStepper({ accessToken, onComplete }) {
       )}
 
       {alloyReady && (
-        <Paper withBorder p="md" radius="lg" bg="green.0" w="100%" maw={500} mx="auto">
+        <Paper withBorder p="md" radius="lg" bg={statusBg('green')} w="100%" maw={500} mx="auto">
           <Group gap="sm" justify="center">
-            <IconCheck size={20} color="#40c057" />
+            <IconCheck size={20} color={successIconColor} />
             <Text size="sm" fw={500}>Grafana Alloy is running! Logs are being collected.</Text>
           </Group>
           {alloyStatus?.lokiURL && <Text size="xs" c="dimmed" ta="center" mt={4} style={{ fontFamily: 'monospace' }}>Loki endpoint: {alloyStatus.lokiURL}</Text>}
@@ -1070,7 +1062,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
     };
 
     const StatusCard = ({ icon: IconComp, label, sublabel, ready, badgeText, badgeColor, children, muted }) => (
-      <Paper withBorder p="md" radius="lg" bg={muted ? undefined : ready ? 'green.0' : 'orange.0'}>
+      <Paper withBorder p="md" radius="lg" bg={muted ? undefined : ready ? statusBg('green') : statusBg('orange')}>
         <Group justify="space-between" mb={children ? 'xs' : 0}>
           <Group gap="sm">
             <ThemeIcon size="sm" radius="md" variant="filled" color={muted ? 'gray' : ready ? 'green' : 'orange'}>
@@ -1114,7 +1106,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                   <Divider />
                   {Object.entries(verifyStatus.argocd.components).map(([key, comp]) => (
                     <Group key={key} justify="space-between" px="xs">
-                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color="#40c057" /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{argocdComponentLabels[key] || key}</Text></Group>
+                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color={successIconColor} /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{argocdComponentLabels[key] || key}</Text></Group>
                       <Text size="xs" c="dimmed">{comp.ready ? 'Ready' : `${comp.readyReplicas ?? 0}/${comp.totalReplicas ?? 1}`}</Text>
                     </Group>
                   ))}
@@ -1134,7 +1126,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                   <Divider />
                   {Object.entries(verifyStatus.apps.components).map(([name, comp]) => (
                     <Group key={name} justify="space-between" px="xs">
-                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color="#40c057" /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{name}</Text></Group>
+                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color={successIconColor} /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{name}</Text></Group>
                       <Text size="xs" c="dimmed">{comp.ready ? 'Ready' : `${comp.readyReplicas ?? 0}/${comp.totalReplicas ?? 1}`}</Text>
                     </Group>
                   ))}
@@ -1159,7 +1151,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                   <Divider />
                   {Object.entries(verifyStatus.alloy.components).map(([name, comp]) => (
                     <Group key={name} justify="space-between" px="xs">
-                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color="#40c057" /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{name}</Text></Group>
+                      <Group gap={4}>{comp.ready ? <IconCheck size={12} color={successIconColor} /> : <Loader size="xs" type="dots" />}<Text size="xs" c="dimmed">{name}</Text></Group>
                       <Text size="xs" c="dimmed">{comp.ready ? 'Ready' : `${comp.readyReplicas ?? 0}/${comp.totalReplicas ?? 1}`}</Text>
                     </Group>
                   ))}
@@ -1195,9 +1187,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
 
       <SimpleGrid cols={1} w="100%" maw={480} mt="md">
         <Anchor component={Link} href="/helm/gen3/deploy" style={{ textDecoration: 'none' }}>
-          <Paper withBorder p="lg" radius="lg" style={{ cursor: 'pointer', transition: 'border-color 200ms' }}
-            className="hover:border-blue-500"
-          >
+          <Paper withBorder p="lg" radius="lg" style={{ cursor: 'pointer', transition: 'border-color 200ms' }}>
             <Group justify="space-between">
               <div>
                 <Text size="sm" fw={600}>Deploy a new Gen3 instance</Text>
@@ -1248,11 +1238,11 @@ export function OnboardingStepper({ accessToken, onComplete }) {
   const progressPct = Math.round(((active) / 7) * 100);
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', paddingTop: 32, paddingBottom: 48 }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', paddingTop: 24, paddingBottom: 48 }}>
       <Container size="lg">
 
         {/* Header bar */}
-        <Paper p="xs" radius="lg" mb="lg" withBorder bg="gray.0">
+        <Paper p="sm" radius="md" mb="md" withBorder bg={neutralSurface}>
           <Group justify="space-between">
             <Group gap="md">
               <ThemeIcon size="sm" radius="md" variant="filled" gradient={{ from: 'indigo', to: 'cyan' }}>
@@ -1267,14 +1257,14 @@ export function OnboardingStepper({ accessToken, onComplete }) {
           </Group>
         </Paper>
 
-        <Paper shadow="xl" radius="xl" p={0} overflow="hidden">
+        <Paper shadow={isDark ? 'sm' : 'md'} radius="md" p={0} overflow="hidden" withBorder bg={neutralSurface}>
           <div style={{ display: 'flex', minHeight: 520 }}>
 
             {/* Sidebar */}
             <div style={{
               width: 260,
-              background: 'linear-gradient(180deg, #f8f9fc 0%, #f1f3f9 100%)',
-              borderRight: '1px solid #e9ecf2',
+              background: isDark ? 'var(--mantine-color-dark-7)' : 'var(--mantine-color-gray-0)',
+              borderRight: `1px solid ${isDark ? 'var(--mantine-color-dark-5)' : 'var(--mantine-color-gray-2)'}`,
               padding: '24px 16px',
               display: 'flex',
               flexDirection: 'column',
@@ -1284,7 +1274,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
                 styles={{
                   stepBody: { paddingLeft: 12 },
                   stepLabel: { fontWeight: 600, fontSize: 13, lineHeight: 1.2 },
-                  stepDescription: { fontSize: 11, color: '#868e96', marginTop: 2 },
+                  stepDescription: { fontSize: 11, color: 'var(--mantine-color-dimmed)', marginTop: 2 },
                   stepIcon: { borderWidth: 2 },
                   completedIcon: { background: 'transparent' },
                 }}
@@ -1311,7 +1301,7 @@ export function OnboardingStepper({ accessToken, onComplete }) {
             </div>
 
             {/* Main content area */}
-            <div style={{ flex: 1, padding: '32px 40px', overflowY: 'auto', background: '#fff' }}>
+            <div style={{ flex: 1, padding: '32px 40px', overflowY: 'auto', background: 'var(--mantine-color-body)' }}>
               {contentForStep(active)}
 
               {/* Bottom nav inside content */}
