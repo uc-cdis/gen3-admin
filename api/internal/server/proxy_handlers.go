@@ -34,20 +34,59 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	responseChan := make(chan *pb.ProxyResponse, 10000)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 
+	log.Info().
+		Str("stream_id", streamID).
+		Str("agent", agentID).
+		Str("method", c.Request.Method).
+		Str("path", path).
+		Msg("[proxy-handler] Starting k8s proxy request")
+
 	agent.mutex.Lock()
 	agent.requestChannels[streamID] = responseChan
 	agent.cancelFuncs[streamID] = cancel
 	agent.contexts[streamID] = ctx
 	agent.mutex.Unlock()
 
+	// sendCancel sends a CANCEL message to the agent so it stops streaming
+	sendCancel := func(reason string) {
+		log.Warn().
+			Str("stream_id", streamID).
+			Str("reason", reason).
+			Msg("[proxy-handler] Sending CANCEL to agent")
+		_ = agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_Proxy{
+				Proxy: &pb.ProxyRequest{
+					StreamId:  streamID,
+					Method:    "CANCEL",
+					Path:      "",
+					ProxyType: "k8s",
+				},
+			},
+		})
+	}
+
 	defer func() {
+		// Capture context error BEFORE cancelling (cancel() sets ctx.Err())
+		ctxErr := ctx.Err()
 		cancel()
 		wg.Wait()
+
+		// Only send CANCEL if the client actually disconnected/timed out (not normal completion)
+		if ctxErr != nil {
+			sendCancel("handler exiting with cancelled context")
+		}
+
 		agent.mutex.Lock()
 		delete(agent.requestChannels, streamID)
 		delete(agent.cancelFuncs, streamID)
+		delete(agent.contexts, streamID)
 		agent.mutex.Unlock()
 		close(responseChan)
+
+		log.Info().
+			Str("stream_id", streamID).
+			Str("agent", agentID).
+			Msg("[proxy-handler] Cleaned up proxy request")
 	}()
 
 	proxyReq := &pb.ProxyRequest{
@@ -78,15 +117,29 @@ func HandleK8sProxyRequest(c *gin.Context) {
 		},
 	})
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[proxy-handler] Failed to send request to agent")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
 		return
 	}
 
+	log.Info().
+		Str("stream_id", streamID).
+		Str("agent", agentID).
+		Msg("[proxy-handler] Sent request to agent, waiting for response")
+
 	var responseStarted bool
+	chunkCount := 0
 	for {
 		select {
 		case resp, ok := <-responseChan:
 			if !ok {
+				log.Warn().
+					Str("stream_id", streamID).
+					Bool("response_started", responseStarted).
+					Msg("[proxy-handler] Agent connection closed unexpectedly")
 				if !responseStarted {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
 				}
@@ -100,21 +153,38 @@ func HandleK8sProxyRequest(c *gin.Context) {
 						c.Header(k, v)
 					}
 					c.Status(int(resp.StatusCode))
+					log.Info().
+						Str("stream_id", streamID).
+						Int32("status_code", resp.StatusCode).
+						Msg("[proxy-handler] Received HEADERS from agent")
 				}
 			case pb.ProxyResponseType_DATA:
 				if !responseStarted {
 					responseStarted = true
 				}
+				chunkCount++
 				_, err := c.Writer.Write(resp.Body)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to write response body chunk")
+					log.Error().
+						Err(err).
+						Str("stream_id", streamID).
+						Int("chunk", chunkCount).
+						Msg("[proxy-handler] Failed to write response body chunk")
 					return
 				}
 			case pb.ProxyResponseType_END:
+				log.Info().
+					Str("stream_id", streamID).
+					Int("total_chunks", chunkCount).
+					Msg("[proxy-handler] Received END, request complete")
 				c.Writer.Flush()
 				c.Abort()
 				return
 			case pb.ProxyResponseType_ERROR:
+				log.Warn().
+					Str("stream_id", streamID).
+					Str("error", string(resp.Body)).
+					Msg("[proxy-handler] Received ERROR from agent")
 				if !responseStarted {
 					responseStarted = true
 				}
@@ -125,6 +195,12 @@ func HandleK8sProxyRequest(c *gin.Context) {
 			}
 
 		case <-ctx.Done():
+			log.Warn().
+				Str("stream_id", streamID).
+				Bool("response_started", responseStarted).
+				Int("chunks_received", chunkCount).
+				Err(ctx.Err()).
+				Msg("[proxy-handler] Context cancelled, exiting handler")
 			if responseStarted {
 				c.Writer.Flush()
 			}
@@ -158,20 +234,56 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 	responseChan := make(chan *pb.ProxyResponse, 10000)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 
+	log.Info().
+		Str("stream_id", streamID).
+		Str("agent", agentID).
+		Str("method", c.Request.Method).
+		Str("url", targetURL).
+		Msg("[proxy-handler] Starting HTTP proxy request")
+
 	agent.mutex.Lock()
 	agent.requestChannels[streamID] = responseChan
 	agent.cancelFuncs[streamID] = cancel
 	agent.contexts[streamID] = ctx
 	agent.mutex.Unlock()
 
+	sendCancel := func(reason string) {
+		log.Warn().
+			Str("stream_id", streamID).
+			Str("reason", reason).
+			Msg("[proxy-handler] Sending CANCEL to agent")
+		_ = agent.stream.Send(&pb.ServerMessage{
+			Message: &pb.ServerMessage_Proxy{
+				Proxy: &pb.ProxyRequest{
+					StreamId:  streamID,
+					Method:    "CANCEL",
+					Path:      "",
+					ProxyType: "http",
+				},
+			},
+		})
+	}
+
 	defer func() {
+		ctxErr := ctx.Err()
 		cancel()
 		wg.Wait()
+
+		if ctxErr != nil {
+			sendCancel("handler exiting with cancelled context")
+		}
+
 		agent.mutex.Lock()
 		delete(agent.requestChannels, streamID)
 		delete(agent.cancelFuncs, streamID)
+		delete(agent.contexts, streamID)
 		agent.mutex.Unlock()
 		close(responseChan)
+
+		log.Info().
+			Str("stream_id", streamID).
+			Str("agent", agentID).
+			Msg("[proxy-handler] Cleaned up HTTP proxy request")
 	}()
 
 	proxyReq := &pb.ProxyRequest{
@@ -202,15 +314,29 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 		},
 	})
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("stream_id", streamID).
+			Msg("[proxy-handler] Failed to send request to agent")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to agent"})
 		return
 	}
 
+	log.Info().
+		Str("stream_id", streamID).
+		Str("agent", agentID).
+		Msg("[proxy-handler] Sent HTTP proxy request to agent, waiting for response")
+
 	var responseStarted bool
+	chunkCount := 0
 	for {
 		select {
 		case resp, ok := <-responseChan:
 			if !ok {
+				log.Warn().
+					Str("stream_id", streamID).
+					Bool("response_started", responseStarted).
+					Msg("[proxy-handler] Agent connection closed unexpectedly")
 				if !responseStarted {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent connection closed unexpectedly"})
 				}
@@ -224,21 +350,38 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 						c.Header(k, v)
 					}
 					c.Status(int(resp.StatusCode))
+					log.Info().
+						Str("stream_id", streamID).
+						Int32("status_code", resp.StatusCode).
+						Msg("[proxy-handler] Received HEADERS from agent")
 				}
 			case pb.ProxyResponseType_DATA:
 				if !responseStarted {
 					responseStarted = true
 				}
+				chunkCount++
 				_, err := c.Writer.Write(resp.Body)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to write response body chunk")
+					log.Error().
+						Err(err).
+						Str("stream_id", streamID).
+						Int("chunk", chunkCount).
+						Msg("[proxy-handler] Failed to write response body chunk")
 					return
 				}
 			case pb.ProxyResponseType_END:
+				log.Info().
+					Str("stream_id", streamID).
+					Int("total_chunks", chunkCount).
+					Msg("[proxy-handler] Received END, request complete")
 				c.Writer.Flush()
 				c.Abort()
 				return
 			case pb.ProxyResponseType_ERROR:
+				log.Warn().
+					Str("stream_id", streamID).
+					Str("error", string(resp.Body)).
+					Msg("[proxy-handler] Received ERROR from agent")
 				if !responseStarted {
 					responseStarted = true
 				}
@@ -249,6 +392,12 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 			}
 
 		case <-ctx.Done():
+			log.Warn().
+				Str("stream_id", streamID).
+				Bool("response_started", responseStarted).
+				Int("chunks_received", chunkCount).
+				Err(ctx.Err()).
+				Msg("[proxy-handler] Context cancelled, exiting handler")
 			if responseStarted {
 				c.Writer.Flush()
 			}

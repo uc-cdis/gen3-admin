@@ -183,6 +183,7 @@ spec:
       containers:
         - name: agent
           image: quay.io/cdis/csoc-agent:feat_bootstrap-onboarding-impl
+          imagePullPolicy: Always
           command: ["agent"]
           args: ["--name", "%s"]
           {{- if and .EKS (eq .AssumeMethod "user") }}

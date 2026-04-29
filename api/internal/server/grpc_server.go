@@ -29,6 +29,7 @@ type AgentServer struct {
 	pb.UnimplementedTunnelServiceServer
 	AgentConnections      map[string]pb.TunnelService_ConnectServer
 	proxyResponseChannels map[string](chan *pb.AgentMessage)
+	deadStreamIDs         map[string]time.Time // track already-reported dead streams to suppress log spam
 	mu                    sync.Mutex
 }
 
@@ -53,7 +54,9 @@ func SetupGRCPServer() {
 		grpc.Creds(*creds),
 	)
 
-	pb.RegisterTunnelServiceServer(s, &AgentServer{})
+	pb.RegisterTunnelServiceServer(s, &AgentServer{
+		deadStreamIDs: make(map[string]time.Time),
+	})
 
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", 50051))
 	if err != nil {
@@ -293,9 +296,19 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 					log.Trace().Msgf("Request cancelled for stream ID: %s", proxyResp.StreamId)
 					delete(agent.requestChannels, proxyResp.StreamId)
 					delete(agent.cancelFuncs, proxyResp.StreamId)
+						delete(agent.contexts, proxyResp.StreamId)
 				}
 			} else {
-				log.Warn().Msgf("Received response for unknown stream ID: %s", proxyResp.StreamId)
+				// Suppress repeated warnings for the same dead stream ID
+					s.mu.Lock()
+					if _, alreadyWarned := s.deadStreamIDs[proxyResp.StreamId]; !alreadyWarned {
+						log.Warn().
+							Str("stream_id", proxyResp.StreamId).
+							Str("response_type", proxyResp.Status.String()).
+							Msg("[grpc-server] Received response for unknown stream ID - handler already cleaned up")
+						s.deadStreamIDs[proxyResp.StreamId] = time.Now()
+					}
+					s.mu.Unlock()
 			}
 			agent.mutex.Unlock()
 		case *pb.AgentMessage_TerminalStream:
