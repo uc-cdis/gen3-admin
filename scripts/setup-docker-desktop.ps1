@@ -94,10 +94,8 @@ $Script:ValuesFile        = '.\helm\csoc\values-test.yaml'
 $Script:Hostname          = 'csoc.local'
 $Script:Gen3Hostname      = 'gen3.local'
 $Script:KeycloakHostname  = 'keycloak.local'
-$Script:KeycloakOpDir     = '.\helm\keycloak-operator'
 $Script:KeycloakCRDFile   = '.\helm\keycloak-bootstrap-operator\keycloak.yaml'
 $Script:CnpgVersion       = '1.29.0'
-$Script:ScriptDir         = $PSScriptRoot
 $Script:ProjectRoot       = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Script:InstallKeycloak   = $Keycloak.IsPresent
 # Docker Desktop's Kubernetes binds the ingress load-balancer to localhost.
@@ -202,6 +200,9 @@ function Install-IngressNginx {
         if ($ep -match '\d+\.\d+\.\d+\.\d+') { break }
         Start-Sleep -Seconds 3
         $waited += 3
+    }
+    if ($waited -ge $maxWait) {
+        throw "Timed out after $maxWait seconds waiting for ingress-nginx admission webhook endpoint to become ready. Aborting before Helm runs to avoid less actionable downstream failures."
     }
 
     Write-Ok "ingress-nginx is ready"
@@ -465,7 +466,7 @@ function Wait-ForPods {
     Write-Host ""
 
     Write-Log "Services:"
-    kubectl get svc $Release -n $Namespace
+    kubectl get svc -l "app.kubernetes.io/instance=$Release" -n $Namespace
 }
 
 # ── Teardown ──────────────────────────────────────────────────────────────────
@@ -473,6 +474,7 @@ function Remove-Setup {
     Push-Location $Script:ProjectRoot
     try {
         Write-Log "Tearing down..."
+        Set-KubeContext
 
         $releaseExists = helm status $Release -n $Namespace --kube-context $KubeContext 2>$null
         if ($releaseExists) {
@@ -491,7 +493,7 @@ function Remove-Setup {
                 $ans = Read-Host "Remove Keycloak + CloudNativePG resources? [y/N]"
                 if ($ans -match '^[Yy]$') {
                     Write-Log "Removing Keycloak resources..."
-                    kubectl delete -f $Script:KeycloakCRDFile --ignore-not-found=true 2>$null
+                    kubectl delete keycloak keycloak -n $Namespace --ignore-not-found=true 2>$null
                     kubectl delete cluster keycloak-db -n $Namespace --ignore-not-found=true 2>$null
                     Write-Ok "Keycloak + PostgreSQL removed from namespace '$Namespace'"
                 }
@@ -551,7 +553,7 @@ function Show-Status {
             Write-Host "  Cluster:   $KubeContext  NOT REACHABLE"
         }
 
-        $ingressExists = kubectl get deployment ingress-nginx-controller -n ingress-nginx 2>$null
+        $ingressExists = kubectl --context $KubeContext get deployment ingress-nginx-controller -n ingress-nginx 2>$null
         if ($ingressExists -match 'ingress-nginx-controller') {
             Write-Host "  Ingress:   ingress-nginx installed"
         } else {
@@ -565,13 +567,13 @@ function Show-Status {
         Write-Host "  Gen3:      http://$($Script:Gen3Hostname)  (-> $($Script:ClusterIP))"
         Write-Host ""
 
-        $svcOut = kubectl get svc $Release -n $Namespace 2>$null
+        $svcOut = kubectl --context $KubeContext get svc -l "app.kubernetes.io/instance=$Release" -n $Namespace 2>$null
         if ($svcOut) {
             Write-Host "  Services:"
             $svcOut | ForEach-Object { Write-Host "    $_" }
             Write-Host ""
             Write-Host "  Pods:"
-            $pods = kubectl get pods -l "app.kubernetes.io/instance=$Release" -n $Namespace 2>$null
+            $pods = kubectl --context $KubeContext get pods -l "app.kubernetes.io/instance=$Release" -n $Namespace 2>$null
             $pods | ForEach-Object { Write-Host "    $_" }
         } else {
             Write-Host "  Helm release NOT installed yet (run without -Status to deploy)"
@@ -585,11 +587,11 @@ function Show-Status {
         Write-Host "    Gen3:      http://$($Script:Gen3Hostname)"
         Write-Host ""
 
-        $kcExists = kubectl get keycloak keycloak -n $Namespace 2>$null
+        $kcExists = kubectl --context $KubeContext get keycloak keycloak -n $Namespace 2>$null
         if ($kcExists) {
             Write-Host "  Keycloak:   http://$($Script:KeycloakHostname)  (admin / admin)"
             Write-Host "  Keycloak pods:"
-            $kcPods = kubectl get pods -n $Namespace 2>$null | Where-Object { $_ -match 'keycloak|keycloak-db' }
+            $kcPods = kubectl --context $KubeContext get pods -n $Namespace 2>$null | Where-Object { $_ -match 'keycloak|keycloak-db' }
             $kcPods | ForEach-Object { Write-Host "    $_" }
             Write-Host ""
             Write-Host "  Realm:      csoc-realm"

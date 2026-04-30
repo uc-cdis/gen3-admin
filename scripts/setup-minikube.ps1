@@ -84,10 +84,8 @@ $Script:ValuesFile        = '.\helm\csoc\values-test.yaml'
 $Script:Hostname          = 'csoc.local'
 $Script:Gen3Hostname      = 'gen3.local'
 $Script:KeycloakHostname  = 'keycloak.local'
-$Script:KeycloakOpDir     = '.\helm\keycloak-operator'
 $Script:KeycloakCRDFile   = '.\helm\keycloak-bootstrap-operator\keycloak.yaml'
 $Script:CnpgVersion       = '1.29.0'
-$Script:ScriptDir         = $PSScriptRoot
 $Script:ProjectRoot       = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Script:InstallKeycloak   = $Keycloak.IsPresent
 
@@ -144,6 +142,7 @@ function Start-MinikubeCluster {
     $statusOut = minikube status -p $Script:MinikubeProfile 2>$null
     if ($statusOut -match 'Running') {
         Write-Warn "Minikube already running, skipping start"
+        minikube -p $Script:MinikubeProfile update-context 2>$null
         return
     }
 
@@ -175,6 +174,9 @@ function Start-MinikubeCluster {
         Start-Sleep -Seconds 5
         $waited += 5
     }
+    if ($waited -ge $maxWait) {
+        throw "Timed out after $maxWait seconds waiting for ingress-nginx controller pod to reach Running state."
+    }
 
     # Wait for the ingress admission webhook endpoint to be ready
     Write-Log "Waiting for nginx ingress admission webhook..."
@@ -184,6 +186,9 @@ function Start-MinikubeCluster {
         if ($ep -match '\d+\.\d+\.\d+\.\d+') { break }
         Start-Sleep -Seconds 3
         $waited += 3
+    }
+    if ($waited -ge $maxWait) {
+        throw "Timed out after $maxWait seconds waiting for ingress-nginx admission webhook endpoint to become ready. Aborting before Helm runs to avoid less actionable downstream failures."
     }
 
     Write-Ok "Minikube is ready"
@@ -448,7 +453,7 @@ function Wait-ForPods {
     Write-Host ""
 
     Write-Log "Services:"
-    kubectl get svc $Release -n $Namespace
+    kubectl get svc -l "app.kubernetes.io/instance=$Release" -n $Namespace
 }
 
 # ── Teardown ──────────────────────────────────────────────────────────────────
@@ -456,6 +461,7 @@ function Remove-Setup {
     Push-Location $Script:ProjectRoot
     try {
         Write-Log "Tearing down..."
+        minikube -p $Script:MinikubeProfile update-context 2>$null
 
         $releaseExists = helm status $Release -n $Namespace 2>$null
         if ($releaseExists) {
@@ -517,6 +523,7 @@ function Remove-Setup {
 function Show-Status {
     Push-Location $Script:ProjectRoot
     try {
+        minikube -p $Script:MinikubeProfile update-context 2>$null
         Write-Host ""
         Write-Host "============================================"
         Write-Host "  CSOC Portal — Local Minikube Environment"
@@ -538,7 +545,7 @@ function Show-Status {
         Write-Host "  Gen3:      http://$($Script:Gen3Hostname)"
         Write-Host ""
 
-        $svcOut = kubectl get svc $Release -n $Namespace 2>$null
+        $svcOut = kubectl get svc -l "app.kubernetes.io/instance=$Release" -n $Namespace 2>$null
         if ($svcOut) {
             Write-Host "  Services:"
             $svcOut | ForEach-Object { Write-Host "    $_" }
