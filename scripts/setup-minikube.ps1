@@ -482,7 +482,7 @@ function Remove-Setup {
                 $ans = Read-Host "Remove Keycloak + CloudNativePG resources? [y/N]"
                 if ($ans -match '^[Yy]$') {
                     Write-Log "Removing Keycloak resources..."
-                    kubectl delete -f $Script:KeycloakCRDFile --ignore-not-found=true 2>$null
+                    kubectl delete keycloak keycloak -n $Namespace --ignore-not-found=true 2>$null
                     kubectl delete cluster keycloak-db -n $Namespace --ignore-not-found=true 2>$null
                     Write-Ok "Keycloak + PostgreSQL removed from namespace '$Namespace'"
                 }
