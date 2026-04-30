@@ -323,6 +323,9 @@ function Start-Keycloak {
     Write-Log "Waiting for Keycloak server pod..."
     Invoke-Native kubectl @('wait', '--for=condition=ready', 'pod', '-l', 'app=keycloak', '-n', $Namespace, '--timeout=300s')
 
+    Write-Log "Waiting for Keycloak realm import to complete..."
+    Invoke-Native kubectl @('wait', '--for=condition=Done', 'keycloakrealmimport/csoc-realm', '-n', $Namespace, '--timeout=300s')
+
     Write-Ok "Keycloak is ready"
     Set-KeycloakHosts
 }
@@ -483,6 +486,11 @@ function Remove-Setup {
 
         # Optionally remove Keycloak + CNPG
         if ($Script:InstallKeycloak) {
+            # Always remove script-managed config resources (no owner references, no user data)
+            kubectl delete secret keycloak-admin-credentials -n $Namespace --ignore-not-found=true 2>$null
+            kubectl delete ingress keycloak-ingress -n $Namespace --ignore-not-found=true 2>$null
+            kubectl delete svc keycloak-http -n $Namespace --ignore-not-found=true 2>$null
+
             $kcExists = kubectl get keycloak keycloak -n $Namespace 2>$null
             if ($kcExists) {
                 $ans = Read-Host "Remove Keycloak + CloudNativePG resources? [y/N]"
@@ -505,8 +513,13 @@ function Remove-Setup {
             $ans = Read-Host "Remove Keycloak operator too? [y/N]"
             if ($ans -match '^[Yy]$') {
                 Write-Log "Removing Keycloak operator..."
-                kubectl delete deployment/keycloak-operator -n $Namespace --ignore-not-found=true 2>$null
-                kubectl delete crds keycloaks.k8s.keycloak.org keycloakrealmimports.k8s.keycloak.org --ignore-not-found=true 2>$null
+                $kcVersion = '26.6.1'
+                kubectl delete -n $Namespace -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/$kcVersion/kubernetes/kubernetes.yml" `
+                    --ignore-not-found=true 2>$null
+                kubectl delete -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/$kcVersion/kubernetes/keycloaks.k8s.keycloak.org-v1.yml" `
+                    --ignore-not-found=true 2>$null
+                kubectl delete -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/$kcVersion/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml" `
+                    --ignore-not-found=true 2>$null
                 Write-Ok "Keycloak operator removed"
             }
         }
