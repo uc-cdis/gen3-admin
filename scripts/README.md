@@ -87,3 +87,5 @@ Keycloak credentials: `admin / admin` (superadmin), `devuser / dev` (csoc-role).
 | `deploy-csoc.sh` | Deploy CSOC to an *already running* cluster |
 | `workshop-vm.sh` | Provision a workshop VM environment |
 | `test-e2e.sh` | End-to-end test runner |
+| `setup-docker-desktop.ps1` | Windows PowerShell script for Docker Desktop users |
+| `setup-minikube.ps1` | Windows PowerShell script for Minikube on Windows |
