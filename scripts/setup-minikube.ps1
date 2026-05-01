@@ -139,27 +139,30 @@ function Test-Prerequisites {
 
 # ── Minikube start ────────────────────────────────────────────────────────────
 function Start-MinikubeCluster {
-    $statusOut = minikube status -p $Script:MinikubeProfile 2>$null
-    if ($statusOut -match 'Running') {
-        Write-Warn "Minikube already running, skipping start"
-        minikube -p $Script:MinikubeProfile update-context 2>$null
-        return
+    $statusOut = minikube status -p $Script:MinikubeProfile --format='{{.Host}}' 2>$null
+    if ($statusOut -ne 'Running') {
+        Write-Log "Starting Minikube (profile: $($Script:MinikubeProfile))..."
+        # Note: --driver=docker requires Docker Desktop running on Windows.
+        # Alternatively use --driver=hyperv if Hyper-V is preferred.
+        Invoke-Native minikube @(
+            'start',
+            '-p', $Script:MinikubeProfile,
+            '--driver=docker',
+            '--cpus=4',
+            '--memory=8192',
+            '--disk-size=40g',
+            '--kubernetes-version=v1.35',
+            '--container-runtime=docker'
+        )
+    }
+    else {
+        Write-Log "Minikube already running, skipping start"
     }
 
-    Write-Log "Starting Minikube (profile: $($Script:MinikubeProfile))..."
-    # Note: --driver=docker requires Docker Desktop running on Windows.
-    # Alternatively use --driver=hyperv if Hyper-V is preferred.
-    Invoke-Native minikube @(
-        'start',
-        '-p', $Script:MinikubeProfile,
-        '--driver=docker',
-        '--cpus=4',
-        '--memory=8192',
-        '--disk-size=40g',
-        '--kubernetes-version=v1.35',
-        '--container-runtime=docker'
-    )
-
+    # Switch context
+    Write-Log "Switching context..."
+    minikube -p $Script:MinikubeProfile update-context 2>$null
+    
     # Enable required addons
     Write-Log "Enabling addons..."
     minikube addons enable metrics-server -p $Script:MinikubeProfile 2>$null
@@ -233,13 +236,15 @@ function Remove-HostsEntry {
 }
 
 function Set-CSOCHosts {
-    $ip = (minikube ip -p $Script:MinikubeProfile).Trim()
+    # For simplicity, point both the main hostname and the Gen3 hostname to localhost since Minikube's ingress will be accessible via localhost (with minikube tunnel running). 
+    $ip = "127.0.0.1"
     Set-HostsEntry -HostName $Script:Hostname     -IP $ip
     Set-HostsEntry -HostName $Script:Gen3Hostname -IP $ip
 }
 
 function Set-KeycloakHosts {
-    $ip = (minikube ip -p $Script:MinikubeProfile).Trim()
+    # For simplicity, point the Keycloak hostname to localhost since the keycloak-http service will be accessible via localhost (with minikube tunnel running).
+    $ip = "127.0.0.1"
     Set-HostsEntry -HostName $Script:KeycloakHostname -IP $ip
 }
 
@@ -664,7 +669,7 @@ function Main {
 
         if (-not $ClusterOnly) {
             Write-Host ""
-            Write-Ok "Setup complete! Open http://$($Script:Hostname) in your browser"
+            Write-Ok "Setup complete! Run minikube tunnel in a separate terminal and then open http://$($Script:Hostname) in your browser"
         } else {
             Write-Host ""
             Write-Ok "Minikube ready. Deploy with:  .\setup-minikube.ps1 -Namespace $Namespace"
