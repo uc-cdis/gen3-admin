@@ -163,7 +163,12 @@ function Test-Prerequisites {
 
 # ── Switch kubectl context ────────────────────────────────────────────────────
 function Set-KubeContext {
-    $current = (kubectl config current-context 2>$null).Trim()
+    $current = kubectl config current-context 2>$null | Select-Object -First 1
+    if ($null -eq $current) {
+        $current = ''
+    } else {
+        $current = $current.ToString().Trim()
+    }
     if ($current -eq $KubeContext) {
         Write-Ok "kubectl context is already '$KubeContext'"
         return
