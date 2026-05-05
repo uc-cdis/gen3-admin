@@ -131,6 +131,8 @@ export default function EnvironmentDashboardComp({
   const [rawPods, setRawPods] = useState(null);
   const [rawPodMetrics, setRawPodMetrics] = useState(null);
   const [podData, setPodData] = useState([]);
+  const [workspacePods, setWorkspacePods] = useState([]);
+  const [workspacePodsLoading, setWorkspacePodsLoading] = useState(false);
 
   const requestIdRef = useRef(0);
 
@@ -145,13 +147,14 @@ export default function EnvironmentDashboardComp({
   // Helper functions
   const calculateAge = (creationTimestamp) => {
     if (!creationTimestamp) return "Unknown";
-    const created = new Date(creationTimestamp);
-    const now = new Date();
-    const diff = now - created;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    if (days > 0) return `${days}d ${hours}h`;
-    return `${hours}h`;
+    const diffMin = Math.floor((Date.now() - new Date(creationTimestamp).getTime()) / 60000);
+    if (diffMin < 1) return "Just now";
+    const d = Math.floor(diffMin / 1440);
+    const h = Math.floor((diffMin % 1440) / 60);
+    const m = diffMin % 60;
+    if (d > 0) return `${d}d ${h}h${m > 0 ? ` ${m}m` : ""}`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
   };
 
   const parseCpu = (cpuString) => {
@@ -496,6 +499,19 @@ export default function EnvironmentDashboardComp({
       podMetrics: callGoApi(`/k8s/${env}/proxy/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`, "GET", null, null, accessToken),
     };
 
+    // Also fetch workspace pods from jupyter namespace (best-effort)
+    const fetchWorkspacePods = async () => {
+      try {
+        const wsPods = await callGoApi(`/k8s/${env}/proxy/api/v1/namespaces/jupyter-pods-gen3/pods`, "GET", null, null, accessToken);
+        safeSet(setWorkspacePods)(wsPods?.items || []);
+      } catch (err) {
+        // Workspace namespace may not exist — don't treat as error
+        safeSet(setWorkspacePods)([]);
+      }
+      setWorkspacePodsLoading(false);
+    };
+    fetchWorkspacePods();
+
     const results = await Promise.allSettled(Object.values(requests));
     const keys = Object.keys(requests);
 
@@ -764,6 +780,14 @@ export default function EnvironmentDashboardComp({
           </Text>
         </Stack>
         <Group>
+          {workspacePods.length > 0 && (
+            <Anchor href="/workspaces" size="sm" target="_blank">
+              <Group gap={4}>
+                <Text size="sm">View Workspaces</Text>
+                <IconExternalLink size={14} />
+              </Group>
+            </Anchor>
+          )}
           <Button onClick={fetchDashboardData} loading={isLoading}>
             <IconRefresh />
           </Button>
@@ -1062,6 +1086,59 @@ export default function EnvironmentDashboardComp({
                       <Table.Td>
                         <Text size="sm" c="dimmed">{pod.node}</Text>
                       </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Card>
+      )}
+
+      {workspacePods.length > 0 && (
+        <Card withBorder radius="md" p="lg" mt="md">
+          <Group justify="space-between" mb="xs">
+            <Stack gap={2}>
+              <Title order={3}>Workspace Pods</Title>
+              <Text size="sm" c="dimmed">
+                Pods from the jupyter-pods-gen3 namespace.
+              </Text>
+            </Stack>
+            <Badge variant="light" color="violet">{workspacePods.length}</Badge>
+          </Group>
+
+          <ScrollArea h={Math.min(360, 76 + workspacePods.length * 54)}>
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Age</Table.Th>
+                  <Table.Th>Restarts</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {workspacePods.map((pod) => {
+                  const phase = pod?.status?.phase || "Unknown";
+                  const containerStatuses = pod?.status?.containerStatuses || [];
+                  const restarts = containerStatuses.reduce(
+                    (sum, cs) => sum + (cs.restartCount || 0), 0
+                  );
+
+                  return (
+                    <Table.Tr key={pod.metadata?.name}>
+                      <Table.Td>
+                        <Anchor href={`/clusters/${env}/workloads/pods/${pod.metadata?.namespace}/${pod.metadata?.name}`}>
+                          <Text fw={500}>{pod.metadata?.name}</Text>
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge variant="light" color={phase === "Running" ? "green" : "orange"}>
+                          {phase}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>{calculateAge(pod.metadata?.creationTimestamp)}</Table.Td>
+                      <Table.Td>{restarts}</Table.Td>
                     </Table.Tr>
                   );
                 })}

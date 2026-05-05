@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Group, Select, Button, Checkbox, Box, TextInput, ActionIcon, Tooltip, Text, ScrollArea, Stack, Badge } from "@mantine/core";
+import { Group, Select, Button, Checkbox, Box, TextInput, ActionIcon, Tooltip, Text, ScrollArea, Stack, Badge, Switch, Loader } from "@mantine/core";
 import callK8sApi from "@/lib/k8s";
 import stripAnsi from 'strip-ansi';
 import { useViewportSize } from '@mantine/hooks';
 import { useSession } from "next-auth/react";
-import { IconSearch, IconArrowsDiagonal, IconCopy, IconPlayerPlay, IconPlayerPause } from '@tabler/icons-react';
+import { IconSearch, IconArrowsDiagonal, IconCopy, IconPlayerPlay, IconPlayerPause, IconRefresh } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
 const LOG_LEVEL_PATTERNS = [
@@ -88,8 +88,10 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
     const [activeContainer, setActiveContainer] = useState(null);
     const [search, setSearch] = useState("");
     const [follow, setFollow] = useState(true);
+    const [autoRefresh, setAutoRefresh] = useState(false);
     const scrollRef = useRef(null);
     const followRef = useRef(true);
+    const autoRefreshRef = useRef(null);
 
     const { height } = useViewportSize();
     const { data: sessionData } = useSession();
@@ -100,26 +102,50 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
 
     const editorHeight = Math.max(height - 280, 300);
 
-    // Fetch logs whenever container resolves
-    useEffect(() => {
+    const fetchLogs = useCallback(async (tailLines) => {
         if (!namespace || !pod || !cluster || !container) return;
         setLoading(true);
-        const endpoint = `/api/v1/namespaces/${namespace}/pods/${pod}/log?container=${encodeURIComponent(container)}`;
-        callK8sApi(endpoint, "GET", null, null, cluster, accessToken, "text")
-            .then((data) => {
-                if (data) {
-                    const lines = stripAnsi(data).split("\n").filter(l => l && l.trim().length > 0);
-                    setLogs(lines);
-                } else {
-                    setLogs([]);
-                }
-            })
-            .catch((err) => {
-                console.error('Failed to fetch logs:', err);
+        let endpoint = `/api/v1/namespaces/${namespace}/pods/${pod}/log?container=${encodeURIComponent(container)}`;
+        if (tailLines) {
+            endpoint += `&tailLines=${tailLines}`;
+        }
+        try {
+            const data = await callK8sApi(endpoint, "GET", null, null, cluster, accessToken, "text");
+            if (data) {
+                const lines = stripAnsi(data).split("\n").filter(l => l && l.trim().length > 0);
+                setLogs(lines);
+            } else {
                 setLogs([]);
-            })
-            .finally(() => setLoading(false));
+            }
+        } catch (err) {
+            console.error('Failed to fetch logs:', err);
+            setLogs([]);
+        } finally {
+            setLoading(false);
+        }
     }, [namespace, pod, container, cluster, accessToken]);
+
+    // Fetch logs whenever container resolves
+    useEffect(() => {
+        fetchLogs();
+    }, [fetchLogs]);
+
+    // Auto-refresh polling
+    useEffect(() => {
+        if (autoRefresh) {
+            autoRefreshRef.current = setInterval(() => {
+                fetchLogs(100);
+            }, 5000);
+        } else {
+            if (autoRefreshRef.current) {
+                clearInterval(autoRefreshRef.current);
+                autoRefreshRef.current = null;
+            }
+        }
+        return () => {
+            if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+        };
+    }, [autoRefresh, fetchLogs]);
 
     // Auto-scroll when following
     useEffect(() => {
@@ -198,7 +224,18 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
                         <IconCopy size={14} />
                     </ActionIcon>
                 </Tooltip>
-                {loading && <Text size="xs" c="dimmed">Loading...</Text>}
+                <Tooltip label="Refresh logs">
+                    <ActionIcon variant="subtle" onClick={() => fetchLogs()} loading={loading} size="sm">
+                        <IconRefresh size={14} />
+                    </ActionIcon>
+                </Tooltip>
+                <Switch
+                    size="xs"
+                    label="Auto-refresh"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.currentTarget.checked)}
+                />
+                {loading && <Loader size="xs" />}
             </Group>
 
             {/* Log output */}

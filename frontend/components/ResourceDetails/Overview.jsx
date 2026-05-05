@@ -376,6 +376,37 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
                             </Accordion.Item>
                         </Accordion>
                     )}
+
+                    {container.volumeMounts && container.volumeMounts.length > 0 && (
+                        <Accordion variant="separated" mt="xs">
+                            <Accordion.Item value="volumes">
+                                <Accordion.Control>
+                                    <Group gap="xs">
+                                        <IconFolderPlus size={14} />
+                                        <Text size="sm" fw={500}>Volume Mounts ({container.volumeMounts.length})</Text>
+                                    </Group>
+                                </Accordion.Control>
+                                <Accordion.Panel>
+                                    <Table striped highlightOnHover size="xs">
+                                        <thead><tr><th>Volume</th><th>Mount Path</th><th>Read Only</th></tr></thead>
+                                        <tbody>
+                                            {container.volumeMounts.map((vm, i) => (
+                                                <tr key={i}>
+                                                    <td className="font-mono" style={{ fontSize: 12 }}>{vm.name}</td>
+                                                    <td className="font-mono" style={{ fontSize: 12 }}>{vm.mountPath}</td>
+                                                    <td>
+                                                        <Badge size="xs" color={vm.readOnly ? 'orange' : 'green'}>
+                                                            {vm.readOnly ? 'Yes' : 'No'}
+                                                        </Badge>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </Table>
+                                </Accordion.Panel>
+                            </Accordion.Item>
+                        </Accordion>
+                    )}
                 </Card>
             );
         };

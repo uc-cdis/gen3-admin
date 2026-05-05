@@ -388,6 +388,11 @@ function MultiPodDetailView({
         </Tabs.Tab>
         <Tabs.Tab value="logs" leftSection={<IconFileText size={14} />}>Logs</Tabs.Tab>
         <Tabs.Tab value="shell" leftSection={<IconTerminal size={14} />}>Shell</Tabs.Tab>
+        {pods.length > 1 && (
+          <Tabs.Tab value="multiLogs" leftSection={<IconFileText size={14} />}>
+            Multi-pod Logs
+          </Tabs.Tab>
+        )}
       </Tabs.List>
 
       {/* Overview panel */}
@@ -497,6 +502,41 @@ function MultiPodDetailView({
             } />
         </Box>
       </Tabs.Panel>
+
+      {/* Multi-pod Logs panel — tabs per pod showing LogWindow */}
+      {pods.length > 1 && (
+        <Tabs.Panel value="multiLogs" p="md">
+          <Tabs defaultValue={pods[0]?.name}>
+            <Tabs.List mb="sm">
+              {pods.map((p) => (
+                <Tabs.Tab key={p.name} value={p.name}>
+                  <Group gap={4}>
+                    <ThemeIcon size="xs" color={p.phase === "Running" ? "teal" : "orange"} variant="filled" radius="xl">
+                      <IconCircleDot size={6} />
+                    </ThemeIcon>
+                    <Text size="xs">{p.name}</Text>
+                  </Group>
+                </Tabs.Tab>
+              ))}
+            </Tabs.List>
+            {pods.map((p) => (
+              <Tabs.Panel key={p.name} value={p.name}>
+                <Box h="60vh">
+                  <LogWindow
+                    namespace={namespace}
+                    pod={p.name}
+                    cluster={cluster}
+                    containers={selectedContainer
+                      ? [selectedContainer]
+                      : p.containers.filter((c) => !c.isInit).map((c) => c.name)
+                    }
+                  />
+                </Box>
+              </Tabs.Panel>
+            ))}
+          </Tabs>
+        </Tabs.Panel>
+      )}
     </Tabs>
   );
 }

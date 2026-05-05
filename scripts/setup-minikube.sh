@@ -112,27 +112,102 @@ start_minikube() {
   ok "Minikube is ready"
 }
 
+# ── /etc/hosts helpers ───────────────────────────────────────────────────────
+
+# Try a sudo command; return 0 on success, 1 if sudo unavailable/denied.
+try_sudo() {
+  if sudo -n true 2>/dev/null; then
+    sudo "$@"
+    return 0
+  fi
+  # Prompt once — if user declines we fall back to printing instructions.
+  if ! sudo -v 2>/dev/null; then
+    return 1
+  fi
+  sudo "$@"
+}
+
+# Build up a list of hosts entries that *should* be in /etc/hosts.
+# If we can't write them ourselves, we print them at the end so the user can add manually.
+declare -a PENDING_HOSTS_ENTRIES=()
+
+add_hosts_entry() {
+  local ip="$1"
+  local hostname="$2"
+
+  # Check if entry already exists with correct IP
+  if grep -qE "^${ip}[[:space:]]+${hostname}([[:space:]]|$)" /etc/hosts 2>/dev/null; then
+    return 0
+  fi
+
+  # Remove stale entry (different IP) if writable
+  if grep -qw "$hostname" /etc/hosts 2>/dev/null; then
+    if try_sudo bash -c "
+      if [[ '$(uname)' == 'Darwin' ]]; then
+        sed -i '' '/[[:space:]]${hostname}$/d' /etc/hosts
+      else
+        sed -i '/[[:space:]]${hostname}$/d' /etc/hosts
+      fi
+    " 2>/dev/null; then
+      ok "Updated $hostname in /etc/hosts"
+    else
+      warn "/etc/hosts has a stale entry for $hostname (different IP)"
+    fi
+  fi
+
+  # Try to write the new entry
+  if echo "$ip  $hostname" | try_sudo tee -a /etc/hosts > /dev/null 2>&1; then
+    ok "Added $hostname -> $ip to /etc/hosts"
+  else
+    warn "Could not write to /etc/hosts (sudo denied or unavailable)"
+    PENDING_HOSTS_ENTRIES+=("$ip  $hostname")
+  fi
+}
+
+remove_hosts_entry() {
+  local hostname="$1"
+  if grep -qw "$hostname" /etc/hosts 2>/dev/null; then
+    if try_sudo bash -c "
+      if [[ '$(uname)' == 'Darwin' ]]; then
+        sed -i '' '/[[:space:]]${hostname}$/d' /etc/hosts
+      else
+        sed -i '/[[:space:]]${hostname}$/d' /etc/hosts
+      fi
+    " 2>/dev/null; then
+      ok "Removed $hostname from /etc/hosts"
+    else
+      warn "Could not remove $hostname from /etc/hosts (sudo denied)"
+      echo "  Manually run:  sudo sed -i '/[[:space:]]${hostname}\$/d' /etc/hosts"
+    fi
+  fi
+}
+
+print_pending_hosts() {
+  if [[ ${#PENDING_HOSTS_ENTRIES[@]} -gt 0 ]]; then
+    echo ""
+    warn "The following entries were NOT added to /etc/hosts:"
+    warn "Add them manually to enable hostname resolution:"
+    echo ""
+    for entry in "${PENDING_HOSTS_ENTRIES[@]}"; do
+      echo -e "${YELLOW}  ${entry}${NC}"
+    done
+    echo ""
+    echo -e "  Or run as a single command:"
+    echo -e "${BLUE}  sudo sh -c 'echo \"$(printf '\\n%s' "${PENDING_HOSTS_ENTRIES[@]}" | sed '1s/^//')\" >> /etc/hosts'${NC}"
+    echo ""
+  fi
+}
+
 # ── /etc/hosts entry ────────────────────────────────────────────────────────
 setup_hosts() {
   local ip
   ip=$(minikube ip -p "$MINIKUBE_PROFILE")
 
-  if grep -qw "$HOSTNAME" /etc/hosts 2>/dev/null; then
-    warn "/etc/hosts already has an entry for $HOSTNAME — updating IP to $ip"
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sudo sed -i '' "/[[:space:]]$HOSTNAME$/d" /etc/hosts
-    else
-      sudo sed -i "/[[:space:]]$HOSTNAME$/d" /etc/hosts
-    fi
-  fi
-
-  echo "$ip  $HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
-  ok "Added $HOSTNAME -> $ip to /etc/hosts"
+  add_hosts_entry "$ip" "$HOSTNAME"
 
   # Also add gen3.local for workshop deployments
   if ! grep -qw "$GEN3_HOSTNAME" /etc/hosts 2>/dev/null; then
-    echo "$ip  $GEN3_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
-    ok "Added $GEN3_HOSTNAME -> $ip to /etc/hosts"
+    add_hosts_entry "$ip" "$GEN3_HOSTNAME"
   fi
 }
 
@@ -234,18 +309,7 @@ start_keycloak() {
 setup_keycloak_hosts() {
   local ip
   ip=$(minikube ip -p "$MINIKUBE_PROFILE")
-
-  if grep -qw "$KEYCLOAK_HOSTNAME" /etc/hosts 2>/dev/null; then
-    warn "/etc/hosts already has $KEYCLOAK_HOSTNAME — updating IP to $ip"
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sudo sed -i '' "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
-    else
-      sudo sed -i "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
-    fi
-  fi
-
-  echo "$ip  $KEYCLOAK_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
-  ok "Added $KEYCLOAK_HOSTNAME -> $ip to /etc/hosts"
+  add_hosts_entry "$ip" "$KEYCLOAK_HOSTNAME"
 }
 
 # ── Helm deploy ──────────────────────────────────────────────────────────────
@@ -399,24 +463,9 @@ teardown() {
     ok "Helm release uninstalled"
   fi
 
-  # Remove /etc/hosts entry
-  if grep -qw "$HOSTNAME" /etc/hosts 2>/dev/null; then
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sudo sed -i '' "/[[:space:]]$HOSTNAME$/d" /etc/hosts
-    else
-      sudo sed -i "/[[:space:]]$HOSTNAME$/d" /etc/hosts
-    fi
-    ok "Removed $HOSTNAME from /etc/hosts"
-  fi
-
-  if grep -qw "$GEN3_HOSTNAME" /etc/hosts 2>/dev/null; then
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sudo sed -i '' "/[[:space:]]$GEN3_HOSTNAME$/d" /etc/hosts
-    else
-      sudo sed -i "/[[:space:]]$GEN3_HOSTNAME$/d" /etc/hosts
-    fi
-    ok "Removed $GEN3_HOSTNAME from /etc/hosts"
-  fi
+  # Remove /etc/hosts entries
+  remove_hosts_entry "$HOSTNAME"
+  remove_hosts_entry "$GEN3_HOSTNAME"
 
   # Stop minikube
   if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
@@ -455,14 +504,7 @@ teardown() {
   fi
 
   # Remove keycloak hosts entry
-  if grep -qw "$KEYCLOAK_HOSTNAME" /etc/hosts 2>/dev/null; then
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sudo sed -i '' "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
-    else
-      sudo sed -i "/[[:space:]]$KEYCLOAK_HOSTNAME$/d" /etc/hosts
-    fi
-    ok "Removed $KEYCLOAK_HOSTNAME from /etc/hosts"
-  fi
+  remove_hosts_entry "$KEYCLOAK_HOSTNAME"
 
   ok "Teardown complete"
 }
@@ -606,6 +648,8 @@ main() {
     echo ""
     ok "Minikube ready. Deploy with:  $(basename "$0") --namespace $NAMESPACE"
   fi
+
+  print_pending_hosts
   echo ""
   echo "To tear down later:  $(basename "$0") --teardown"
   echo "To check status:     $(basename "$0") --status"
