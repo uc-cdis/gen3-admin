@@ -27,7 +27,7 @@
     "@mantine/notifications": "^8.1.1",
     "@mantine/spotlight": "^8.1.1",
     "@monaco-editor/react": "^4.7.0-rc.0",
-    "@next/bundle-analyzer": "^14.0.1",
+    "@next/bundle-analyzer": "^14.2.29",
     "@tabler/icons-react": "^3.31.0",
     "aws-rum-web": "^1.19.0",
     "clsx": "^2.1.1",
