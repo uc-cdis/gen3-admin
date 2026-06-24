@@ -20,6 +20,7 @@ HELM_CHART="${CHART_PATH:-./helm/csoc}"
 HOSTNAME="csoc.cloud"
 GEN3_HOSTNAME="gen3.cloud"
 KEYCLOAK_HOSTNAME="keycloak.cloud"
+KEYCLOAK_SCHEME="${KEYCLOAK_SCHEME:-http}"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
@@ -35,6 +36,11 @@ else
 fi
 
 VALUES_FILE="./helm/csoc/values-k3s-cloud.yaml"
+TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE="${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE:-csoc-https-redirect}"
+TRAEFIK_HTTPS_REDIRECT_ENABLED=0
+IP_ALLOWLIST_MIDDLEWARE="${IP_ALLOWLIST_MIDDLEWARE:-csoc-ip-allowlist}"
+IP_ALLOWLIST_RANGES="${IP_ALLOWLIST_RANGES:-}"
+IP_ALLOWLIST_ENABLED=0
 
 # Quay image tags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
@@ -50,6 +56,16 @@ die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
 # ── Pipe detection / confirmation ────────────────────────────────────────────
 is_piped() { [[ ! -t 0 ]]; }
+
+can_prompt() { [[ -r /dev/tty && -w /dev/tty ]]; }
+
+tty_read() {
+  local prompt="$1"
+  local answer
+  printf "%s" "$prompt" > /dev/tty
+  IFS= read -r answer < /dev/tty
+  printf "%s" "$answer"
+}
 
 confirm_install() {
   local missing=("$@")
@@ -154,6 +170,178 @@ ensure_values_file() {
   die "Values file not found in checked-out repo: $VALUES_FILE"
 }
 
+ensure_traefik_https_redirect_middleware() {
+  TRAEFIK_HTTPS_REDIRECT_ENABLED=0
+
+  if ! kubectl api-resources 2>/dev/null | grep -q "middlewares.*traefik.io"; then
+    warn "Traefik Middleware CRD not found; skipping HTTPS redirect middleware setup"
+    return 0
+  fi
+
+  if kubectl get middlewares.traefik.io "$TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE" -n "$NAMESPACE" >/dev/null 2>&1; then
+    TRAEFIK_HTTPS_REDIRECT_ENABLED=1
+    return 0
+  fi
+
+  local tmp
+  tmp=$(mktemp)
+  cat > "$tmp" <<EOF
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}
+  namespace: ${NAMESPACE}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+  kubectl apply -f "$tmp"
+  rm -f "$tmp"
+  TRAEFIK_HTTPS_REDIRECT_ENABLED=1
+  ok "Created Traefik HTTPS redirect middleware: ${NAMESPACE}/${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}"
+}
+
+ensure_ip_allowlist() {
+  IP_ALLOWLIST_ENABLED=0
+
+  if ! kubectl api-resources 2>/dev/null | grep -q "middlewares.*traefik.io"; then
+    warn "Traefik Middleware CRD not found; skipping ingress IP allowlist setup"
+    return 0
+  fi
+
+  if kubectl get middlewares.traefik.io "$IP_ALLOWLIST_MIDDLEWARE" -n "$NAMESPACE" >/dev/null 2>&1; then
+    IP_ALLOWLIST_ENABLED=1
+    return 0
+  fi
+
+  local ranges
+  if [[ -n "$IP_ALLOWLIST_RANGES" ]]; then
+    ranges="$IP_ALLOWLIST_RANGES"
+  else
+    local detected_ip
+    detected_ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$detected_ip" ]] || die "Could not detect public IP for allowlist. Set IP_ALLOWLIST_RANGES=<cidr> and rerun."
+    ranges="${detected_ip}/32"
+    log "IP allowlist: auto-detected public IP ${detected_ip}/32"
+  fi
+
+  ranges="${ranges//,/ }"
+  [[ -n "${ranges// /}" ]] || die "No IP ranges provided for allowlist"
+
+  local tmp
+  tmp=$(mktemp)
+  {
+    echo "apiVersion: traefik.io/v1alpha1"
+    echo "kind: Middleware"
+    echo "metadata:"
+    echo "  name: ${IP_ALLOWLIST_MIDDLEWARE}"
+    echo "  namespace: ${NAMESPACE}"
+    echo "spec:"
+    echo "  ipAllowList:"
+    echo "    sourceRange:"
+    for range in $ranges; do
+      echo "      - ${range}"
+    done
+  } > "$tmp"
+
+  kubectl apply -f "$tmp"
+  rm -f "$tmp"
+  IP_ALLOWLIST_ENABLED=1
+  ok "Created Traefik IP allowlist middleware: ${NAMESPACE}/${IP_ALLOWLIST_MIDDLEWARE}"
+}
+
+traefik_middlewares_annotation() {
+  local include_redirect="${1:-1}"
+  local middlewares=()
+  if [[ "$include_redirect" == "1" && "$TRAEFIK_HTTPS_REDIRECT_ENABLED" == "1" ]]; then
+    middlewares+=("${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd")
+  fi
+  if [[ "$IP_ALLOWLIST_ENABLED" == "1" ]]; then
+    middlewares+=("${NAMESPACE}-${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd")
+  fi
+
+  if [[ ${#middlewares[@]} -eq 0 ]]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  local joined
+  joined=$(IFS=,; echo "${middlewares[*]}")
+  printf '%s' "$joined"
+}
+
+annotate_traefik_middlewares() {
+  local ingress_name="$1"
+  local include_redirect="${2:-1}"
+
+  if kubectl get ingress "$ingress_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+    local middleware_annotation
+    middleware_annotation=$(traefik_middlewares_annotation "$include_redirect")
+    if [[ -z "$middleware_annotation" ]]; then
+      return 0
+    fi
+    kubectl annotate ingress "$ingress_name" -n "$NAMESPACE" \
+      "traefik.ingress.kubernetes.io/router.middlewares=${middleware_annotation}" \
+      --overwrite
+    ok "Applied Traefik middlewares to ingress: $ingress_name"
+  fi
+}
+
+ensure_traefik_hostnetwork_accesslog() {
+  local waited=0
+  until kubectl -n kube-system get deploy traefik >/dev/null 2>&1; do
+    if [[ $waited -ge 60 ]]; then
+      warn "Traefik deployment not found in kube-system; skipping hostNetwork/accesslog patch"
+      return 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+
+  local patch='['
+  local needs_patch=0
+
+  if ! kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null | grep -qx "true"; then
+    patch+='{"op":"add","path":"/spec/template/spec/hostNetwork","value":true},'
+    needs_patch=1
+  fi
+
+  if ! kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.dnsPolicy}' 2>/dev/null | grep -qx "ClusterFirstWithHostNet"; then
+    patch+='{"op":"add","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},'
+    needs_patch=1
+  fi
+
+  local args
+  args=$(kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || true)
+  if ! grep -Fqx -- '--accesslog=true' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog=true"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.format=json' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.format=json"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.fields.defaultmode=keep' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.fields.defaultmode=keep"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.fields.headers.defaultmode=keep' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.fields.headers.defaultmode=keep"},'
+    needs_patch=1
+  fi
+
+  if [[ "$needs_patch" != "1" ]]; then
+    ok "Traefik already configured for hostNetwork/accesslog"
+    return 0
+  fi
+
+  patch="${patch%,}]"
+  kubectl -n kube-system patch deploy traefik --type='json' -p="$patch"
+  ok "Patched Traefik for hostNetwork/accesslog"
+}
+
 install_homebrew() {
   if have brew; then
     return
@@ -230,7 +418,16 @@ install_k3s_linux() {
     die "curl is required to install k3s. Install curl first, then rerun this script."
   fi
 
-  curl -sfL https://get.k3s.io | run_sudo sh -
+  # Run in a subshell with `set +u` so SHELLOPTS doesn't export `nounset`
+  # into the k3s installer, which uses uninitialized vars internally.
+  ( set +u; curl -sfL https://get.k3s.io | run_sudo sh - )
+}
+
+install_k9s() {
+  log "Installing k9s via webinstall.dev..."
+  ( set +u; curl -sS https://webinstall.dev/k9s | bash )
+  # shellcheck source=/dev/null
+  [[ -f "${HOME}/.config/envman/PATH.env" ]] && source "${HOME}/.config/envman/PATH.env"
 }
 
 install_prereqs_macos() {
@@ -245,6 +442,8 @@ install_prereqs_macos() {
     log "Installing missing macOS tools with Homebrew: ${formulas[*]}"
     brew install "${formulas[@]}"
   fi
+
+  have k9s || install_k9s
 }
 
 install_prereqs_linux() {
@@ -252,6 +451,7 @@ install_prereqs_linux() {
   have helm    || install_helm_linux
   have git     || install_git_linux
   have k3s     || install_k3s_linux
+  have k9s     || install_k9s
 }
 
 install_missing_prereqs() {
@@ -330,6 +530,7 @@ check_prereqs() {
   fi
 
   ok "k3s cluster is running"
+  ensure_traefik_hostnetwork_accesslog
 }
 
 setup_kubeconfig() {
@@ -440,14 +641,18 @@ start_keycloak() {
     sed -i "s/hostname: keycloak.aws/hostname: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.local/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.aws/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
+    sed -i "s|- keycloak.local|- ${KEYCLOAK_HOSTNAME}|g" "$tmp"
 
     # Patch ingress class for k3s (traefik instead of nginx)
     sed -i "s/ingressClassName: nginx/ingressClassName: traefik/g" "$tmp"
+    sed -i '/nginx.ingress.kubernetes.io\/ssl-redirect/d' "$tmp"
+    sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
+    sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
 
     # Patch redirect URIs for k3s
-    sed -i "s|http://localhost:3000|http://${HOSTNAME}|g" "$tmp"
-    sed -i "s|http://csoc.local|http://${HOSTNAME}|g" "$tmp"
-    sed -i "s|http://csoc.aws|http://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://localhost:3000|https://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://csoc.local|https://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://csoc.aws|https://${HOSTNAME}|g" "$tmp"
 
     kubectl apply -f "$tmp"
     rm -f "$tmp"
@@ -480,6 +685,9 @@ deploy_csoc() {
     ok "Created namespace: $NAMESPACE"
   fi
 
+  ensure_traefik_https_redirect_middleware
+  ensure_ip_allowlist
+
   log "Deploying CSOC portal via Helm..."
   log "  Chart:    $HELM_CHART"
   log "  Values:   $VALUES_FILE"
@@ -492,6 +700,9 @@ deploy_csoc() {
     --set "image.api.tag=${API_IMAGE_TAG}"
     --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
     --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
+    --set "api.env.MOCK_AUTH=true"
+    --set "frontend.env.MOCK_AUTH=true"
+    --set "frontend.env.ENABLE_MOCK_AUTH=true"
   )
 
   if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
@@ -533,15 +744,12 @@ EOF
     ok "keycloak-http service ready at $keycloak_ip"
 
     helm_args+=(
-      --set "api.env.MOCK_AUTH=false"
-      --set "api.env.KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
+      --set "api.env.KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "api.env.KEYCLOAK_REALM=csoc-realm"
-      --set "frontend.env.MOCK_AUTH=false"
-      --set "frontend.env.ENABLE_MOCK_AUTH=false"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=http://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
       # HostAlias so pods can resolve keycloak.cloud -> Keycloak service
       --set "frontend.hostAliases[0].ip=${keycloak_ip}"
       --set "frontend.hostAliases[0].hostnames[0]=${KEYCLOAK_HOSTNAME}"
@@ -554,6 +762,8 @@ EOF
     log "Installing fresh release..."
   fi
   helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
+  annotate_traefik_middlewares "$RELEASE_NAME" 0   # no HTTPS redirect on csoc ingress
+  annotate_traefik_middlewares "keycloak-ingress" 0
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
