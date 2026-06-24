@@ -110,6 +110,7 @@ spec:
     id: csoc-realm
     realm: csoc-realm
     enabled: true
+    sslRequired: none
     loginWithEmailAllowed: true
     duplicateEmailsAllowed: false
 
