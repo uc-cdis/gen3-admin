@@ -15,7 +15,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
-INSTALL_KEYCLOAK="${INSTALL_KEYCLOAK:-0}"
+INSTALL_KEYCLOAK="${INSTALL_KEYCLOAK:-1}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
 HOSTNAME="csoc.cloud"
 GEN3_HOSTNAME="gen3.cloud"
@@ -648,9 +648,7 @@ start_keycloak() {
     sed -i '/nginx.ingress.kubernetes.io\/ssl-redirect/d' "$tmp"
     sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
     sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
-    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure" "$tmp"
     sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd" "$tmp"
-    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.tls: \"true\"" "$tmp"
 
     # Patch redirect URIs for k3s
     sed -i "s|http://localhost:3000|https://${HOSTNAME}|g" "$tmp"

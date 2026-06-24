@@ -120,10 +120,7 @@ service:
 ingress:
   enabled: true
   className: "traefik"
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.middlewares: csoc-csoc-https-redirect@kubernetescrd
-    traefik.ingress.kubernetes.io/router.tls: "true"
+  annotations: {}
   hosts:
     - host: "csoc.cloud"
       paths:
