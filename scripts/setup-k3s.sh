@@ -63,6 +63,7 @@ confirm_install() {
       kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
       helm)    echo "  - helm (Kubernetes package manager)" ;;
       git)     echo "  - git (version control)" ;;
+      k3s)     echo "  - k3s (lightweight Kubernetes)" ;;
       *)       echo "  - $cmd" ;;
     esac
   done
@@ -193,6 +194,16 @@ install_git_linux() {
   esac
 }
 
+install_k3s_linux() {
+  log "Installing k3s using official install script..."
+
+  if ! have curl; then
+    die "curl is required to install k3s. Install curl first, then rerun this script."
+  fi
+
+  curl -sfL https://get.k3s.io | run_sudo sh -
+}
+
 install_prereqs_macos() {
   install_homebrew
 
@@ -211,6 +222,7 @@ install_prereqs_linux() {
   have kubectl || install_kubectl_linux
   have helm    || install_helm_linux
   have git     || install_git_linux
+  have k3s     || install_k3s_linux
 }
 
 install_missing_prereqs() {
@@ -231,7 +243,7 @@ check_prereqs() {
   log "Checking prerequisites..."
 
   local missing=()
-  for cmd in kubectl helm git; do
+  for cmd in kubectl helm git k3s; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
 
@@ -241,7 +253,7 @@ check_prereqs() {
   fi
 
   missing=()
-  for cmd in kubectl helm git; do
+  for cmd in kubectl helm git k3s; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
