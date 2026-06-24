@@ -648,7 +648,6 @@ start_keycloak() {
     sed -i '/nginx.ingress.kubernetes.io\/ssl-redirect/d' "$tmp"
     sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
     sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
-    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd" "$tmp"
 
     # Patch redirect URIs for k3s
     sed -i "s|http://localhost:3000|https://${HOSTNAME}|g" "$tmp"
@@ -750,7 +749,7 @@ EOF
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=https://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
       # HostAlias so pods can resolve keycloak.cloud -> Keycloak service
       --set "frontend.hostAliases[0].ip=${keycloak_ip}"
       --set "frontend.hostAliases[0].hostnames[0]=${KEYCLOAK_HOSTNAME}"
@@ -764,7 +763,7 @@ EOF
   fi
   helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
   annotate_traefik_middlewares "$RELEASE_NAME" 0   # no HTTPS redirect on csoc ingress
-  annotate_traefik_middlewares "keycloak-ingress" 1
+  annotate_traefik_middlewares "keycloak-ingress" 0
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
