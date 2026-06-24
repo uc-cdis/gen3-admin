@@ -126,10 +126,13 @@ spec:
         redirectUris:
           - http://localhost:3000/*
           - https://csoc.cloud/*
+          - http://csoc.cloud/*
           - http://csoc.local/*
+          - https://csoc.local/*
         webOrigins:
           - http://localhost:3000
           - https://csoc.cloud
+          - http://csoc.cloud
           - http://csoc.local
 
         attributes:
