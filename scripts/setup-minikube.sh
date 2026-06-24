@@ -25,8 +25,15 @@ KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
 KEYCLOAK_HOSTNAME="keycloak.local"
 CNPG_VERSION="1.29.0"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Resolve project root: works when run as a file, empty when piped
+if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  SCRIPT_DIR=""
+  PROJECT_ROOT=""
+fi
 
 # Quay image tags — override with env vars or CLI flags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
@@ -40,7 +47,328 @@ ok()     { echo -e "${GREEN}✓${NC} $*"; }
 warn()   { echo -e "${YELLOW}⚠${NC} $*"; }
 die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
+# ── Pipe detection / confirmation ────────────────────────────────────────────
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+  local missing=("$@")
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  warn "Missing tools: ${missing[*]}"
+  echo ""
+  echo "This script will install the following tools:"
+  for cmd in "${missing[@]}"; do
+    case "$cmd" in
+      minikube) echo "  - minikube (local Kubernetes)" ;;
+      kubectl)  echo "  - kubectl (Kubernetes CLI)" ;;
+      helm)     echo "  - helm (Kubernetes package manager)" ;;
+      docker)   echo "  - Docker (container runtime)" ;;
+      *)        echo "  - $cmd" ;;
+    esac
+  done
+  echo ""
+
+  if is_piped; then
+    echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+    echo "Press Ctrl+C to cancel."
+    for i in 5 4 3 2 1; do
+      echo -ne "\r  Starting in ${i}s... "
+      sleep 1
+    done
+    echo -ne "\r                           \r"
+  else
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
+  fi
+}
+
+# ── Pre-flight checks / tool installation ───────────────────────────────────
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_sudo() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+linux_pkg_manager() {
+  if have apt-get; then echo "apt"; return; fi
+  if have dnf; then echo "dnf"; return; fi
+  if have yum; then echo "yum"; return; fi
+  if have pacman; then echo "pacman"; return; fi
+  if have zypper; then echo "zypper"; return; fi
+  if have apk; then echo "apk"; return; fi
+  echo ""
+}
+
+# ── Values file helper ───────────────────────────────────────────────────────
+REPO_RAW_URL="https://raw.githubusercontent.com/uc-cdis/gen3-admin/master"
+
+ensure_values_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    return 0
+  fi
+
+  local remote_url="${REPO_RAW_URL}/${file}"
+  log "Values file not found locally: $file"
+  log "Fetching from GitHub..."
+
+  mkdir -p "$(dirname "$file")"
+  if curl -fsSL -o "$file" "$remote_url"; then
+    ok "Downloaded $file"
+  else
+    die "Failed to download values file from $remote_url"
+  fi
+}
+
+install_homebrew() {
+  if have brew; then
+    return
+  fi
+
+  log "Homebrew not found; installing Homebrew..."
+  if ! have curl; then
+    die "curl is required to install Homebrew. Install curl first, then rerun this script."
+  fi
+
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  # Make brew available in this non-login shell.
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  have brew || die "Homebrew installed, but 'brew' is not on PATH. Open a new terminal or add brew shellenv to your shell profile."
+}
+
+wait_for_docker() {
+  local waited=0
+  local max_wait="${DOCKER_WAIT_SECONDS:-120}"
+
+  while [[ $waited -lt $max_wait ]]; do
+    if docker info >/dev/null 2>&1; then
+      ok "Docker daemon is running"
+      return 0
+    fi
+    sleep 3
+    waited=$((waited + 3))
+  done
+
+  return 1
+}
+
+install_prereqs_macos() {
+  install_homebrew
+
+  local formulas=()
+  have minikube || formulas+=("minikube")
+  have kubectl  || formulas+=("kubernetes-cli")
+  have helm     || formulas+=("helm")
+
+  if [[ ${#formulas[@]} -gt 0 ]]; then
+    log "Installing missing macOS tools with Homebrew: ${formulas[*]}"
+    brew install "${formulas[@]}"
+  fi
+
+  if ! have docker; then
+    log "Installing Docker Desktop with Homebrew cask..."
+    brew install --cask docker-desktop
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    warn "Docker Desktop is installed but not running yet. Starting it now..."
+    open -a Docker >/dev/null 2>&1 || true
+    if ! wait_for_docker; then
+      die "Docker Desktop did not become ready. Open Docker Desktop, finish any first-run setup, then rerun this script."
+    fi
+  fi
+}
+
+linux_pkg_update_once() {
+  local pm="$1"
+  if [[ "${LINUX_PKG_UPDATED:-0}" == "1" ]]; then
+    return
+  fi
+
+  case "$pm" in
+    apt)    run_sudo apt-get update ;;
+    dnf)    run_sudo dnf makecache -y || true ;;
+    yum)    run_sudo yum makecache -y || true ;;
+    pacman) run_sudo pacman -Sy --noconfirm ;;
+    zypper) run_sudo zypper --non-interactive refresh ;;
+    apk)    run_sudo apk update ;;
+  esac
+
+  LINUX_PKG_UPDATED=1
+}
+
+install_linux_base_packages() {
+  local pm="$1"
+  linux_pkg_update_once "$pm"
+
+  case "$pm" in
+    apt)
+      run_sudo apt-get install -y ca-certificates curl gnupg lsb-release
+      ;;
+    dnf)
+      run_sudo dnf install -y ca-certificates curl gnupg2
+      ;;
+    yum)
+      run_sudo yum install -y ca-certificates curl gnupg2
+      ;;
+    pacman)
+      run_sudo pacman -S --needed --noconfirm ca-certificates curl gnupg
+      ;;
+    zypper)
+      run_sudo zypper --non-interactive install ca-certificates curl gpg2
+      ;;
+    apk)
+      run_sudo apk add --no-cache ca-certificates curl gnupg
+      ;;
+  esac
+}
+
+install_docker_linux() {
+  log "Installing Docker using official convenience script..."
+
+  if ! have curl; then
+    die "curl is required to install Docker. Install curl first, then rerun this script."
+  fi
+
+  curl -fsSL https://get.docker.com | run_sudo sh
+
+  if have systemctl; then
+    run_sudo systemctl enable --now docker || true
+  else
+    run_sudo service docker start 2>/dev/null || true
+    run_sudo rc-update add docker default 2>/dev/null || true
+  fi
+
+  if getent group docker >/dev/null 2>&1 && [[ -n "${USER:-}" ]]; then
+    run_sudo usermod -aG docker "$USER" || true
+  fi
+}
+
+install_kubectl_linux() {
+  local pm="$1"
+  local kube_minor="${KUBERNETES_MINOR:-v1.35}"
+  log "Installing kubectl with Linux package manager ($pm, Kubernetes repo ${kube_minor})..."
+
+  case "$pm" in
+    apt)
+      run_sudo install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL "https://pkgs.k8s.io/core:/stable:/${kube_minor}/deb/Release.key" \
+        | run_sudo gpg --dearmor --batch --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${kube_minor}/deb/ /" \
+        | run_sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+      run_sudo apt-get update
+      run_sudo apt-get install -y kubectl
+      ;;
+    dnf)
+      cat <<EOF | run_sudo tee /etc/yum.repos.d/kubernetes.repo >/dev/null
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/${kube_minor}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/${kube_minor}/rpm/repodata/repomd.xml.key
+EOF
+      run_sudo dnf install -y kubectl
+      ;;
+    yum)
+      cat <<EOF | run_sudo tee /etc/yum.repos.d/kubernetes.repo >/dev/null
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/${kube_minor}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/${kube_minor}/rpm/repodata/repomd.xml.key
+EOF
+      run_sudo yum install -y kubectl
+      ;;
+    pacman)
+      run_sudo pacman -S --needed --noconfirm kubectl
+      ;;
+    zypper)
+      run_sudo zypper --non-interactive install kubernetes-client
+      ;;
+    apk)
+      run_sudo apk add --no-cache kubectl
+      ;;
+  esac
+}
+
+install_helm_linux() {
+  log "Installing Helm using official install script..."
+
+  if ! have curl; then
+    die "curl is required to install Helm. Install curl first, then rerun this script."
+  fi
+
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo bash
+}
+
+install_minikube_linux() {
+  log "Installing minikube using official binary download..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  local tmp
+  tmp="$(mktemp -d)"
+
+  curl -fsSL -o "$tmp/minikube" "https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-${arch}"
+  run_sudo install -o root -g root -m 0755 "$tmp/minikube" /usr/local/bin/minikube
+
+  rm -rf "$tmp"
+}
+
+install_prereqs_linux() {
+  local pm
+  pm="$(linux_pkg_manager)"
+  [[ -n "$pm" ]] || die "Unsupported Linux distro: no supported package manager found (apt, dnf, yum, pacman, zypper, apk)."
+
+  install_linux_base_packages "$pm"
+
+  have docker   || install_docker_linux
+  have kubectl  || install_kubectl_linux "$pm"
+  have helm     || install_helm_linux
+  have minikube || install_minikube_linux
+
+  if ! docker info >/dev/null 2>&1; then
+    warn "Docker is installed, but this shell cannot talk to the Docker daemon."
+    warn "If your user was just added to the docker group, run 'newgrp docker' or log out/in, then rerun this script."
+    die "Docker daemon is not ready for minikube's docker driver."
+  fi
+}
+
+install_missing_prereqs() {
+  case "$(uname -s)" in
+    Darwin)
+      install_prereqs_macos
+      ;;
+    Linux)
+      install_prereqs_linux
+      ;;
+    *)
+      die "Unsupported OS: $(uname -s). This setup script supports macOS and Linux."
+      ;;
+  esac
+}
+
 check_prereqs() {
   log "Checking prerequisites..."
 
@@ -48,9 +376,25 @@ check_prereqs() {
   for cmd in minikube kubectl helm docker; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
+
   if [[ ${#missing[@]} -gt 0 ]]; then
-    die "Missing tools: ${missing[*]}. Install them first."
+    confirm_install "${missing[@]}"
+    install_missing_prereqs
   fi
+
+  missing=()
+  for cmd in minikube kubectl helm docker; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    die "Missing tools after attempted installation: ${missing[*]}"
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    die "Docker is installed but not running or not accessible. Start Docker, then rerun this script."
+  fi
+
+  ok "Required tools are installed"
 
   if minikube status -p "$MINIKUBE_PROFILE" 2>/dev/null | grep -q "Running"; then
     ok "Minikube profile '$MINIKUBE_PROFILE' is already running"
@@ -252,9 +596,7 @@ setup_keycloak_hosts() {
 deploy_csoc() {
   cd "$PROJECT_ROOT"
 
-  if [[ ! -f "$VALUES_FILE" ]]; then
-    die "Values file not found: $VALUES_FILE"
-  fi
+  ensure_values_file "$VALUES_FILE"
 
   log "Deploying CSOC portal via Helm..."
   log "  Chart:    $HELM_CHART"

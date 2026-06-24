@@ -29,21 +29,261 @@ ok()     { echo -e "${GREEN}OK${NC} $*"; }
 warn()   { echo -e "${YELLOW}WARN${NC} $*"; }
 die()    { echo -e "${RED}ERR${NC} $*" >&2; exit 1; }
 
+# -- Pipe detection / confirmation --------------------------------------------
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+  local missing=("$@")
+  local sm_missing="${1:-}"
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  warn "Missing tools detected"
+  echo ""
+  echo "This script will install the following tools:"
+  for cmd in "${missing[@]}"; do
+    case "$cmd" in
+      aws)   echo "  - aws (AWS CLI)" ;;
+      curl)  echo "  - curl (HTTP client)" ;;
+      unzip) echo "  - unzip (archive extractor)" ;;
+      jq)    echo "  - jq (JSON processor)" ;;
+      *)     echo "  - $cmd" ;;
+    esac
+  done
+  if [[ "$sm_missing" == "1" ]]; then
+    echo "  - session-manager-plugin (AWS Session Manager)"
+  fi
+  echo ""
+
+  if is_piped; then
+    echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+    echo "Press Ctrl+C to cancel."
+    for i in 5 4 3 2 1; do
+      echo -ne "\r  Starting in ${i}s... "
+      sleep 1
+    done
+    echo -ne "\r                           \r"
+  else
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
+  fi
+}
+
+# -- Pre-flight checks / tool installation ------------------------------------
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_sudo() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+linux_pkg_manager() {
+  if have apt-get; then echo "apt"; return; fi
+  if have dnf; then echo "dnf"; return; fi
+  if have yum; then echo "yum"; return; fi
+  if have pacman; then echo "pacman"; return; fi
+  if have zypper; then echo "zypper"; return; fi
+  if have apk; then echo "apk"; return; fi
+  echo ""
+}
+
+install_homebrew() {
+  if have brew; then
+    return
+  fi
+
+  log "Homebrew not found; installing Homebrew..."
+  if ! have curl; then
+    die "curl is required to install Homebrew. Install curl first, then rerun this script."
+  fi
+
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  have brew || die "Homebrew installed, but 'brew' is not on PATH. Open a new terminal or add brew shellenv to your shell profile."
+}
+
+install_curl_linux() {
+  log "Installing curl..."
+
+  local pm
+  pm="$(linux_pkg_manager)"
+
+  case "$pm" in
+    apt)    run_sudo apt-get update && run_sudo apt-get install -y curl ;;
+    dnf)    run_sudo dnf install -y curl ;;
+    yum)    run_sudo yum install -y curl ;;
+    pacman) run_sudo pacman -S --needed --noconfirm curl ;;
+    zypper) run_sudo zypper --non-interactive install curl ;;
+    apk)    run_sudo apk add --no-cache curl ;;
+    *)      die "Cannot install curl: no supported package manager found." ;;
+  esac
+}
+
+install_unzip_linux() {
+  log "Installing unzip..."
+
+  local pm
+  pm="$(linux_pkg_manager)"
+
+  case "$pm" in
+    apt)    run_sudo apt-get update && run_sudo apt-get install -y unzip ;;
+    dnf)    run_sudo dnf install -y unzip ;;
+    yum)    run_sudo yum install -y unzip ;;
+    pacman) run_sudo pacman -S --needed --noconfirm unzip ;;
+    zypper) run_sudo zypper --non-interactive install unzip ;;
+    apk)    run_sudo apk add --no-cache unzip ;;
+    *)      die "Cannot install unzip: no supported package manager found." ;;
+  esac
+}
+
+install_jq_linux() {
+  log "Installing jq using official binary download..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  local jq_url="https://github.com/jqlang/jq/releases/latest/download/jq-linux-${arch}"
+  run_sudo curl -fsSL -o /usr/local/bin/jq "$jq_url"
+  run_sudo chmod +x /usr/local/bin/jq
+}
+
+install_aws_cli_linux() {
+  log "Installing AWS CLI using official bundled installer..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="x86_64" ;;
+    aarch64|arm64) arch="aarch64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  curl -fsSL -o "$tmp/awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-${arch}.zip"
+  unzip -qo "$tmp/awscliv2.zip" -d "$tmp"
+  run_sudo "$tmp/aws/install" --update 2>/dev/null || run_sudo "$tmp/aws/install"
+}
+
+install_session_manager_plugin_linux() {
+  log "Installing AWS Session Manager Plugin..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  local pm
+  pm="$(linux_pkg_manager)"
+
+  local tmp
+  tmp="$(mktemp -d)"
+
+  case "$pm" in
+    apt)
+      curl -fsSL -o "$tmp/session-manager-plugin.deb" \
+        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/ubuntu_${arch}/session-manager-plugin.deb"
+      run_sudo dpkg -i "$tmp/session-manager-plugin.deb"
+      ;;
+    dnf|yum)
+      curl -fsSL -o "$tmp/session-manager-plugin.rpm" \
+        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/amzn2_${arch}/session-manager-plugin.rpm"
+      run_sudo "$pm" install -y "$tmp/session-manager-plugin.rpm"
+      ;;
+    *)
+      die "Automatic Session Manager Plugin install is not supported for this distro. Install manually: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"
+      ;;
+  esac
+
+  rm -rf "$tmp"
+}
+
+install_prereqs_macos() {
+  install_homebrew
+
+  local formulas=()
+  have aws    || formulas+=("awscli")
+  have curl   || formulas+=("curl")
+  have unzip  || formulas+=("unzip")
+  have jq     || formulas+=("jq")
+
+  if [[ ${#formulas[@]} -gt 0 ]]; then
+    log "Installing missing macOS tools with Homebrew: ${formulas[*]}"
+    brew install "${formulas[@]}"
+  fi
+
+  if ! session-manager-plugin --version >/dev/null 2>&1; then
+    log "Installing AWS Session Manager Plugin..."
+    brew install --cask session-manager-plugin
+  fi
+}
+
+install_prereqs_linux() {
+  have curl    || install_curl_linux
+  have unzip   || install_unzip_linux
+  have jq      || install_jq_linux
+  have aws     || install_aws_cli_linux
+  ! session-manager-plugin --version >/dev/null 2>&1 && install_session_manager_plugin_linux
+}
+
+install_missing_prereqs() {
+  case "$(uname -s)" in
+    Darwin)
+      install_prereqs_macos
+      ;;
+    Linux)
+      install_prereqs_linux
+      ;;
+    *)
+      die "Unsupported OS: $(uname -s). This script supports macOS and Linux."
+      ;;
+  esac
+}
+
 # -- Prereq checks -----------------------------------------------------------
 check_prereqs() {
   local missing=()
   for cmd in aws curl unzip jq; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
+
+  local sm_missing=0
+  ! session-manager-plugin --version >/dev/null 2>&1 && sm_missing=1
+
+  if [[ ${#missing[@]} -gt 0 || $sm_missing -eq 1 ]]; then
+    confirm_install "${missing[@]}" "$sm_missing"
+    install_missing_prereqs
+  fi
+
+  missing=()
+  for cmd in aws curl unzip jq; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    die "Missing tools: ${missing[*]}. Install them first."
+    die "Missing tools after attempted installation: ${missing[*]}"
   fi
 
   if ! session-manager-plugin --version >/dev/null 2>&1; then
-    die "AWS Session Manager Plugin not found.
-     Install it:
-       macOS:   brew install --cask session-manager-plugin
-       Linux:   https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"
+    die "AWS Session Manager Plugin not found after attempted installation."
   fi
 
   if ! aws configure get region >/dev/null 2>&1 && [[ -z "${AWS_REGION:-}" ]]; then

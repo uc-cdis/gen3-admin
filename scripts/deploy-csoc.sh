@@ -35,6 +35,205 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# ── Pipe detection / confirmation ────────────────────────────────────────────
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+    local missing=("$@")
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    log_warning "Missing tools: ${missing[*]}"
+    echo ""
+    echo "This script will install the following tools:"
+    for cmd in "${missing[@]}"; do
+        case "$cmd" in
+            kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
+            helm)    echo "  - helm (Kubernetes package manager)" ;;
+            *)       echo "  - $cmd" ;;
+        esac
+    done
+    echo ""
+
+    if is_piped; then
+        echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+        echo "Press Ctrl+C to cancel."
+        for i in 5 4 3 2 1; do
+            echo -ne "\r  Starting in ${i}s... "
+            sleep 1
+        done
+        echo -ne "\r                           \r"
+    else
+        read -rp "Proceed with installation? [y/N] " ans
+        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+            log_error "Installation cancelled. Install the missing tools manually and rerun this script."
+            exit 1
+        fi
+    fi
+}
+
+# ── Pre-flight checks / tool installation ───────────────────────────────────
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_sudo() {
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+linux_pkg_manager() {
+    if have apt-get; then echo "apt"; return; fi
+    if have dnf; then echo "dnf"; return; fi
+    if have yum; then echo "yum"; return; fi
+    if have pacman; then echo "pacman"; return; fi
+    if have zypper; then echo "zypper"; return; fi
+    if have apk; then echo "apk"; return; fi
+    echo ""
+}
+
+# ── Values file helper ───────────────────────────────────────────────────────
+REPO_RAW_URL="https://raw.githubusercontent.com/uc-cdis/gen3-admin/master"
+
+ensure_values_file() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        return 0
+    fi
+
+    local remote_url="${REPO_RAW_URL}/${file}"
+    log_warning "Values file not found locally: $file"
+    log_info "Fetching from GitHub..."
+
+    mkdir -p "$(dirname "$file")"
+    if curl -fsSL -o "$file" "$remote_url"; then
+        log_success "Downloaded $file"
+    else
+        log_error "Failed to download values file from $remote_url"
+        exit 1
+    fi
+}
+
+install_homebrew() {
+    if have brew; then
+        return
+    fi
+
+    log_info "Homebrew not found; installing Homebrew..."
+    if ! have curl; then
+        log_error "curl is required to install Homebrew. Install curl first, then rerun this script."
+        exit 1
+    fi
+
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+
+    have brew || { log_error "Homebrew installed, but 'brew' is not on PATH."; exit 1; }
+}
+
+install_kubectl_linux() {
+    log_info "Installing kubectl using official binary download..."
+
+    local arch
+    case "$(uname -m)" in
+        x86_64|amd64)  arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) log_error "Unsupported architecture: $(uname -m)"; exit 1 ;;
+    esac
+
+    local kube_version
+    kube_version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+
+    local tmp
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' RETURN
+
+    curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${kube_version}/bin/linux/${arch}/kubectl"
+    run_sudo install -o root -g root -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
+}
+
+install_helm_linux() {
+    log_info "Installing Helm using official install script..."
+
+    if ! have curl; then
+        log_error "curl is required to install Helm. Install curl first, then rerun this script."
+        exit 1
+    fi
+
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo bash
+}
+
+install_prereqs_macos() {
+    install_homebrew
+
+    local formulas=()
+    have kubectl || formulas+=("kubernetes-cli")
+    have helm    || formulas+=("helm")
+
+    if [[ ${#formulas[@]} -gt 0 ]]; then
+        log_info "Installing missing macOS tools with Homebrew: ${formulas[*]}"
+        brew install "${formulas[@]}"
+    fi
+}
+
+install_prereqs_linux() {
+    have kubectl || install_kubectl_linux
+    have helm    || install_helm_linux
+}
+
+install_missing_prereqs() {
+    case "$(uname -s)" in
+        Darwin)
+            install_prereqs_macos
+            ;;
+        Linux)
+            install_prereqs_linux
+            ;;
+        *)
+            log_error "Unsupported OS: $(uname -s). This script supports macOS and Linux."
+            exit 1
+            ;;
+    esac
+}
+
+check_prereqs() {
+    log_info "Checking prerequisites..."
+
+    local missing=()
+    for cmd in kubectl helm; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        confirm_install "${missing[@]}"
+        install_missing_prereqs
+    fi
+
+    missing=()
+    for cmd in kubectl helm; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_error "Missing tools after attempted installation: ${missing[*]}"
+        exit 1
+    fi
+
+    # Verify cluster connectivity
+    if ! kubectl cluster-info &> /dev/null; then
+        log_error "Cannot connect to Kubernetes cluster. Please configure kubectl access."
+        exit 1
+    fi
+
+    log_success "Prerequisites verified"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -90,25 +289,7 @@ echo "Values File: $VALUES_FILE"
 echo ""
 
 # Verify prerequisites
-log_info "Checking prerequisites..."
-
-if ! command -v kubectl &> /dev/null; then
-    log_error "kubectl not found. Please install kubectl: https://kubernetes.io/docs/tasks/tools/"
-    exit 1
-fi
-
-if ! command -v helm &> /dev/null; then
-    log_error "helm not found. Please install helm: https://helm.sh/docs/intro/install/"
-    exit 1
-fi
-
-# Verify cluster connectivity
-if ! kubectl cluster-info &> /dev/null; then
-    log_error "Cannot connect to Kubernetes cluster. Please configure kubectl access."
-    exit 1
-fi
-
-log_success "Prerequisites verified"
+check_prereqs
 
 # Check if namespace exists
 log_info "Checking namespace: $NAMESPACE"
@@ -121,14 +302,7 @@ else
 fi
 
 # Verify values file exists
-if [ ! -f "$VALUES_FILE" ]; then
-    log_error "Values file not found: $VALUES_FILE"
-    log_info "Available values files:"
-    find helm/csoc -name "values*.yaml" -type f | sed 's/^/  /'
-    exit 1
-fi
-
-log_success "Values file found: $VALUES_FILE"
+ensure_values_file "$VALUES_FILE"
 
 # Deploy using helm upgrade --install for idempotency
 log_info "Deploying release..."
