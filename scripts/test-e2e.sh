@@ -40,6 +40,158 @@ log_test() {
     ((TESTS_TOTAL++))
 }
 
+# ── Pre-flight checks / tool installation ───────────────────────────────────
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_sudo() {
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+linux_pkg_manager() {
+    if have apt-get; then echo "apt"; return; fi
+    if have dnf; then echo "dnf"; return; fi
+    if have yum; then echo "yum"; return; fi
+    if have pacman; then echo "pacman"; return; fi
+    if have zypper; then echo "zypper"; return; fi
+    if have apk; then echo "apk"; return; fi
+    echo ""
+}
+
+install_homebrew() {
+    if have brew; then
+        return
+    fi
+
+    log_info "Homebrew not found; installing Homebrew..."
+    if ! have curl; then
+        echo -e "${RED}curl is required to install Homebrew. Install curl first, then rerun this script.${NC}" >&2
+        exit 1
+    fi
+
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+
+    have brew || { echo -e "${RED}Homebrew installed, but 'brew' is not on PATH.${NC}" >&2; exit 1; }
+}
+
+install_kubectl_linux() {
+    log_info "Installing kubectl using official binary download..."
+
+    local arch
+    case "$(uname -m)" in
+        x86_64|amd64)  arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) echo -e "${RED}Unsupported architecture: $(uname -m)${NC}" >&2; exit 1 ;;
+    esac
+
+    local kube_version
+    kube_version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+
+    local tmp
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' RETURN
+
+    curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${kube_version}/bin/linux/${arch}/kubectl"
+    run_sudo install -o root -g root -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
+}
+
+install_jq_linux() {
+    log_info "Installing jq using official binary download..."
+
+    local arch
+    case "$(uname -m)" in
+        x86_64|amd64)  arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) echo -e "${RED}Unsupported architecture: $(uname -m)${NC}" >&2; exit 1 ;;
+    esac
+
+    local jq_url="https://github.com/jqlang/jq/releases/latest/download/jq-linux-${arch}"
+    run_sudo curl -fsSL -o /usr/local/bin/jq "$jq_url"
+    run_sudo chmod +x /usr/local/bin/jq
+}
+
+install_prereqs_macos() {
+    install_homebrew
+
+    local formulas=()
+    have kubectl || formulas+=("kubernetes-cli")
+    have jq      || formulas+=("jq")
+
+    if [[ ${#formulas[@]} -gt 0 ]]; then
+        log_info "Installing missing macOS tools with Homebrew: ${formulas[*]}"
+        brew install "${formulas[@]}"
+    fi
+}
+
+install_prereqs_linux() {
+    have kubectl || install_kubectl_linux
+    have jq      || install_jq_linux
+}
+
+install_missing_prereqs() {
+    case "$(uname -s)" in
+        Darwin)
+            install_prereqs_macos
+            ;;
+        Linux)
+            install_prereqs_linux
+            ;;
+        *)
+            echo -e "${RED}Unsupported OS: $(uname -s). This script supports macOS and Linux.${NC}" >&2
+            exit 1
+            ;;
+    esac
+}
+
+check_prereqs() {
+    log_info "Checking prerequisites..."
+
+    local missing=()
+    for cmd in kubectl jq; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}Missing tools: ${missing[*]}${NC}"
+        echo ""
+        echo "This script will install the following tools:"
+        for cmd in "${missing[@]}"; do
+            case "$cmd" in
+                kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
+                jq)      echo "  - jq (JSON processor)" ;;
+                *)       echo "  - $cmd" ;;
+            esac
+        done
+        echo ""
+        read -rp "Proceed with installation? [y/N] " ans
+        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+            echo -e "${RED}Installation cancelled. Install the missing tools manually and rerun this script.${NC}" >&2
+            exit 1
+        fi
+        install_missing_prereqs
+    fi
+
+    missing=()
+    for cmd in kubectl jq; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}Missing tools after attempted installation: ${missing[*]}${NC}" >&2
+        exit 1
+    fi
+
+    log_info "Prerequisites verified"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -64,6 +216,9 @@ echo -e "${BLUE}=====================================${NC}"
 echo "Namespace: $NAMESPACE"
 echo "Timeout: ${TIMEOUT}s"
 echo ""
+
+# Verify prerequisites
+check_prereqs
 
 # Test 1: Namespace exists
 log_test "Namespace $NAMESPACE exists"

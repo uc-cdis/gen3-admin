@@ -187,54 +187,13 @@ install_linux_base_packages() {
 }
 
 install_docker_linux() {
-  local pm="$1"
-  log "Installing Docker with Linux package manager ($pm)..."
+  log "Installing Docker using official convenience script..."
 
-  case "$pm" in
-    apt)
-      . /etc/os-release
-      local distro="${ID:-}"
-      local codename="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+  if ! have curl; then
+    die "curl is required to install Docker. Install curl first, then rerun this script."
+  fi
 
-      if [[ "$distro" == "ubuntu" || "$distro" == "debian" ]] && [[ -n "$codename" ]]; then
-        run_sudo install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL "https://download.docker.com/linux/${distro}/gpg" \
-          | run_sudo gpg --dearmor --batch --yes -o /etc/apt/keyrings/docker.gpg
-        run_sudo chmod a+r /etc/apt/keyrings/docker.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${distro} ${codename} stable" \
-          | run_sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-        run_sudo apt-get update
-        run_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      else
-        warn "Unsupported apt distro for Docker CE repo; falling back to distro Docker package"
-        run_sudo apt-get install -y docker.io
-      fi
-      ;;
-    dnf)
-      . /etc/os-release
-      local repo_distro="centos"
-      [[ "${ID:-}" == "fedora" ]] && repo_distro="fedora"
-      run_sudo dnf install -y dnf-plugins-core || true
-      run_sudo dnf config-manager --add-repo "https://download.docker.com/linux/${repo_distro}/docker-ce.repo" || true
-      run_sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
-        run_sudo dnf install -y moby-engine docker-cli
-      ;;
-    yum)
-      run_sudo yum install -y yum-utils
-      run_sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
-      run_sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
-        run_sudo yum install -y docker
-      ;;
-    pacman)
-      run_sudo pacman -S --needed --noconfirm docker
-      ;;
-    zypper)
-      run_sudo zypper --non-interactive install docker
-      ;;
-    apk)
-      run_sudo apk add --no-cache docker
-      ;;
-  esac
+  curl -fsSL https://get.docker.com | run_sudo sh
 
   if have systemctl; then
     run_sudo systemctl enable --now docker || true
@@ -298,50 +257,13 @@ EOF
 }
 
 install_helm_linux() {
-  local pm="$1"
-  log "Installing Helm with Linux package manager ($pm)..."
+  log "Installing Helm using official install script..."
 
-  case "$pm" in
-    apt)
-      curl -fsSL https://baltocdn.com/helm/signing.asc \
-        | run_sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/helm.gpg
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" \
-        | run_sudo tee /etc/apt/sources.list.d/helm-stable-debian.list >/dev/null
-      run_sudo apt-get update
-      run_sudo apt-get install -y helm
-      ;;
-    dnf)
-      cat <<'EOF' | run_sudo tee /etc/yum.repos.d/helm-stable.repo >/dev/null
-[helm-stable]
-name=Helm Stable Repository
-baseurl=https://baltocdn.com/helm/stable/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://baltocdn.com/helm/signing.asc
-EOF
-      run_sudo dnf install -y helm
-      ;;
-    yum)
-      cat <<'EOF' | run_sudo tee /etc/yum.repos.d/helm-stable.repo >/dev/null
-[helm-stable]
-name=Helm Stable Repository
-baseurl=https://baltocdn.com/helm/stable/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://baltocdn.com/helm/signing.asc
-EOF
-      run_sudo yum install -y helm
-      ;;
-    pacman)
-      run_sudo pacman -S --needed --noconfirm helm
-      ;;
-    zypper)
-      run_sudo zypper --non-interactive install helm
-      ;;
-    apk)
-      run_sudo apk add --no-cache helm
-      ;;
-  esac
+  if ! have curl; then
+    die "curl is required to install Helm. Install curl first, then rerun this script."
+  fi
+
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo sh
 }
 
 install_minikube_linux() {
@@ -393,9 +315,9 @@ install_prereqs_linux() {
 
   install_linux_base_packages "$pm"
 
-  have docker   || install_docker_linux "$pm"
+  have docker   || install_docker_linux
   have kubectl  || install_kubectl_linux "$pm"
-  have helm     || install_helm_linux "$pm"
+  have helm     || install_helm_linux
   have minikube || install_minikube_linux "$pm"
 
   if ! docker info >/dev/null 2>&1; then
@@ -429,6 +351,22 @@ check_prereqs() {
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     warn "Missing tools: ${missing[*]}"
+    echo ""
+    echo "This script will install the following tools:"
+    for cmd in "${missing[@]}"; do
+      case "$cmd" in
+        minikube) echo "  - minikube (local Kubernetes)" ;;
+        kubectl)  echo "  - kubectl (Kubernetes CLI)" ;;
+        helm)     echo "  - helm (Kubernetes package manager)" ;;
+        docker)   echo "  - Docker (container runtime)" ;;
+        *)        echo "  - $cmd" ;;
+      esac
+    done
+    echo ""
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
     install_missing_prereqs
   fi
 

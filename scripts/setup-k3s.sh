@@ -39,7 +39,130 @@ ok()     { echo -e "${GREEN}✓${NC} $*"; }
 warn()   { echo -e "${YELLOW}⚠${NC} $*"; }
 die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
-# ── Pre-flight checks ────────────────────────────────────────────────────────
+# ── Pre-flight checks / tool installation ───────────────────────────────────
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_sudo() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+linux_pkg_manager() {
+  if have apt-get; then echo "apt"; return; fi
+  if have dnf; then echo "dnf"; return; fi
+  if have yum; then echo "yum"; return; fi
+  if have pacman; then echo "pacman"; return; fi
+  if have zypper; then echo "zypper"; return; fi
+  if have apk; then echo "apk"; return; fi
+  echo ""
+}
+
+install_homebrew() {
+  if have brew; then
+    return
+  fi
+
+  log "Homebrew not found; installing Homebrew..."
+  if ! have curl; then
+    die "curl is required to install Homebrew. Install curl first, then rerun this script."
+  fi
+
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  have brew || die "Homebrew installed, but 'brew' is not on PATH. Open a new terminal or add brew shellenv to your shell profile."
+}
+
+install_kubectl_linux() {
+  log "Installing kubectl using official binary download..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  local kube_version
+  kube_version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${kube_version}/bin/linux/${arch}/kubectl"
+  run_sudo install -o root -g root -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
+}
+
+install_helm_linux() {
+  log "Installing Helm using official install script..."
+
+  if ! have curl; then
+    die "curl is required to install Helm. Install curl first, then rerun this script."
+  fi
+
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo sh
+}
+
+install_git_linux() {
+  log "Installing git..."
+
+  local pm
+  pm="$(linux_pkg_manager)"
+
+  case "$pm" in
+    apt)    run_sudo apt-get update && run_sudo apt-get install -y git ;;
+    dnf)    run_sudo dnf install -y git ;;
+    yum)    run_sudo yum install -y git ;;
+    pacman) run_sudo pacman -S --needed --noconfirm git ;;
+    zypper) run_sudo zypper --non-interactive install git ;;
+    apk)    run_sudo apk add --no-cache git ;;
+    *)      die "Cannot install git: no supported package manager found." ;;
+  esac
+}
+
+install_prereqs_macos() {
+  install_homebrew
+
+  local formulas=()
+  have kubectl || formulas+=("kubernetes-cli")
+  have helm    || formulas+=("helm")
+  have git     || formulas+=("git")
+
+  if [[ ${#formulas[@]} -gt 0 ]]; then
+    log "Installing missing macOS tools with Homebrew: ${formulas[*]}"
+    brew install "${formulas[@]}"
+  fi
+}
+
+install_prereqs_linux() {
+  have kubectl || install_kubectl_linux
+  have helm    || install_helm_linux
+  have git     || install_git_linux
+}
+
+install_missing_prereqs() {
+  case "$(uname -s)" in
+    Darwin)
+      install_prereqs_macos
+      ;;
+    Linux)
+      install_prereqs_linux
+      ;;
+    *)
+      die "Unsupported OS: $(uname -s). This setup script supports macOS and Linux."
+      ;;
+  esac
+}
+
 check_prereqs() {
   log "Checking prerequisites..."
 
@@ -47,9 +170,36 @@ check_prereqs() {
   for cmd in kubectl helm git; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
+
   if [[ ${#missing[@]} -gt 0 ]]; then
-    die "Missing tools: ${missing[*]}. Install them first."
+    warn "Missing tools: ${missing[*]}"
+    echo ""
+    echo "This script will install the following tools:"
+    for cmd in "${missing[@]}"; do
+      case "$cmd" in
+        kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
+        helm)    echo "  - helm (Kubernetes package manager)" ;;
+        git)     echo "  - git (version control)" ;;
+        *)       echo "  - $cmd" ;;
+      esac
+    done
+    echo ""
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
+    install_missing_prereqs
   fi
+
+  missing=()
+  for cmd in kubectl helm git; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    die "Missing tools after attempted installation: ${missing[*]}"
+  fi
+
+  ok "Required tools are installed"
 
   if kubectl get nodes 2>/dev/null | grep -q "Ready"; then
     ok "k3s cluster is running"
