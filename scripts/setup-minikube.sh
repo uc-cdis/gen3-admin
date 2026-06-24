@@ -110,18 +110,18 @@ linux_pkg_manager() {
 # ── Repo helper ──────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/uc-cdis/gen3-admin.git"
 REPO_BRANCH="${REPO_BRANCH:-gcp-ws}"
+CLONE_DIR="/tmp/gen3-admin"
 
 ensure_repo() {
-  if [[ -n "$PROJECT_ROOT" && -d "$PROJECT_ROOT/helm" ]]; then
-    cd "$PROJECT_ROOT"
+  if [[ -d "$CLONE_DIR/helm" ]]; then
+    cd "$CLONE_DIR"
+    PROJECT_ROOT="$CLONE_DIR"
     return 0
   fi
 
   log "Project files not found — cloning repo..."
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$tmp_dir"
-  PROJECT_ROOT="$tmp_dir/gen3-admin"
+  git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
+  PROJECT_ROOT="$CLONE_DIR"
   cd "$PROJECT_ROOT"
   ok "Cloned branch $REPO_BRANCH to $PROJECT_ROOT"
 }
