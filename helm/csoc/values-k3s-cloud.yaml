@@ -48,7 +48,7 @@ frontend:
   hostAliases:
     - ip: "10.43.118.93"
       hostnames:
-        - keycloak.aws
+        - keycloak.cloud
   livenessProbe:
     httpGet:
       path: /
@@ -58,7 +58,7 @@ frontend:
     timeoutSeconds: 3
     failureThreshold: 3
   env:
-    NEXTAUTH_URL: "http://csoc.aws"
+    NEXTAUTH_URL: "http://csoc.cloud"
     NEXTAUTH_SECRET: "test-secret-change-in-production" #  pragma: allowlist secret
     NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" # pragma: allowlist secret
     MOCK_AUTH: "false"
@@ -66,8 +66,8 @@ frontend:
     KEYCLOAK_CLIENT_SECRET: ""
     NEXT_KEYCLOAK_CLIENT_ID: "csoc-client"
     NEXT_PUBLIC_KEYCLOAK_REALM: "csoc-realm"
-    NEXT_PUBLIC_KEYCLOAK_URL: "http://keycloak.aws"
-    NEXT_PUBLIC_KEYCLOAK_ISSUER: "http://keycloak.aws/realms/csoc-realm"
+    NEXT_PUBLIC_KEYCLOAK_URL: "http://keycloak.cloud"
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: "http://keycloak.cloud/realms/csoc-realm"
   resources:
     limits:
       memory: "256Mi"
@@ -122,7 +122,7 @@ ingress:
   className: "traefik"
   annotations: {}
   hosts:
-    - host: "csoc.aws"
+    - host: "csoc.cloud"
       paths:
         - path: /api/auth
           pathType: Prefix

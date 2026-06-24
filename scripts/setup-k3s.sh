@@ -3,8 +3,8 @@
 # setup-k3s.sh — Deploy CSOC portal + Keycloak on k3s
 #
 # Usage:
-#   ./scripts/setup-k3s.sh                    # k3s + deploy (MOCK_AUTH)
-#   ./scripts/setup-k3s.sh --keycloak         # k3s + Keycloak operator + deploy
+#   ./scripts/setup-k3s.sh                    # k3s + Keycloak operator + deploy
+#   ./scripts/setup-k3s.sh --mock-auth        # k3s + deploy with MOCK_AUTH
 #   ./scripts/setup-k3s.sh --teardown         # tear everything down
 #   ./scripts/setup-k3s.sh --status           # show status
 #   ./scripts/setup-k3s.sh --cluster-only     # only verify k3s, don't deploy
@@ -15,11 +15,11 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
+INSTALL_KEYCLOAK="${INSTALL_KEYCLOAK:-1}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
-VALUES_FILE="./helm/csoc/values-aws-k3s.yaml"
-HOSTNAME="csoc.aws"
-GEN3_HOSTNAME="gen3.aws"
-KEYCLOAK_HOSTNAME="keycloak.aws"
+HOSTNAME="csoc.cloud"
+GEN3_HOSTNAME="gen3.cloud"
+KEYCLOAK_HOSTNAME="keycloak.cloud"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
@@ -33,6 +33,8 @@ else
   SCRIPT_DIR=""
   PROJECT_ROOT=""
 fi
+
+VALUES_FILE="./helm/csoc/values-k3s-cloud.yaml"
 
 # Quay image tags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
@@ -108,21 +110,48 @@ linux_pkg_manager() {
 
 # ── Repo helper ──────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/uc-cdis/gen3-admin.git"
-REPO_BRANCH="${REPO_BRANCH:-gcp-ws}"
-CLONE_DIR="/tmp/gen3-admin"
+REPO_BRANCH="${REPO_BRANCH:-master}"
 
 ensure_repo() {
-  if [[ -d "$CLONE_DIR/helm" ]]; then
-    cd "$CLONE_DIR"
-    PROJECT_ROOT="$CLONE_DIR"
+  # Already in a valid project root?
+  if [[ -n "$PROJECT_ROOT" && -d "$PROJECT_ROOT/helm" ]]; then
+    cd "$PROJECT_ROOT"
     return 0
   fi
 
-  log "Project files not found — cloning repo..."
-  git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
-  PROJECT_ROOT="$CLONE_DIR"
+  # If running from an unpacked checkout, use it.
+  if [[ -d "./helm" ]]; then
+    PROJECT_ROOT="$(pwd)"
+    cd "$PROJECT_ROOT"
+    return 0
+  fi
+
+  # If pipe mode already cloned the repo earlier, reuse it.
+  if [[ -d "./gen3-admin/helm" ]]; then
+    PROJECT_ROOT="$(pwd)/gen3-admin"
+    cd "$PROJECT_ROOT"
+    git fetch origin "$REPO_BRANCH"
+    git checkout -B "$REPO_BRANCH" FETCH_HEAD
+    return 0
+  fi
+
+  if [[ -e "./gen3-admin" ]]; then
+    die "Found ./gen3-admin, but it does not look like a gen3-admin checkout. Move it aside or run from a different directory."
+  fi
+
+  # In pipe mode, clone into Git's default destination: ./gen3-admin
+  git clone --branch "$REPO_BRANCH" "$REPO_URL"
+  PROJECT_ROOT="$(pwd)/gen3-admin"
   cd "$PROJECT_ROOT"
-  ok "Cloned branch $REPO_BRANCH to $PROJECT_ROOT"
+  ok "Cloned branch $REPO_BRANCH"
+}
+
+ensure_values_file() {
+  if [[ -f "$VALUES_FILE" ]]; then
+    return 0
+  fi
+
+  die "Values file not found in checked-out repo: $VALUES_FILE"
 }
 
 install_homebrew() {
@@ -262,11 +291,76 @@ check_prereqs() {
 
   ok "Required tools are installed"
 
-  if kubectl get nodes 2>/dev/null | grep -q "Ready"; then
-    ok "k3s cluster is running"
-  else
-    die "k3s cluster not found. Install k3s first."
+  # Ensure kubeconfig is set up
+  setup_kubeconfig
+
+  # Ensure k3s server is running
+  if ! kubectl get nodes 2>/dev/null | grep -q "Ready"; then
+    if have k3s; then
+      log "k3s cluster not responding — checking service..."
+      if have systemctl; then
+        if ! systemctl is-active --quiet k3s; then
+          log "Starting k3s service..."
+          run_sudo systemctl start k3s
+          run_sudo systemctl enable k3s 2>/dev/null || true
+        fi
+      else
+        run_sudo service k3s start 2>/dev/null || true
+      fi
+
+      # Wait for k3s to be ready (up to 120s)
+      local waited=0
+      while [[ $waited -lt 120 ]]; do
+        if kubectl get nodes 2>/dev/null | grep -q "Ready"; then
+          break
+        fi
+        sleep 5
+        waited=$((waited + 5))
+        if (( waited % 15 == 0 )); then
+          log "  Waiting for k3s... (${waited}s)"
+        fi
+      done
+
+      if ! kubectl get nodes 2>/dev/null | grep -q "Ready"; then
+        die "k3s failed to start within 120 seconds."
+      fi
+    else
+      die "k3s not found. Install k3s first."
+    fi
   fi
+
+  ok "k3s cluster is running"
+}
+
+setup_kubeconfig() {
+  local k3s_yaml="/etc/rancher/k3s/k3s.yaml"
+
+  # Create .kube dir if it doesn't exist
+  mkdir -p "$HOME/.kube"
+
+  # If kubeconfig already readable, nothing to do
+  if kubectl cluster-info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # If k3s yaml doesn't exist, nothing to copy
+  if [[ ! -f "$k3s_yaml" ]]; then
+    warn "k3s kubeconfig not found at $k3s_yaml"
+    return 0
+  fi
+
+  # Don't overwrite existing kubeconfig with different contents
+  if [[ -f "$HOME/.kube/config" ]]; then
+    warn "Existing kubeconfig found at $HOME/.kube/config — not overwriting"
+    return 0
+  fi
+
+  log "Copying k3s kubeconfig..."
+  run_sudo cp "$k3s_yaml" "$HOME/.kube/config"
+  run_sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+  chmod 600 "$HOME/.kube/config"
+
+  ok "Kubeconfig copied to $HOME/.kube/config"
 }
 
 # ── CloudNativePG operator ───────────────────────────────────────────────────
@@ -291,41 +385,44 @@ install_cnpg() {
 # ── Keycloak via Operator ────────────────────────────────────────────────────
 start_keycloak() {
   if [[ "${INSTALL_KEYCLOAK:-0}" != "1" ]]; then
-    log "Keycloak not requested (--keycloak to enable), using MOCK_AUTH mode"
+    log "Keycloak disabled (--mock-auth), using MOCK_AUTH mode"
     return
   fi
 
+  local keycloak_running=0
   if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1 && \
      kubectl get pods -n "$KEYCLOAK_NS" -l app=keycloak 2>/dev/null | grep -q "Running"; then
     warn "Keycloak already running in cluster"
-    return
+    keycloak_running=1
   fi
 
-  log "Installing Keycloak via Operator..."
+  if [[ "$keycloak_running" == "0" ]]; then
+    log "Installing Keycloak via Operator..."
 
-  # Step 1: CloudNativePG
-  install_cnpg
+    # Step 1: CloudNativePG
+    install_cnpg
 
-  # Step 2: Keycloak operator
-  if [[ -f "$KEYCLOAK_OPERATOR_DIR/install.sh" ]]; then
-    log "Running Keycloak operator install script..."
-    NAMESPACE="$KEYCLOAK_NS" bash "$KEYCLOAK_OPERATOR_DIR/install.sh"
-  else
-    local KC_VERSION="26.6.1"
-    kubectl create namespace "$KEYCLOAK_NS" --dry-run=client -o yaml | kubectl apply -f -
-    kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml"
-    kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml"
-    kubectl -n "$KEYCLOAK_NS" apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/kubernetes.yml"
-    kubectl patch clusterrolebinding keycloak-operator-clusterrole-binding \
-      --type='json' \
-      -p='[{"op": "replace", "path": "/subjects/0/namespace", "value":"'"$KEYCLOAK_NS"'"}]' || true
-    kubectl rollout restart deployment/keycloak-operator -n "$KEYCLOAK_NS" 2>/dev/null || true
+    # Step 2: Keycloak operator
+    if [[ -f "$KEYCLOAK_OPERATOR_DIR/install.sh" ]]; then
+      log "Running Keycloak operator install script..."
+      NAMESPACE="$KEYCLOAK_NS" bash "$KEYCLOAK_OPERATOR_DIR/install.sh"
+    else
+      local KC_VERSION="26.6.1"
+      kubectl create namespace "$KEYCLOAK_NS" --dry-run=client -o yaml | kubectl apply -f -
+      kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml"
+      kubectl apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml"
+      kubectl -n "$KEYCLOAK_NS" apply -f "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KC_VERSION}/kubernetes/kubernetes.yml"
+      kubectl patch clusterrolebinding keycloak-operator-clusterrole-binding \
+        --type='json' \
+        -p='[{"op": "replace", "path": "/subjects/0/namespace", "value":"'"$KEYCLOAK_NS"'"}]' || true
+      kubectl rollout restart deployment/keycloak-operator -n "$KEYCLOAK_NS" 2>/dev/null || true
+    fi
+
+    log "Waiting for Keycloak operator..."
+    kubectl rollout status deployment/keycloak-operator -n "$KEYCLOAK_NS" --timeout=120s
   fi
 
-  log "Waiting for Keycloak operator..."
-  kubectl rollout status deployment/keycloak-operator -n "$KEYCLOAK_NS" --timeout=120s
-
-  # Step 3: Apply Keycloak resources — patch hostnames for AWS
+  # Step 3: Apply Keycloak resources — patch hostnames for k3s
   if [[ -f "$KEYCLOAK_CRD_FILE" ]]; then
     log "Applying Keycloak resources (PostgreSQL cluster + server + realm)..."
 
@@ -338,16 +435,19 @@ start_keycloak() {
       sed -i "s/namespace: csoc/namespace: ${KEYCLOAK_NS}/g" "$tmp"
     fi
 
-    # Patch hostnames for AWS
+    # Patch hostnames for k3s
     sed -i "s/hostname: keycloak.local/hostname: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
+    sed -i "s/hostname: keycloak.aws/hostname: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.local/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
+    sed -i "s/host: keycloak.aws/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
 
     # Patch ingress class for k3s (traefik instead of nginx)
     sed -i "s/ingressClassName: nginx/ingressClassName: traefik/g" "$tmp"
 
-    # Patch redirect URIs for AWS
+    # Patch redirect URIs for k3s
     sed -i "s|http://localhost:3000|http://${HOSTNAME}|g" "$tmp"
     sed -i "s|http://csoc.local|http://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://csoc.aws|http://${HOSTNAME}|g" "$tmp"
 
     kubectl apply -f "$tmp"
     rm -f "$tmp"
@@ -372,21 +472,66 @@ start_keycloak() {
 deploy_csoc() {
   cd "$PROJECT_ROOT"
 
-  if [[ ! -f "$VALUES_FILE" ]]; then
-    die "Values file not found: $VALUES_FILE"
+  ensure_values_file
+
+  # Create namespace if needed
+  if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+    kubectl create namespace "$NAMESPACE"
+    ok "Created namespace: $NAMESPACE"
   fi
 
   log "Deploying CSOC portal via Helm..."
+  log "  Chart:    $HELM_CHART"
+  log "  Values:   $VALUES_FILE"
+  log "  API tag:  $API_IMAGE_TAG"
+  log "  FE tag:   $FRONTEND_IMAGE_TAG"
 
   local helm_args=(
     --namespace "$NAMESPACE"
     -f "$VALUES_FILE"
     --set "image.api.tag=${API_IMAGE_TAG}"
     --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
+    --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
   )
 
   if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
-    log "Configuring CSOC portal to use Keycloak..."
+    log "Configuring CSOC portal to use Keycloak (http://${KEYCLOAK_HOSTNAME})..."
+
+    # Create a keycloak-http service on port 80 so pods can reach keycloak.cloud:80
+    log "Creating keycloak-http service (port 80 -> keycloak pod:8080)..."
+    kubectl apply -n "$NAMESPACE" -f - <<EOF >/dev/null 2>&1 || true
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-http
+  labels:
+    app: keycloak
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/managed-by: keycloak-operator
+EOF
+
+    # Wait for the service to get a ClusterIP
+    local keycloak_ip
+    keycloak_ip=""
+    local waited=0
+    while [[ $waited -lt 30 && -z "$keycloak_ip" ]]; do
+      keycloak_ip=$(kubectl get svc keycloak-http -n "$NAMESPACE" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+      sleep 2
+      waited=$((waited + 2))
+    done
+    if [[ -z "$keycloak_ip" ]]; then
+      die "Failed to create keycloak-http service in namespace '$NAMESPACE'"
+    fi
+    ok "keycloak-http service ready at $keycloak_ip"
+
     helm_args+=(
       --set "api.env.MOCK_AUTH=false"
       --set "api.env.KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
@@ -396,6 +541,10 @@ deploy_csoc() {
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=http://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
+      # HostAlias so pods can resolve keycloak.cloud -> Keycloak service
+      --set "frontend.hostAliases[0].ip=${keycloak_ip}"
+      --set "frontend.hostAliases[0].hostnames[0]=${KEYCLOAK_HOSTNAME}"
     )
   fi
 
@@ -465,6 +614,10 @@ show_status() {
     echo "  Helm release NOT installed yet"
   fi
 
+  # Get the external IP
+  local external_ip
+  external_ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null || true)
+
   echo ""
   echo "  Access:"
   echo "    Frontend:  http://${HOSTNAME}"
@@ -472,13 +625,21 @@ show_status() {
   echo "    Gen3:      http://${GEN3_HOSTNAME}"
   echo ""
 
+  if [[ -n "$external_ip" ]]; then
+    echo "  DNS / /etc/hosts setup:"
+    echo "    Add the following line to /etc/hosts:"
+    echo ""
+    echo "      ${external_ip}  ${HOSTNAME} ${GEN3_HOSTNAME} ${KEYCLOAK_HOSTNAME}"
+    echo ""
+  fi
+
   if kubectl get keycloak keycloak -n "$KEYCLOAK_NS" >/dev/null 2>&1; then
     echo "  Keycloak:   http://${KEYCLOAK_HOSTNAME}  (admin/admin)"
     echo "  Realm:      csoc-realm"
     echo "  Client:     csoc-client"
     echo "  Users:      admin/admin (superadmin), devuser/dev (csoc-role)"
   else
-    echo "  Keycloak:   NOT INSTALLED (use --keycloak)"
+    echo "  Keycloak:   NOT INSTALLED (use --mock-auth to skip)"
   fi
   echo ""
 }
@@ -489,7 +650,8 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  --keycloak          Install Keycloak via operator (default: off)
+  --keycloak          Install Keycloak via operator (default: on)
+  --mock-auth         Skip Keycloak and deploy with MOCK_AUTH
   --teardown          Remove Helm releases and Keycloak resources
   --status            Show current status
   --cluster-only      Only verify k3s, skip deploy
@@ -500,7 +662,8 @@ Options:
   --help              Show this help
 
 Examples:
-  $(basename "$0") --keycloak
+  $(basename "$0")
+  $(basename "$0") --mock-auth
   $(basename "$0") --status
   $(basename "$0") --teardown
 EOF
@@ -508,11 +671,10 @@ EOF
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 main() {
-  cd "$PROJECT_ROOT"
-
+  ACTION=""
   case "${1:-}" in
-    --teardown|-t) teardown; exit 0 ;;
-    --status|-s)   show_status; exit 0 ;;
+    --teardown|-t) ACTION="teardown" ;;
+    --status|-s)   ACTION="status" ;;
     --help|-h)     usage; exit 0 ;;
   esac
 
@@ -520,6 +682,7 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --keycloak)      INSTALL_KEYCLOAK=1; shift ;;
+      --mock-auth)     INSTALL_KEYCLOAK=0; shift ;;
       --cluster-only)  CLUSTER_ONLY=1; shift ;;
       --api-tag)       API_IMAGE_TAG="$2"; shift 2 ;;
       --frontend-tag)  FRONTEND_IMAGE_TAG="$2"; shift 2 ;;
@@ -535,8 +698,20 @@ main() {
   echo "╚══════════════════════════════════════════╝"
   echo ""
 
+  KEYCLOAK_NS="$NAMESPACE"
+
   check_prereqs
   ensure_repo
+
+  if [[ "$ACTION" == "teardown" ]]; then
+    teardown
+    exit 0
+  fi
+  if [[ "$ACTION" == "status" ]]; then
+    show_status
+    exit 0
+  fi
+
   start_keycloak
 
   if [[ "$CLUSTER_ONLY" == "0" ]]; then
