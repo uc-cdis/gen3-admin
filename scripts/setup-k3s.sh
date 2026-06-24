@@ -258,6 +258,59 @@ annotate_ingress_ip_allowlist() {
   fi
 }
 
+ensure_traefik_hostnetwork_accesslog() {
+  local waited=0
+  until kubectl -n kube-system get deploy traefik >/dev/null 2>&1; do
+    if [[ $waited -ge 60 ]]; then
+      warn "Traefik deployment not found in kube-system; skipping hostNetwork/accesslog patch"
+      return 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+
+  local patch='['
+  local needs_patch=0
+
+  if ! kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null | grep -qx "true"; then
+    patch+='{"op":"add","path":"/spec/template/spec/hostNetwork","value":true},'
+    needs_patch=1
+  fi
+
+  if ! kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.dnsPolicy}' 2>/dev/null | grep -qx "ClusterFirstWithHostNet"; then
+    patch+='{"op":"add","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},'
+    needs_patch=1
+  fi
+
+  local args
+  args=$(kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || true)
+  if ! grep -Fqx -- '--accesslog=true' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog=true"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.format=json' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.format=json"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.fields.defaultmode=keep' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.fields.defaultmode=keep"},'
+    needs_patch=1
+  fi
+  if ! grep -Fqx -- '--accesslog.fields.headers.defaultmode=keep' <<<"$args"; then
+    patch+='{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--accesslog.fields.headers.defaultmode=keep"},'
+    needs_patch=1
+  fi
+
+  if [[ "$needs_patch" != "1" ]]; then
+    ok "Traefik already configured for hostNetwork/accesslog"
+    return 0
+  fi
+
+  patch="${patch%,}]"
+  kubectl -n kube-system patch deploy traefik --type='json' -p="$patch"
+  ok "Patched Traefik for hostNetwork/accesslog"
+}
+
 install_homebrew() {
   if have brew; then
     return
@@ -434,6 +487,7 @@ check_prereqs() {
   fi
 
   ok "k3s cluster is running"
+  ensure_traefik_hostnetwork_accesslog
 }
 
 setup_kubeconfig() {
