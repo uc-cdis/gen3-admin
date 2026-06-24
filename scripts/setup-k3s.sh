@@ -220,38 +220,11 @@ ensure_ip_allowlist() {
   if [[ -n "$IP_ALLOWLIST_RANGES" ]]; then
     ranges="$IP_ALLOWLIST_RANGES"
   else
-    if ! can_prompt; then
-      warn "No interactive terminal available; skipping optional ingress IP allowlist setup"
-      return 0
-    fi
-
     local detected_ip
     detected_ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
-
-    echo "" > /dev/tty
-    echo "Restrict ${HOSTNAME} and ${KEYCLOAK_HOSTNAME} by source IP?" > /dev/tty
-    local enable
-    enable=$(tty_read "Create Traefik IP allowlist? [y/N] ")
-    if [[ ! "$enable" =~ ^[Yy]$ ]]; then
-      return 0
-    fi
-
-    local current_range
-    if [[ -n "$detected_ip" ]]; then
-      current_range=$(tty_read "Current public IP/CIDR [${detected_ip}/32]: ")
-      current_range="${current_range:-${detected_ip}/32}"
-    else
-      current_range=$(tty_read "Current public IP/CIDR: ")
-    fi
-    [[ -n "${current_range// /}" ]] || die "Current IP/CIDR is required"
-
-    local extra_ranges
-    extra_ranges=$(tty_read "Additional allowed IPs/CIDRs, comma separated [optional]: ")
-    if [[ -n "${extra_ranges// /}" ]]; then
-      ranges="${current_range},${extra_ranges}"
-    else
-      ranges="$current_range"
-    fi
+    [[ -n "$detected_ip" ]] || die "Could not detect public IP for allowlist. Set IP_ALLOWLIST_RANGES=<cidr> and rerun."
+    ranges="${detected_ip}/32"
+    log "IP allowlist: auto-detected public IP ${detected_ip}/32"
   fi
 
   ranges="${ranges//,/ }"
@@ -779,7 +752,7 @@ EOF
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=https://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
       # HostAlias so pods can resolve keycloak.cloud -> Keycloak service
       --set "frontend.hostAliases[0].ip=${keycloak_ip}"
       --set "frontend.hostAliases[0].hostnames[0]=${KEYCLOAK_HOSTNAME}"
