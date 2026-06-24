@@ -15,7 +15,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 RELEASE_NAME="${RELEASE_NAME:-csoc}"
 NAMESPACE="${NAMESPACE:-csoc}"
-INSTALL_KEYCLOAK="${INSTALL_KEYCLOAK:-1}"
+INSTALL_KEYCLOAK="${INSTALL_KEYCLOAK:-0}"
 HELM_CHART="${CHART_PATH:-./helm/csoc}"
 HOSTNAME="csoc.cloud"
 GEN3_HOSTNAME="gen3.cloud"
@@ -703,6 +703,9 @@ deploy_csoc() {
     --set "image.api.tag=${API_IMAGE_TAG}"
     --set "image.frontend.tag=${FRONTEND_IMAGE_TAG}"
     --set "frontend.env.NEXTAUTH_URL=http://${HOSTNAME}"
+    --set "api.env.MOCK_AUTH=true"
+    --set "frontend.env.MOCK_AUTH=true"
+    --set "frontend.env.ENABLE_MOCK_AUTH=true"
   )
 
   if [[ "${INSTALL_KEYCLOAK:-0}" == "1" ]]; then
@@ -744,11 +747,8 @@ EOF
     ok "keycloak-http service ready at $keycloak_ip"
 
     helm_args+=(
-      --set "api.env.MOCK_AUTH=false"
       --set "api.env.KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "api.env.KEYCLOAK_REALM=csoc-realm"
-      --set "frontend.env.MOCK_AUTH=false"
-      --set "frontend.env.ENABLE_MOCK_AUTH=false"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
