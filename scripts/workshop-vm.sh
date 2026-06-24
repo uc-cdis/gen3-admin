@@ -29,6 +29,49 @@ ok()     { echo -e "${GREEN}OK${NC} $*"; }
 warn()   { echo -e "${YELLOW}WARN${NC} $*"; }
 die()    { echo -e "${RED}ERR${NC} $*" >&2; exit 1; }
 
+# -- Pipe detection / confirmation --------------------------------------------
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+  local missing=("$@")
+  local sm_missing="${1:-}"
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  warn "Missing tools detected"
+  echo ""
+  echo "This script will install the following tools:"
+  for cmd in "${missing[@]}"; do
+    case "$cmd" in
+      aws)   echo "  - aws (AWS CLI)" ;;
+      curl)  echo "  - curl (HTTP client)" ;;
+      unzip) echo "  - unzip (archive extractor)" ;;
+      jq)    echo "  - jq (JSON processor)" ;;
+      *)     echo "  - $cmd" ;;
+    esac
+  done
+  if [[ "$sm_missing" == "1" ]]; then
+    echo "  - session-manager-plugin (AWS Session Manager)"
+  fi
+  echo ""
+
+  if is_piped; then
+    echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+    echo "Press Ctrl+C to cancel."
+    for i in 5 4 3 2 1; do
+      echo -ne "\r  Starting in ${i}s... "
+      sleep 1
+    done
+    echo -ne "\r                           \r"
+  else
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
+  fi
+}
+
 # -- Pre-flight checks / tool installation ------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -227,26 +270,7 @@ check_prereqs() {
   ! session-manager-plugin --version >/dev/null 2>&1 && sm_missing=1
 
   if [[ ${#missing[@]} -gt 0 || $sm_missing -eq 1 ]]; then
-    warn "Missing tools detected"
-    echo ""
-    echo "This script will install the following tools:"
-    for cmd in "${missing[@]}"; do
-      case "$cmd" in
-        aws)   echo "  - aws (AWS CLI)" ;;
-        curl)  echo "  - curl (HTTP client)" ;;
-        unzip) echo "  - unzip (archive extractor)" ;;
-        jq)    echo "  - jq (JSON processor)" ;;
-        *)     echo "  - $cmd" ;;
-      esac
-    done
-    if [[ $sm_missing -eq 1 ]]; then
-      echo "  - session-manager-plugin (AWS Session Manager)"
-    fi
-    echo ""
-    read -rp "Proceed with installation? [y/N] " ans
-    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-      die "Installation cancelled. Install the missing tools manually and rerun this script."
-    fi
+    confirm_install "${missing[@]}" "$sm_missing"
     install_missing_prereqs
   fi
 

@@ -35,6 +35,44 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# ── Pipe detection / confirmation ────────────────────────────────────────────
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+    local missing=("$@")
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    log_warning "Missing tools: ${missing[*]}"
+    echo ""
+    echo "This script will install the following tools:"
+    for cmd in "${missing[@]}"; do
+        case "$cmd" in
+            kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
+            helm)    echo "  - helm (Kubernetes package manager)" ;;
+            *)       echo "  - $cmd" ;;
+        esac
+    done
+    echo ""
+
+    if is_piped; then
+        echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+        echo "Press Ctrl+C to cancel."
+        for i in 5 4 3 2 1; do
+            echo -ne "\r  Starting in ${i}s... "
+            sleep 1
+        done
+        echo -ne "\r                           \r"
+    else
+        read -rp "Proceed with installation? [y/N] " ans
+        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+            log_error "Installation cancelled. Install the missing tools manually and rerun this script."
+            exit 1
+        fi
+    fi
+}
+
 # ── Pre-flight checks / tool installation ───────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -152,22 +190,7 @@ check_prereqs() {
     done
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log_warning "Missing tools: ${missing[*]}"
-        echo ""
-        echo "This script will install the following tools:"
-        for cmd in "${missing[@]}"; do
-            case "$cmd" in
-                kubectl) echo "  - kubectl (Kubernetes CLI)" ;;
-                helm)    echo "  - helm (Kubernetes package manager)" ;;
-                *)       echo "  - $cmd" ;;
-            esac
-        done
-        echo ""
-        read -rp "Proceed with installation? [y/N] " ans
-        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-            log_error "Installation cancelled. Install the missing tools manually and rerun this script."
-            exit 1
-        fi
+        confirm_install "${missing[@]}"
         install_missing_prereqs
     fi
 

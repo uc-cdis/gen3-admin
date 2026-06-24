@@ -25,8 +25,15 @@ KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
 KEYCLOAK_HOSTNAME="keycloak.local"
 CNPG_VERSION="1.29.0"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Resolve project root: works when run as a file, empty when piped
+if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  SCRIPT_DIR=""
+  PROJECT_ROOT=""
+fi
 
 # Quay image tags — override with env vars or CLI flags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
@@ -39,6 +46,45 @@ log()    { echo -e "${BLUE}[setup]${NC} $*"; }
 ok()     { echo -e "${GREEN}✓${NC} $*"; }
 warn()   { echo -e "${YELLOW}⚠${NC} $*"; }
 die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
+
+# ── Pipe detection / confirmation ────────────────────────────────────────────
+is_piped() { [[ ! -t 0 ]]; }
+
+confirm_install() {
+  local missing=("$@")
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  warn "Missing tools: ${missing[*]}"
+  echo ""
+  echo "This script will install the following tools:"
+  for cmd in "${missing[@]}"; do
+    case "$cmd" in
+      minikube) echo "  - minikube (local Kubernetes)" ;;
+      kubectl)  echo "  - kubectl (Kubernetes CLI)" ;;
+      helm)     echo "  - helm (Kubernetes package manager)" ;;
+      docker)   echo "  - Docker (container runtime)" ;;
+      *)        echo "  - $cmd" ;;
+    esac
+  done
+  echo ""
+
+  if is_piped; then
+    echo "Running in pipe mode — auto-proceeding in 5 seconds..."
+    echo "Press Ctrl+C to cancel."
+    for i in 5 4 3 2 1; do
+      echo -ne "\r  Starting in ${i}s... "
+      sleep 1
+    done
+    echo -ne "\r                           \r"
+  else
+    read -rp "Proceed with installation? [y/N] " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+      die "Installation cancelled. Install the missing tools manually and rerun this script."
+    fi
+  fi
+}
 
 # ── Pre-flight checks / tool installation ───────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -350,23 +396,7 @@ check_prereqs() {
   done
 
   if [[ ${#missing[@]} -gt 0 ]]; then
-    warn "Missing tools: ${missing[*]}"
-    echo ""
-    echo "This script will install the following tools:"
-    for cmd in "${missing[@]}"; do
-      case "$cmd" in
-        minikube) echo "  - minikube (local Kubernetes)" ;;
-        kubectl)  echo "  - kubectl (Kubernetes CLI)" ;;
-        helm)     echo "  - helm (Kubernetes package manager)" ;;
-        docker)   echo "  - Docker (container runtime)" ;;
-        *)        echo "  - $cmd" ;;
-      esac
-    done
-    echo ""
-    read -rp "Proceed with installation? [y/N] " ans
-    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-      die "Installation cancelled. Install the missing tools manually and rerun this script."
-    fi
+    confirm_install "${missing[@]}"
     install_missing_prereqs
   fi
 
