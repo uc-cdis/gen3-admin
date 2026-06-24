@@ -125,9 +125,11 @@ spec:
         directAccessGrantsEnabled: true
         redirectUris:
           - http://localhost:3000/*
+          - https://csoc.cloud/*
           - http://csoc.local/*
         webOrigins:
           - http://localhost:3000
+          - https://csoc.cloud
           - http://csoc.local
 
         attributes:

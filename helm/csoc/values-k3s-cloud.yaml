@@ -66,8 +66,8 @@ frontend:
     KEYCLOAK_CLIENT_SECRET: ""
     NEXT_KEYCLOAK_CLIENT_ID: "csoc-client"
     NEXT_PUBLIC_KEYCLOAK_REALM: "csoc-realm"
-    NEXT_PUBLIC_KEYCLOAK_URL: "http://keycloak.cloud"
-    NEXT_PUBLIC_KEYCLOAK_ISSUER: "http://keycloak.cloud/realms/csoc-realm"
+    NEXT_PUBLIC_KEYCLOAK_URL: "https://keycloak.cloud"
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: "https://keycloak.cloud/realms/csoc-realm"
   resources:
     limits:
       memory: "256Mi"

@@ -20,6 +20,7 @@ HELM_CHART="${CHART_PATH:-./helm/csoc}"
 HOSTNAME="csoc.cloud"
 GEN3_HOSTNAME="gen3.cloud"
 KEYCLOAK_HOSTNAME="keycloak.cloud"
+KEYCLOAK_SCHEME="${KEYCLOAK_SCHEME:-https}"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
@@ -598,14 +599,19 @@ start_keycloak() {
     sed -i "s/hostname: keycloak.aws/hostname: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.local/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
     sed -i "s/host: keycloak.aws/host: ${KEYCLOAK_HOSTNAME}/g" "$tmp"
+    sed -i "s|- keycloak.local|- ${KEYCLOAK_HOSTNAME}|g" "$tmp"
 
     # Patch ingress class for k3s (traefik instead of nginx)
     sed -i "s/ingressClassName: nginx/ingressClassName: traefik/g" "$tmp"
+    sed -i '/nginx.ingress.kubernetes.io\/ssl-redirect/d' "$tmp"
+    sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
+    sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
+    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.tls: \"true\"" "$tmp"
 
     # Patch redirect URIs for k3s
-    sed -i "s|http://localhost:3000|http://${HOSTNAME}|g" "$tmp"
-    sed -i "s|http://csoc.local|http://${HOSTNAME}|g" "$tmp"
-    sed -i "s|http://csoc.aws|http://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://localhost:3000|https://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://csoc.local|https://${HOSTNAME}|g" "$tmp"
+    sed -i "s|http://csoc.aws|https://${HOSTNAME}|g" "$tmp"
 
     kubectl apply -f "$tmp"
     rm -f "$tmp"
@@ -694,14 +700,14 @@ EOF
 
     helm_args+=(
       --set "api.env.MOCK_AUTH=false"
-      --set "api.env.KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
+      --set "api.env.KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "api.env.KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.MOCK_AUTH=false"
       --set "frontend.env.ENABLE_MOCK_AUTH=false"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=http://${KEYCLOAK_HOSTNAME}"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_REALM=csoc-realm"
       --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=csoc-client"
-      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=http://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
+      --set "frontend.env.NEXT_PUBLIC_KEYCLOAK_ISSUER=${KEYCLOAK_SCHEME}://${KEYCLOAK_HOSTNAME}/realms/csoc-realm"
       # HostAlias so pods can resolve keycloak.cloud -> Keycloak service
       --set "frontend.hostAliases[0].ip=${keycloak_ip}"
       --set "frontend.hostAliases[0].hostnames[0]=${KEYCLOAK_HOSTNAME}"
