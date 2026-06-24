@@ -282,10 +282,10 @@ ensure_ip_allowlist() {
 traefik_middlewares_annotation() {
   local middlewares=()
   if [[ "$TRAEFIK_HTTPS_REDIRECT_ENABLED" == "1" ]]; then
-    middlewares+=("${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd")
+    middlewares+=("${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd")
   fi
   if [[ "$IP_ALLOWLIST_ENABLED" == "1" ]]; then
-    middlewares+=("${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd")
+    middlewares+=("${NAMESPACE}-${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd")
   fi
 
   if [[ ${#middlewares[@]} -eq 0 ]]; then
@@ -662,7 +662,7 @@ start_keycloak() {
     sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
     sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
     sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure" "$tmp"
-    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.middlewares: ${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd" "$tmp"
+    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd" "$tmp"
     sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.tls: \"true\"" "$tmp"
 
     # Patch redirect URIs for k3s
