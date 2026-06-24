@@ -97,18 +97,15 @@ linux_pkg_manager() {
 # ── Repo helper ──────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/uc-cdis/gen3-admin.git"
 REPO_BRANCH="${REPO_BRANCH:-gcp-ws}"
-CLONE_DIR="/tmp/gen3-admin"
 
 ensure_repo() {
-    if [[ -d "$CLONE_DIR/helm" ]]; then
-        cd "$CLONE_DIR"
+    if [[ -d "helm" ]]; then
         return 0
     fi
 
     log_info "Project files not found — cloning repo..."
-    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
-    cd "$CLONE_DIR"
-    log_success "Cloned branch $REPO_BRANCH to $CLONE_DIR"
+    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" .
+    log_success "Cloned branch $REPO_BRANCH"
 }
 
 install_homebrew() {
