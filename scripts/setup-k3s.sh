@@ -194,20 +194,27 @@ ensure_ip_allowlist() {
 
     echo "" > /dev/tty
     echo "Restrict ${HOSTNAME} and ${KEYCLOAK_HOSTNAME} by source IP?" > /dev/tty
-    if [[ -n "$detected_ip" ]]; then
-      echo "Detected current public IP: ${detected_ip}" > /dev/tty
-    fi
     local enable
     enable=$(tty_read "Create Traefik IP allowlist? [y/N] ")
     if [[ ! "$enable" =~ ^[Yy]$ ]]; then
       return 0
     fi
 
+    local current_range
     if [[ -n "$detected_ip" ]]; then
-      ranges=$(tty_read "Allowed IPs/CIDRs, comma or space separated [${detected_ip}/32]: ")
-      ranges="${ranges:-${detected_ip}/32}"
+      current_range=$(tty_read "Current public IP/CIDR [${detected_ip}/32]: ")
+      current_range="${current_range:-${detected_ip}/32}"
     else
-      ranges=$(tty_read "Allowed IPs/CIDRs, comma or space separated: ")
+      current_range=$(tty_read "Current public IP/CIDR: ")
+    fi
+    [[ -n "${current_range// /}" ]] || die "Current IP/CIDR is required"
+
+    local extra_ranges
+    extra_ranges=$(tty_read "Additional allowed IPs/CIDRs, comma separated [optional]: ")
+    if [[ -n "${extra_ranges// /}" ]]; then
+      ranges="${current_range},${extra_ranges}"
+    else
+      ranges="$current_range"
     fi
   fi
 
