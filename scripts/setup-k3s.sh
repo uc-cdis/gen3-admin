@@ -36,6 +36,8 @@ else
 fi
 
 VALUES_FILE="./helm/csoc/values-k3s-cloud.yaml"
+TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE="${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE:-csoc-https-redirect}"
+TRAEFIK_HTTPS_REDIRECT_ENABLED=0
 IP_ALLOWLIST_MIDDLEWARE="${IP_ALLOWLIST_MIDDLEWARE:-csoc-ip-allowlist}"
 IP_ALLOWLIST_RANGES="${IP_ALLOWLIST_RANGES:-}"
 IP_ALLOWLIST_ENABLED=0
@@ -168,6 +170,39 @@ ensure_values_file() {
   die "Values file not found in checked-out repo: $VALUES_FILE"
 }
 
+ensure_traefik_https_redirect_middleware() {
+  TRAEFIK_HTTPS_REDIRECT_ENABLED=0
+
+  if ! kubectl api-resources 2>/dev/null | grep -q "middlewares.*traefik.io"; then
+    warn "Traefik Middleware CRD not found; skipping HTTPS redirect middleware setup"
+    return 0
+  fi
+
+  if kubectl get middlewares.traefik.io "$TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE" -n "$NAMESPACE" >/dev/null 2>&1; then
+    TRAEFIK_HTTPS_REDIRECT_ENABLED=1
+    return 0
+  fi
+
+  local tmp
+  tmp=$(mktemp)
+  cat > "$tmp" <<EOF
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}
+  namespace: ${NAMESPACE}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+  kubectl apply -f "$tmp"
+  rm -f "$tmp"
+  TRAEFIK_HTTPS_REDIRECT_ENABLED=1
+  ok "Created Traefik HTTPS redirect middleware: ${NAMESPACE}/${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}"
+}
+
 ensure_ip_allowlist() {
   IP_ALLOWLIST_ENABLED=0
 
@@ -244,18 +279,38 @@ ensure_ip_allowlist() {
   ok "Created Traefik IP allowlist middleware: ${NAMESPACE}/${IP_ALLOWLIST_MIDDLEWARE}"
 }
 
-annotate_ingress_ip_allowlist() {
-  local ingress_name="$1"
+traefik_middlewares_annotation() {
+  local middlewares=()
+  if [[ "$TRAEFIK_HTTPS_REDIRECT_ENABLED" == "1" ]]; then
+    middlewares+=("${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd")
+  fi
+  if [[ "$IP_ALLOWLIST_ENABLED" == "1" ]]; then
+    middlewares+=("${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd")
+  fi
 
-  if [[ "$IP_ALLOWLIST_ENABLED" != "1" ]]; then
+  if [[ ${#middlewares[@]} -eq 0 ]]; then
+    printf '%s' ""
     return 0
   fi
 
+  local joined
+  joined=$(IFS=,; echo "${middlewares[*]}")
+  printf '%s' "$joined"
+}
+
+annotate_traefik_middlewares() {
+  local ingress_name="$1"
+
   if kubectl get ingress "$ingress_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+    local middleware_annotation
+    middleware_annotation=$(traefik_middlewares_annotation)
+    if [[ -z "$middleware_annotation" ]]; then
+      return 0
+    fi
     kubectl annotate ingress "$ingress_name" -n "$NAMESPACE" \
-      "traefik.ingress.kubernetes.io/router.middlewares=${NAMESPACE}-${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd" \
+      "traefik.ingress.kubernetes.io/router.middlewares=${middleware_annotation}" \
       --overwrite
-    ok "Applied IP allowlist to ingress: $ingress_name"
+    ok "Applied Traefik middlewares to ingress: $ingress_name"
   fi
 }
 
@@ -606,6 +661,8 @@ start_keycloak() {
     sed -i '/nginx.ingress.kubernetes.io\/ssl-redirect/d' "$tmp"
     sed -i '/nginx.ingress.kubernetes.io\/proxy-buffer-size/d' "$tmp"
     sed -i '/^  tls:$/,/^  rules:$/d' "$tmp"
+    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure" "$tmp"
+    sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.middlewares: ${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd" "$tmp"
     sed -i "/^  annotations:/a\\    traefik.ingress.kubernetes.io/router.tls: \"true\"" "$tmp"
 
     # Patch redirect URIs for k3s
@@ -644,6 +701,7 @@ deploy_csoc() {
     ok "Created namespace: $NAMESPACE"
   fi
 
+  ensure_traefik_https_redirect_middleware
   ensure_ip_allowlist
 
   log "Deploying CSOC portal via Helm..."
@@ -720,8 +778,8 @@ EOF
     log "Installing fresh release..."
   fi
   helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
-  annotate_ingress_ip_allowlist "$RELEASE_NAME"
-  annotate_ingress_ip_allowlist "keycloak-ingress"
+  annotate_traefik_middlewares "$RELEASE_NAME"
+  annotate_traefik_middlewares "keycloak-ingress"
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
