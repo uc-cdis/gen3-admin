@@ -94,6 +94,28 @@ linux_pkg_manager() {
     echo ""
 }
 
+# ── Values file helper ───────────────────────────────────────────────────────
+REPO_RAW_URL="https://raw.githubusercontent.com/uc-cdis/gen3-admin/master"
+
+ensure_values_file() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        return 0
+    fi
+
+    local remote_url="${REPO_RAW_URL}/${file}"
+    log_warning "Values file not found locally: $file"
+    log_info "Fetching from GitHub..."
+
+    mkdir -p "$(dirname "$file")"
+    if curl -fsSL -o "$file" "$remote_url"; then
+        log_success "Downloaded $file"
+    else
+        log_error "Failed to download values file from $remote_url"
+        exit 1
+    fi
+}
+
 install_homebrew() {
     if have brew; then
         return
@@ -280,14 +302,7 @@ else
 fi
 
 # Verify values file exists
-if [ ! -f "$VALUES_FILE" ]; then
-    log_error "Values file not found: $VALUES_FILE"
-    log_info "Available values files:"
-    find helm/csoc -name "values*.yaml" -type f | sed 's/^/  /'
-    exit 1
-fi
-
-log_success "Values file found: $VALUES_FILE"
+ensure_values_file "$VALUES_FILE"
 
 # Deploy using helm upgrade --install for idempotency
 log_info "Deploying release..."

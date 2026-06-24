@@ -107,6 +107,27 @@ linux_pkg_manager() {
   echo ""
 }
 
+# ── Values file helper ───────────────────────────────────────────────────────
+REPO_RAW_URL="https://raw.githubusercontent.com/uc-cdis/gen3-admin/master"
+
+ensure_values_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    return 0
+  fi
+
+  local remote_url="${REPO_RAW_URL}/${file}"
+  log "Values file not found locally: $file"
+  log "Fetching from GitHub..."
+
+  mkdir -p "$(dirname "$file")"
+  if curl -fsSL -o "$file" "$remote_url"; then
+    ok "Downloaded $file"
+  else
+    die "Failed to download values file from $remote_url"
+  fi
+}
+
 install_homebrew() {
   if have brew; then
     return
@@ -575,9 +596,7 @@ setup_keycloak_hosts() {
 deploy_csoc() {
   cd "$PROJECT_ROOT"
 
-  if [[ ! -f "$VALUES_FILE" ]]; then
-    die "Values file not found: $VALUES_FILE"
-  fi
+  ensure_values_file "$VALUES_FILE"
 
   log "Deploying CSOC portal via Helm..."
   log "  Chart:    $HELM_CHART"
