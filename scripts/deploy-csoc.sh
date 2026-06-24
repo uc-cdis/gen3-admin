@@ -145,7 +145,7 @@ install_helm_linux() {
         exit 1
     fi
 
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo sh
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo bash
 }
 
 install_prereqs_macos() {

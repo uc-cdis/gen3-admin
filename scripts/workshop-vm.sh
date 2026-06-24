@@ -195,26 +195,26 @@ install_session_manager_plugin_linux() {
   local pm
   pm="$(linux_pkg_manager)"
 
+  local tmp
+  tmp="$(mktemp -d)"
+
   case "$pm" in
     apt)
-      local tmp
-      tmp="$(mktemp -d)"
-      curl -fsSL -o "$tmp/session-manager-plugin.rpm" \
-        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/linux_${arch}/session-manager-plugin.rpm"
-      run_sudo dpkg -i "$tmp/session-manager-plugin.rpm" 2>/dev/null || \
-        run_sudo apt-get install -y "$tmp/session-manager-plugin.rpm"
+      curl -fsSL -o "$tmp/session-manager-plugin.deb" \
+        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/ubuntu_${arch}/session-manager-plugin.deb"
+      run_sudo dpkg -i "$tmp/session-manager-plugin.deb"
       ;;
     dnf|yum)
-      local tmp
-      tmp="$(mktemp -d)"
       curl -fsSL -o "$tmp/session-manager-plugin.rpm" \
-        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/linux_${arch}/session-manager-plugin.rpm"
+        "https://session-manager-downloads.s3.amazonaws.com/plugin/latest/amzn2_${arch}/session-manager-plugin.rpm"
       run_sudo "$pm" install -y "$tmp/session-manager-plugin.rpm"
       ;;
     *)
-      die "Automatic Session Manager Plugin install is not supported for $(uname -s). Install manually: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"
+      die "Automatic Session Manager Plugin install is not supported for this distro. Install manually: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"
       ;;
   esac
+
+  rm -rf "$tmp"
 }
 
 install_prereqs_macos() {

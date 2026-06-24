@@ -309,7 +309,7 @@ install_helm_linux() {
     die "curl is required to install Helm. Install curl first, then rerun this script."
   fi
 
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo sh
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | run_sudo bash
 }
 
 install_minikube_linux() {
