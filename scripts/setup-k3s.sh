@@ -35,6 +35,9 @@ else
 fi
 
 VALUES_FILE="./helm/csoc/values-k3s-cloud.yaml"
+IP_ALLOWLIST_MIDDLEWARE="${IP_ALLOWLIST_MIDDLEWARE:-csoc-ip-allowlist}"
+IP_ALLOWLIST_RANGES="${IP_ALLOWLIST_RANGES:-}"
+IP_ALLOWLIST_ENABLED=0
 
 # Quay image tags
 API_IMAGE_TAG="${API_IMAGE_TAG:-feat_bootstrap-onboarding-impl}"
@@ -50,6 +53,16 @@ die()    { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
 # ── Pipe detection / confirmation ────────────────────────────────────────────
 is_piped() { [[ ! -t 0 ]]; }
+
+can_prompt() { [[ -r /dev/tty && -w /dev/tty ]]; }
+
+tty_read() {
+  local prompt="$1"
+  local answer
+  printf "%s" "$prompt" > /dev/tty
+  IFS= read -r answer < /dev/tty
+  printf "%s" "$answer"
+}
 
 confirm_install() {
   local missing=("$@")
@@ -152,6 +165,90 @@ ensure_values_file() {
   fi
 
   die "Values file not found in checked-out repo: $VALUES_FILE"
+}
+
+ensure_ip_allowlist() {
+  IP_ALLOWLIST_ENABLED=0
+
+  if ! kubectl api-resources 2>/dev/null | grep -q "middlewares.*traefik.io"; then
+    warn "Traefik Middleware CRD not found; skipping ingress IP allowlist setup"
+    return 0
+  fi
+
+  if kubectl get middlewares.traefik.io "$IP_ALLOWLIST_MIDDLEWARE" -n "$NAMESPACE" >/dev/null 2>&1; then
+    IP_ALLOWLIST_ENABLED=1
+    return 0
+  fi
+
+  local ranges
+  if [[ -n "$IP_ALLOWLIST_RANGES" ]]; then
+    ranges="$IP_ALLOWLIST_RANGES"
+  else
+    if ! can_prompt; then
+      warn "No interactive terminal available; skipping optional ingress IP allowlist setup"
+      return 0
+    fi
+
+    local detected_ip
+    detected_ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+
+    echo "" > /dev/tty
+    echo "Restrict ${HOSTNAME} and ${KEYCLOAK_HOSTNAME} by source IP?" > /dev/tty
+    if [[ -n "$detected_ip" ]]; then
+      echo "Detected current public IP: ${detected_ip}" > /dev/tty
+    fi
+    local enable
+    enable=$(tty_read "Create Traefik IP allowlist? [y/N] ")
+    if [[ ! "$enable" =~ ^[Yy]$ ]]; then
+      return 0
+    fi
+
+    if [[ -n "$detected_ip" ]]; then
+      ranges=$(tty_read "Allowed IPs/CIDRs, comma or space separated [${detected_ip}/32]: ")
+      ranges="${ranges:-${detected_ip}/32}"
+    else
+      ranges=$(tty_read "Allowed IPs/CIDRs, comma or space separated: ")
+    fi
+  fi
+
+  ranges="${ranges//,/ }"
+  [[ -n "${ranges// /}" ]] || die "No IP ranges provided for allowlist"
+
+  local tmp
+  tmp=$(mktemp)
+  {
+    echo "apiVersion: traefik.io/v1alpha1"
+    echo "kind: Middleware"
+    echo "metadata:"
+    echo "  name: ${IP_ALLOWLIST_MIDDLEWARE}"
+    echo "  namespace: ${NAMESPACE}"
+    echo "spec:"
+    echo "  ipAllowList:"
+    echo "    sourceRange:"
+    for range in $ranges; do
+      echo "      - ${range}"
+    done
+  } > "$tmp"
+
+  kubectl apply -f "$tmp"
+  rm -f "$tmp"
+  IP_ALLOWLIST_ENABLED=1
+  ok "Created Traefik IP allowlist middleware: ${NAMESPACE}/${IP_ALLOWLIST_MIDDLEWARE}"
+}
+
+annotate_ingress_ip_allowlist() {
+  local ingress_name="$1"
+
+  if [[ "$IP_ALLOWLIST_ENABLED" != "1" ]]; then
+    return 0
+  fi
+
+  if kubectl get ingress "$ingress_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+    kubectl annotate ingress "$ingress_name" -n "$NAMESPACE" \
+      "traefik.ingress.kubernetes.io/router.middlewares=${NAMESPACE}-${IP_ALLOWLIST_MIDDLEWARE}@kubernetescrd" \
+      --overwrite
+    ok "Applied IP allowlist to ingress: $ingress_name"
+  fi
 }
 
 install_homebrew() {
@@ -480,6 +577,8 @@ deploy_csoc() {
     ok "Created namespace: $NAMESPACE"
   fi
 
+  ensure_ip_allowlist
+
   log "Deploying CSOC portal via Helm..."
   log "  Chart:    $HELM_CHART"
   log "  Values:   $VALUES_FILE"
@@ -554,6 +653,8 @@ EOF
     log "Installing fresh release..."
   fi
   helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
+  annotate_ingress_ip_allowlist "$RELEASE_NAME"
+  annotate_ingress_ip_allowlist "keycloak-ingress"
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
