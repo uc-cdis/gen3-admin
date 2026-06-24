@@ -20,7 +20,7 @@ HELM_CHART="${CHART_PATH:-./helm/csoc}"
 HOSTNAME="csoc.cloud"
 GEN3_HOSTNAME="gen3.cloud"
 KEYCLOAK_HOSTNAME="keycloak.cloud"
-KEYCLOAK_SCHEME="${KEYCLOAK_SCHEME:-https}"
+KEYCLOAK_SCHEME="${KEYCLOAK_SCHEME:-http}"
 KEYCLOAK_OPERATOR_DIR="./helm/keycloak-operator"
 KEYCLOAK_CRD_FILE="./helm/keycloak-bootstrap-operator/keycloak.yaml"
 KEYCLOAK_NS="${NAMESPACE}"
@@ -280,8 +280,9 @@ ensure_ip_allowlist() {
 }
 
 traefik_middlewares_annotation() {
+  local include_redirect="${1:-1}"
   local middlewares=()
-  if [[ "$TRAEFIK_HTTPS_REDIRECT_ENABLED" == "1" ]]; then
+  if [[ "$include_redirect" == "1" && "$TRAEFIK_HTTPS_REDIRECT_ENABLED" == "1" ]]; then
     middlewares+=("${NAMESPACE}-${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE}@kubernetescrd")
   fi
   if [[ "$IP_ALLOWLIST_ENABLED" == "1" ]]; then
@@ -300,10 +301,11 @@ traefik_middlewares_annotation() {
 
 annotate_traefik_middlewares() {
   local ingress_name="$1"
+  local include_redirect="${2:-1}"
 
   if kubectl get ingress "$ingress_name" -n "$NAMESPACE" >/dev/null 2>&1; then
     local middleware_annotation
-    middleware_annotation=$(traefik_middlewares_annotation)
+    middleware_annotation=$(traefik_middlewares_annotation "$include_redirect")
     if [[ -z "$middleware_annotation" ]]; then
       return 0
     fi
@@ -443,7 +445,16 @@ install_k3s_linux() {
     die "curl is required to install k3s. Install curl first, then rerun this script."
   fi
 
-  curl -sfL https://get.k3s.io | run_sudo sh -
+  # Run in a subshell with `set +u` so SHELLOPTS doesn't export `nounset`
+  # into the k3s installer, which uses uninitialized vars internally.
+  ( set +u; curl -sfL https://get.k3s.io | run_sudo sh - )
+}
+
+install_k9s() {
+  log "Installing k9s via webinstall.dev..."
+  ( set +u; curl -sS https://webinstall.dev/k9s | bash )
+  # shellcheck source=/dev/null
+  [[ -f "${HOME}/.config/envman/PATH.env" ]] && source "${HOME}/.config/envman/PATH.env"
 }
 
 install_prereqs_macos() {
@@ -458,6 +469,8 @@ install_prereqs_macos() {
     log "Installing missing macOS tools with Homebrew: ${formulas[*]}"
     brew install "${formulas[@]}"
   fi
+
+  have k9s || install_k9s
 }
 
 install_prereqs_linux() {
@@ -465,6 +478,7 @@ install_prereqs_linux() {
   have helm    || install_helm_linux
   have git     || install_git_linux
   have k3s     || install_k3s_linux
+  have k9s     || install_k9s
 }
 
 install_missing_prereqs() {
@@ -778,8 +792,8 @@ EOF
     log "Installing fresh release..."
   fi
   helm upgrade --install "$RELEASE_NAME" "$HELM_CHART" "${helm_args[@]}"
-  annotate_traefik_middlewares "$RELEASE_NAME"
-  annotate_traefik_middlewares "keycloak-ingress"
+  annotate_traefik_middlewares "$RELEASE_NAME" 0   # no HTTPS redirect on csoc ingress
+  annotate_traefik_middlewares "keycloak-ingress" 1
 
   ok "Helm release '$RELEASE_NAME' deployed to namespace '$NAMESPACE'"
 }
