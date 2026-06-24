@@ -107,22 +107,6 @@ linux_pkg_manager() {
   echo ""
 }
 
-linux_arch_deb() {
-  case "$(uname -m)" in
-    x86_64|amd64) echo "amd64" ;;
-    aarch64|arm64) echo "arm64" ;;
-    *) die "Unsupported Linux architecture for minikube: $(uname -m)" ;;
-  esac
-}
-
-linux_arch_rpm() {
-  case "$(uname -m)" in
-    x86_64|amd64) echo "x86_64" ;;
-    aarch64|arm64) echo "aarch64" ;;
-    *) die "Unsupported Linux architecture for minikube: $(uname -m)" ;;
-  esac
-}
-
 install_homebrew() {
   if have brew; then
     return
@@ -313,45 +297,22 @@ install_helm_linux() {
 }
 
 install_minikube_linux() {
-  local pm="$1"
-  log "Installing minikube with Linux package manager ($pm)..."
+  log "Installing minikube using official binary download..."
+
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $(uname -m)" ;;
+  esac
 
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
 
-  case "$pm" in
-    apt)
-      local arch
-      arch="$(linux_arch_deb)"
-      curl -fsSL -o "$tmp/minikube.deb" "https://storage.googleapis.com/minikube/releases/latest/minikube_latest_${arch}.deb"
-      run_sudo apt-get install -y "$tmp/minikube.deb"
-      ;;
-    dnf)
-      local arch
-      arch="$(linux_arch_rpm)"
-      curl -fsSL -o "$tmp/minikube.rpm" "https://storage.googleapis.com/minikube/releases/latest/minikube-latest.${arch}.rpm"
-      run_sudo dnf install -y "$tmp/minikube.rpm"
-      ;;
-    yum)
-      local arch
-      arch="$(linux_arch_rpm)"
-      curl -fsSL -o "$tmp/minikube.rpm" "https://storage.googleapis.com/minikube/releases/latest/minikube-latest.${arch}.rpm"
-      run_sudo yum install -y "$tmp/minikube.rpm"
-      ;;
-    pacman)
-      run_sudo pacman -S --needed --noconfirm minikube
-      ;;
-    zypper)
-      local arch
-      arch="$(linux_arch_rpm)"
-      curl -fsSL -o "$tmp/minikube.rpm" "https://storage.googleapis.com/minikube/releases/latest/minikube-latest.${arch}.rpm"
-      run_sudo zypper --non-interactive install "$tmp/minikube.rpm"
-      ;;
-    apk)
-      die "Automatic minikube install is not supported for apk. Install minikube manually, then rerun this script."
-      ;;
-  esac
+  curl -fsSL -o "$tmp/minikube" "https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-${arch}"
+  run_sudo install -o root -g root -m 0755 "$tmp/minikube" /usr/local/bin/minikube
+
+  rm -rf "$tmp"
 }
 
 install_prereqs_linux() {
@@ -364,7 +325,7 @@ install_prereqs_linux() {
   have docker   || install_docker_linux
   have kubectl  || install_kubectl_linux "$pm"
   have helm     || install_helm_linux
-  have minikube || install_minikube_linux "$pm"
+  have minikube || install_minikube_linux
 
   if ! docker info >/dev/null 2>&1; then
     warn "Docker is installed, but this shell cannot talk to the Docker daemon."
