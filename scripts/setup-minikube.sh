@@ -107,25 +107,23 @@ linux_pkg_manager() {
   echo ""
 }
 
-# ── Values file helper ───────────────────────────────────────────────────────
-REPO_RAW_URL="https://raw.githubusercontent.com/uc-cdis/gen3-admin/master"
+# ── Repo helper ──────────────────────────────────────────────────────────────
+REPO_URL="https://github.com/uc-cdis/gen3-admin.git"
+REPO_BRANCH="${REPO_BRANCH:-gcp-ws}"
 
-ensure_values_file() {
-  local file="$1"
-  if [[ -f "$file" ]]; then
+ensure_repo() {
+  if [[ -n "$PROJECT_ROOT" && -d "$PROJECT_ROOT/helm" ]]; then
+    cd "$PROJECT_ROOT"
     return 0
   fi
 
-  local remote_url="${REPO_RAW_URL}/${file}"
-  log "Values file not found locally: $file"
-  log "Fetching from GitHub..."
-
-  mkdir -p "$(dirname "$file")"
-  if curl -fsSL -o "$file" "$remote_url"; then
-    ok "Downloaded $file"
-  else
-    die "Failed to download values file from $remote_url"
-  fi
+  log "Project files not found — cloning repo..."
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$tmp_dir"
+  PROJECT_ROOT="$tmp_dir/gen3-admin"
+  cd "$PROJECT_ROOT"
+  ok "Cloned branch $REPO_BRANCH to $PROJECT_ROOT"
 }
 
 install_homebrew() {
@@ -596,7 +594,9 @@ setup_keycloak_hosts() {
 deploy_csoc() {
   cd "$PROJECT_ROOT"
 
-  ensure_values_file "$VALUES_FILE"
+  if [[ ! -f "$VALUES_FILE" ]]; then
+    die "Values file not found: $VALUES_FILE"
+  fi
 
   log "Deploying CSOC portal via Helm..."
   log "  Chart:    $HELM_CHART"
@@ -930,6 +930,7 @@ main() {
   echo ""
 
   check_prereqs
+  ensure_repo
   start_minikube
   setup_hosts
   start_keycloak
