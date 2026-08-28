@@ -371,7 +371,6 @@ const GenericDataTable = ({
         try {
             setLoading(true);
             setError(null);
-            console.log("Fetching data from:", endpoint);
             const response = await callK8sApi(endpoint, 'GET', null, null, agent, accessToken);
             setData(response.items || []);
         } catch (err) {
@@ -390,7 +389,6 @@ const GenericDataTable = ({
         }
         try {
             setMetricsError(null);
-            console.log("Fetching metrics from:", metricsEndpoint);
             const response = await callK8sApi(metricsEndpoint, 'GET', null, null, agent, accessToken);
             setMetricsData(response.items || []);
         } catch (err) {

@@ -11,3 +11,5 @@ TARGETS
 wip-frontend/
 deployments/
 .vscode/
+# TypeScript incremental build cache
+*.tsbuildinfo

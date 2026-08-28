@@ -46,13 +46,6 @@ import Link from 'next/link';
 
 import callK8sApi from '@/lib/k8s';
 
-const clusterData = [
-    { icon: IconHome2, label: 'Cluster 1' },
-    { icon: IconGauge, label: 'Cluster 2' },
-    { icon: IconDeviceDesktopAnalytics, label: 'Cluster 3' },
-];
-
-
 function NavbarLink({ icon: Icon, label, active, setActiveCluster, cluster }) {
     return (
         <Tooltip label={label} position="right" transitionProps={{ duration: 0 }}>
@@ -136,16 +129,22 @@ function LinksGroup({ label, links, icon: Icon }) {
 
 
 
+/**
+ * The nav is hidden during bootstrap. The branch lives in a wrapper so the inner
+ * component's hooks are never called conditionally.
+ */
 export function NavBar() {
+    if (process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true") {
+        return null;
+    }
+
+    return <FullNavBar />;
+}
+
+function FullNavBar() {
     const router = useRouter()
-    const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
 
-    if (bootstrapEnabled) return null;
-
-
-
-    // const [activeCluster, setActiveCluster] = useState(0);
-    const { activeCluster, setActiveCluster, activeGlobalEnv } = useGlobalState("null");
+    const { activeCluster, setActiveCluster, activeGlobalEnv } = useGlobalState();
 
     const [cluster, namespace] = activeGlobalEnv.split('/');
     const [clusters, setClusters] = useState([]);

@@ -71,20 +71,33 @@ const STATUS_CONFIG: Record<
 const getStatusIcon = (status?: string) =>
   STATUS_CONFIG[status || 'unknown'] || STATUS_CONFIG.unknown;
 
-export function Header({
-  mobileOpened,
-  toggleMobile,
-  desktopOpened,
-  toggleDesktop,
-}: {
+type HeaderProps = {
   mobileOpened: boolean;
   toggleMobile: () => void;
   desktopOpened: boolean;
   toggleDesktop: () => void;
-}) {
-  const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === 'true';
-  if (bootstrapEnabled) return <>Gen3 CSOC Bootstrapping</>;
+};
 
+/**
+ * In bootstrap mode the full header (environment selectors, cluster state, user
+ * menu) is not meaningful yet, so a placeholder is rendered instead. This branch
+ * lives in a wrapper rather than inside FullHeader because returning before the
+ * hook calls would violate the rules of hooks.
+ */
+export function Header(props: HeaderProps) {
+  if (process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === 'true') {
+    return <>Gen3 CSOC Bootstrapping</>;
+  }
+
+  return <FullHeader {...props} />;
+}
+
+function FullHeader({
+  mobileOpened,
+  toggleMobile,
+  desktopOpened,
+  toggleDesktop,
+}: HeaderProps) {
   const [userMenuOpened, setUserMenuOpened] = useState(false);
   const [environments, setEnvironments] = useState<EnvItem[]>([]);
   const [activeEnvironments, setActiveEnvironments] = useState<string | null>(null);

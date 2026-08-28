@@ -4,17 +4,11 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-// import { NavBar } from '../components/NavBar/NavBar';
-// import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
-
-// import { KeycloakProvider } from '@/contexts/KeycloakContext';
-   import { datadogRum } from "@datadog/browser-rum";
-
+import { datadogRum } from "@datadog/browser-rum";
 
 import SpotLight from '@/components/Spotlight/Spotlight';
 
 import { NavBar } from '@/components/NewNavbar/Navbar';
-// import { NavBar } from '@/components/NewNavbar/Navbar2';
 
 import { Header } from '../components/Header/Header';
 import { theme } from '../theme';
@@ -65,35 +59,22 @@ function BootstrapAuthGate({ children }) {
   useEffect(() => {
     if (!bootstrapEnabled) return;
 
-    // Status Loading
-    if (status === "loading") {
-      console.log("[bootstrap] status=loading (checking cookies)");
-      return;
-    }
+    if (status === "loading") return;
 
     // Already authenticated
-    if (status === "authenticated" && session) {
-      console.log("[bootstrap] session detected! Authenticated user:", session.user);
-      return;
-    }
+    if (status === "authenticated" && session) return;
 
     // status "unauthenticated" → trigger auto-login
     if (!loginTriggeredRef.current) {
-      console.log("[bootstrap] User unauthenticated in bootstrap mode. Triggering auto sign-in!");
       loginTriggeredRef.current = true;
       (async () => {
         const result = await signIn("mock-provider", {
           redirect: false
         });
-        console.log("[bootstrap] signIn() result:", result);
         if (!(result?.ok || result?.status === 200)) {
-          console.error("[bootstrap] Auto mock sign-in FAILED!", result);
-        } else {
-          console.log("[bootstrap] Auto mock sign-in SUCCEEDED (waiting for session update)");
+          console.error("[bootstrap] auto mock sign-in failed:", result?.error ?? result?.status);
         }
       })();
-    } else {
-      console.log("[bootstrap] Auto sign-in already triggered, waiting for session update …");
     }
   }, [session, status, router]);
 
@@ -205,6 +186,7 @@ export default function App({
     <GlobalStateProvider>
       <SessionProvider
         session={session}
+        // NextAuth expresses this in SECONDS, not milliseconds: 150s = 2.5 min.
         refetchInterval={150}
         // Refetch session when window regains focus
         refetchOnWindowFocus={true}

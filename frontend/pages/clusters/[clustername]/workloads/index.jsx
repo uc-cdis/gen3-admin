@@ -1,7 +1,7 @@
 import { useParams } from 'next/navigation';
 
 import { Anchor, SimpleGrid, Card, Text, Group, ThemeIcon, Badge } from '@mantine/core';
-import { IconContainer, IconServer, IconCpu, IconRefresh, IconList, IconClock, IconCalendarStats, IconBrandKubernetes } from '@tabler/icons-react';
+import { IconContainer, IconServer, IconCpu, IconRefresh, IconList, IconClock, IconCalendarStats, IconCube } from '@tabler/icons-react';
 
 import Link from 'next/link';
 
@@ -34,7 +34,7 @@ export default function Workloads() {
             <div>
                 <Group mb="md">
                     <ThemeIcon size="lg" radius="md" variant="light" color="blue">
-                        <IconBrandKubernetes size={20} />
+                        <IconCube size={20} />
                     </ThemeIcon>
                     <Text size="xl" fw={600}>Workloads</Text>
                 </Group>

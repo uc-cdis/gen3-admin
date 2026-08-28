@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -50,15 +51,63 @@ func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
 	return a.stream.Send(msg)
 }
 
+// recoveryUnaryInterceptor converts a panic in a unary handler into an Internal
+// error so one bad request cannot bring down the server.
+func recoveryUnaryInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (resp interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Str("method", info.FullMethod).
+				Bytes("stack", debug.Stack()).
+				Msg("recovered from panic in gRPC unary handler")
+			err = status.Errorf(codes.Internal, "internal server error")
+		}
+	}()
+
+	return handler(ctx, req)
+}
+
+// recoveryStreamInterceptor does the same for streaming handlers, which is where
+// the long-lived agent tunnels live.
+func recoveryStreamInterceptor(
+	srv interface{},
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Str("method", info.FullMethod).
+				Bytes("stack", debug.Stack()).
+				Msg("recovered from panic in gRPC stream handler")
+			err = status.Errorf(codes.Internal, "internal server error")
+		}
+	}()
+
+	return handler(srv, ss)
+}
+
 func SetupGRCPServer() {
 	creds, err := ca.SetupCerts()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error setting up certificates")
 	}
 
-	// Create and start gRPC server with TLS credentials
+	// Create and start gRPC server with TLS credentials.
+	// gin.Recovery() only covers HTTP handlers, so without these interceptors a
+	// panic in any agent RPC would terminate the whole process.
 	s := grpc.NewServer(
 		grpc.Creds(*creds),
+		grpc.UnaryInterceptor(recoveryUnaryInterceptor),
+		grpc.StreamInterceptor(recoveryStreamInterceptor),
 	)
 
 	pb.RegisterTunnelServiceServer(s, &AgentServer{
