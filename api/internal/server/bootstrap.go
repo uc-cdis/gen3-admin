@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -49,15 +51,27 @@ func InstallArgoCDHandler(c *gin.Context) {
 	}
 	log.Info().Msg("Ensured argocd namespace exists")
 
-	// 2. Apply ArgoCD install manifest (includes CRDs + all core components)
-	installURL := "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+	// 2. Apply ArgoCD install manifest (includes CRDs + all core components).
+	//
+	// Pinned to a release tag rather than `stable`, so every cluster gets the same
+	// version and an upgrade is a deliberate, reviewable change. Override with
+	// ARGOCD_INSTALL_VERSION when a different release is needed.
+	version := os.Getenv("ARGOCD_INSTALL_VERSION")
+	if version == "" {
+		version = defaultArgoCDInstallVersion
+	}
+	installURL := fmt.Sprintf(
+		"https://raw.githubusercontent.com/argoproj/argo-cd/%s/manifests/install.yaml", version)
+
 	_, installErr := applyRemoteYAML(installURL, "argocd")
 	if installErr != nil {
-		log.Warn().Err(installErr).Msg("ArgoCD install had some errors (resources may still be applied)")
-		c.JSON(http.StatusAccepted, gin.H{
-			"message":   "ArgoCD installation had errors",
+		log.Error().Err(installErr).Str("version", version).Msg("ArgoCD install failed")
+		// Previously 202 with the error in the body, which the frontend read as
+		// success and then waited forever for components that were never applied.
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":     "ArgoCD installation failed: " + installErr.Error(),
 			"namespace": "argocd",
-			"error":     installErr.Error(),
+			"version":   version,
 		})
 		return
 	}
@@ -386,21 +400,36 @@ func checkArgoCDStatus() map[string]interface{} {
 		}
 	}
 
-	// Check each core ArgoCD component by deployment name
+	// Components ArgoCD cannot function without.
 	coreComponents := []string{
 		"argocd-server",
 		"argocd-repo-server",
 		"argocd-applicationset-controller",
-		"argocd-dex-server",
 		"argocd-redis",
 		"argocd-notifications-controller",
+	}
+
+	// Components that are legitimately absent in many installs. Dex only exists
+	// to broker SSO; a cluster using local accounts or an external OIDC provider
+	// never deploys it. Requiring it made a perfectly healthy ArgoCD report
+	// ready=false and blocked the onboarding wizard.
+	optionalComponents := []string{
+		"argocd-dex-server",
 	}
 	componentStatus := make(map[string]interface{})
 	allReady := true
 	totalReady := 0
 	totalCount := 0
 
-	for _, name := range coreComponents {
+	for _, name := range append(append([]string{}, coreComponents...), optionalComponents...) {
+		optional := false
+		for _, candidate := range optionalComponents {
+			if candidate == name {
+				optional = true
+				break
+			}
+		}
+
 		var found *unstructured.Unstructured
 		for i := range deploys.Items {
 			if deploys.Items[i].GetName() == name {
@@ -409,6 +438,14 @@ func checkArgoCDStatus() map[string]interface{} {
 			}
 		}
 		if found == nil {
+			if optional {
+				componentStatus[name] = map[string]interface{}{
+					"ready":    true,
+					"optional": true,
+					"message":  "Not installed (optional)",
+				}
+				continue
+			}
 			componentStatus[name] = map[string]interface{}{"ready": false, "message": "Not found yet"}
 			allReady = false
 			continue
@@ -428,7 +465,9 @@ func checkArgoCDStatus() map[string]interface{} {
 		}
 
 		isReady := readyReplicas >= totalReplicas && totalReplicas > 0
-		if !isReady {
+		// An optional component that is present but not ready is reported, but
+		// does not hold back overall readiness.
+		if !isReady && !optional {
 			allReady = false
 		}
 		totalReady += int(readyReplicas)
@@ -438,6 +477,7 @@ func checkArgoCDStatus() map[string]interface{} {
 			"ready":         isReady,
 			"readyReplicas": readyReplicas,
 			"totalReplicas": totalReplicas,
+			"optional":      optional,
 		}
 	}
 
@@ -1279,8 +1319,15 @@ func checkAlloyStatus() map[string]interface{} {
 
 // applyRemoteYAML fetches YAML from a URL and applies it to the cluster via the k8s SDK.
 // Returns combined output string and any error (continues on partial failures).
+// defaultArgoCDInstallVersion pins the manifest we install. Bump deliberately.
+const defaultArgoCDInstallVersion = "v2.13.2"
+
+// remoteYAMLClient bounds the manifest fetch. http.Get uses no timeout, so a
+// hung CDN would block the install request indefinitely.
+var remoteYAMLClient = &http.Client{Timeout: 60 * time.Second}
+
 func applyRemoteYAML(url, namespace string) (string, error) {
-	resp, err := http.Get(url)
+	resp, err := remoteYAMLClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
 	}

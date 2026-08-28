@@ -249,6 +249,9 @@ function FullNavBar() {
             icon: IconGitBranch,
             links: [
                 { label: 'Applications', link: '/argocd/applications', icon: IconGitBranch },
+                { label: 'Projects', link: '/argocd/projects', icon: IconGitBranch },
+                { label: 'Repositories', link: '/argocd/repositories', icon: IconGitBranch },
+                { label: 'Clusters', link: '/argocd/clusters', icon: IconGitBranch },
             ],
         },
         // {
