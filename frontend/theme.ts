@@ -38,9 +38,12 @@ const statusWarn: MantineColorsTuple = [
   '#ff9417', '#ff8c07', '#e47a00', '#cb6c00', '#b15c00',
 ];
 
+// Nudged off pure red (hue 0) to 358 with slightly eased saturation. Pure
+// high-saturation red reads as a browser-default alarm colour, which is loud on
+// the large surfaces this gets used for (Degraded badges, error alerts).
 const statusError: MantineColorsTuple = [
-  '#ffe9e9', '#ffd1d1', '#fba0a1', '#f76d6d', '#f34141',
-  '#f22625', '#f21616', '#d80c0b', '#c10008', '#a90003',
+  '#fff0f0', '#fedcdd', '#fbbbbd', '#f79295', '#f06a6f',
+  '#e9494f', '#e02e34', '#c32228', '#9d2024', '#781c1f',
 ];
 
 const statusInfo: MantineColorsTuple = [
@@ -61,11 +64,15 @@ const statusNeutral: MantineColorsTuple = [
   '#8b8b8b', '#848484', '#717171', '#656565', '#575757',
 ];
 
-// Brand accent. Kept close to the blue the app already reads as "primary" so
-// this is a formalisation rather than a visual redesign.
+// Brand accent, anchored on the blue in public/favicon.svg (#4287f5, hue 217).
+//
+// The previous ramp sat at hue 230 with ~33% saturation, which is indigo at a
+// third of the vividness -- it read as a washed-out purple rather than a blue.
+// Holding the hue at 217 with high saturation keeps it recognisably the product's
+// blue across the whole scale.
 const gen3Blue: MantineColorsTuple = [
-  '#eef3ff', '#dee2f2', '#bdc2de', '#98a0ca', '#7a84b9',
-  '#6672af', '#5c69ac', '#4c5897', '#424e88', '#364379',
+  '#f0f6ff', '#d7e6fe', '#b1cdfc', '#81aff8', '#5793f4',
+  '#387ef0', '#1e6deb', '#165bca', '#184ca0', '#173c78',
 ];
 
 export const theme = createTheme({
@@ -93,6 +100,14 @@ export const theme = createTheme({
 
   colors: {
     gen3Blue,
+    // Deliberately override Mantine's built-in `blue` with the same ramp.
+    //
+    // ~60 call sites pass color="blue" to mean "the primary blue", which
+    // otherwise resolves to stock Mantine blue and sits visibly next to a
+    // theme-coloured button. Aliasing it here fixes every one of those, and any
+    // future color="blue", without a sweep -- and semantic status colours are
+    // unaffected because those go through StatusBadge.
+    blue: gen3Blue,
     statusOk,
     statusWarn,
     statusError,

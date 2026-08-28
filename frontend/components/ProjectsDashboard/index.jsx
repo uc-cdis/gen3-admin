@@ -20,6 +20,7 @@ import YamlEditor from '@/components/YamlEditor/YamlEditor';
 import NestedCollapses from '@/components/NestedCollapse';
 
 import callK8sApi from '@/lib/k8s';
+import { StatusBadge } from '@/components/ui';
 import { syncApplication } from '@/lib/argocd';
 
 const ClusterDashboard = () => {
@@ -358,7 +359,14 @@ const ClusterDashboard = () => {
             },
 
             { accessor: 'namespace', render: ({ helm, namespace, environment }) => (<Text> {helm ? namespace : environment} </Text>) },
-            { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
+            {
+              accessor: 'status',
+              // noWrap stops the column squeezing "Deployed" down to "D...".
+              // Colours come from the shared status table rather than a local
+              // green/orange guess, so this agrees with every other status view.
+              width: 130,
+              render: ({ status }) => <StatusBadge domain="helm" value={status} />,
+            },
             { accessor: 'chart' },
             {
               id: 'Development', header: 'Development', accessor: 'helm',
