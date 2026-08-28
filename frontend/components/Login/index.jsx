@@ -131,7 +131,7 @@ export default function Login() {
   return (
     <Container size="sm">
       <Box sx={{ maxWidth: 400 }} mx="auto">
-        <Title order={2} align="center" mb="xl">Gen3 CSOC Login</Title>
+        <Title order={2} ta="center" mb="xl">Gen3 CSOC Login</Title>
 
         <FileInput
           label="Upload Gen3 API Key File"
@@ -180,7 +180,7 @@ export default function Login() {
           </Card>
         )}
 
-        {error && <Text color="red" size="sm" mt="xs">{error}</Text>}
+        {error && <Text c="red" size="sm" mt="xs">{error}</Text>}
       </Box>
     </Container>
   );

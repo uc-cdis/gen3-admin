@@ -49,7 +49,7 @@ const ModulesStep = ({ form }) => {
 
   return (
     <Paper p="md" radius="md" withBorder>
-      <Stack spacing="lg">
+      <Stack gap="lg">
         <Text fw={700} size="lg">
           Select Gen3 Microservices to Deploy
         </Text>

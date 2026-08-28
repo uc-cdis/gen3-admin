@@ -651,7 +651,7 @@ const Gen3ConfigForm = () => {
           <Paper shadow="xs" p="md" withBorder>
             <Title order={4} mb="md">Resources Configuration</Title>
             
-            <Text color="dimmed" mb="md">
+            <Text c="dimmed" mb="md">
               These resource settings will be applied to all services
             </Text>
             
@@ -734,7 +734,7 @@ const Gen3ConfigForm = () => {
         </Stepper.Step>
       </Stepper>
 
-      <Group position="right" mt="xl">
+      <Group justify="flex-end" mt="xl">
         {active !== 0 && (
           <Button variant="default" onClick={prevStep}>
             Back

@@ -244,7 +244,7 @@ function Clusters() {
             </Group>
           </Radio.Group>
         {/* Show the next question only when EKS === true */}
-        <Collapse in={showEksFollowup}>
+        <Collapse expanded={showEksFollowup}>
           <Radio.Group
             label="How should the cluster assume AWS permissions?"
             description="Would you like to use a Role or Access Keys to allow the agent to authenticate?"
@@ -258,7 +258,7 @@ function Clusters() {
           </Radio.Group>
         </Collapse>
             {/* Show the next question only when assumeMethod === role */}
-            <Collapse in={showRoleFollowup && showEksFollowup}>
+            <Collapse expanded={showRoleFollowup && showEksFollowup}>
               <TextInput
                 label="AWS RoleARN"
                 placeholder="arn:aws:iam::<account_id>:role/<role_name>"
@@ -266,7 +266,7 @@ function Clusters() {
               />
             </Collapse>
               {/* Show the next question only when assumeMethod === user */}
-            <Collapse in={showUserFollowup && showEksFollowup}>
+            <Collapse expanded={showUserFollowup && showEksFollowup}>
               <TextInput
                 label="AWS Access Key"
                 {...form.getInputProps('accessKey')}
@@ -352,9 +352,9 @@ function Clusters() {
       </Text>
 
       <Box sx={{ backgroundColor: '#1A1B1E', color: 'white', padding: '20px' }}>
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Group>
-            <Text size="xl" weight={700}>Clusters</Text>
+            <Text size="xl" fw={700}>Clusters</Text>
             <Badge size="lg" variant="filled" color="blue">{clusters.length}</Badge>
           </Group>
           <Group>
@@ -393,7 +393,7 @@ function Clusters() {
           </Group>
         </Group>
 
-        {error && <Text color="red">Error fetching clusters</Text>}
+        {error && <Text c="red">Error fetching clusters</Text>}
 
 
 
@@ -414,7 +414,7 @@ function Clusters() {
             {
               accessor: 'name',
               title: 'Agent Name',
-              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
+              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor c="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
             },
             {
               accessor: 'provider',
@@ -422,7 +422,7 @@ function Clusters() {
               render: ({ provider, distro }) => (
                 <>
                   <Text>{provider}</Text>
-                  <Text size="xs" color="dimmed">{distro}</Text>
+                  <Text size="xs" c="dimmed">{distro}</Text>
                 </>
               )
             },

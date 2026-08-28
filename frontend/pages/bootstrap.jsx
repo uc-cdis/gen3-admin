@@ -165,7 +165,7 @@ export default function Gen3BootstrapStepper() {
       case 0:
         // Welcome
         return (
-          <Stack spacing="md">
+          <Stack gap="md">
             <Text size="xl" fw={600}>
               Welcome to the Gen3 CSOC Bootstrap
             </Text>
@@ -195,7 +195,7 @@ export default function Gen3BootstrapStepper() {
       case 1:
         // Environment Setup
         return (
-          <Stack spacing="md">
+          <Stack gap="md">
             <Text size="xl" fw={600}>
               Environment Setup
             </Text>
@@ -240,7 +240,7 @@ export default function Gen3BootstrapStepper() {
 
             {domainValidation && !domainValidation.error && (
               <Alert color="green" title="Domain Verified" icon={<IconCheck />}>
-                <Stack spacing={4}>
+                <Stack gap={4}>
                   <Text size="sm">Route53 Hosted Zone found</Text>
                   <Text size="xs" c="dimmed">Zone ID: {domainValidation.hostedZoneId}</Text>
                 </Stack>
@@ -273,7 +273,7 @@ export default function Gen3BootstrapStepper() {
               value={credentialSource}
               onChange={setCredentialSource}
             >
-              <Stack mt="xs" spacing="xs">
+              <Stack mt="xs" gap="xs">
                 <Radio
                   value="auto"
                   label="Auto-detect (use default AWS credentials)"
@@ -291,7 +291,7 @@ export default function Gen3BootstrapStepper() {
 
             {/* AWS Profile Selection */}
             {credentialSource === 'profile' && (
-              <Stack spacing="sm" mt="md">
+              <Stack gap="sm" mt="md">
                 {loadingProfiles ? (
                   <div className="flex items-center gap-2">
                     <Loader size="sm" />
@@ -329,7 +329,7 @@ export default function Gen3BootstrapStepper() {
 
             {/* Manual Credentials Input */}
             {credentialSource === 'manual' && (
-              <Stack spacing="sm" mt="md">
+              <Stack gap="sm" mt="md">
                 <TextInput
                   label="AWS Access Key ID"
                   placeholder="AKIAIOSFODNN7EXAMPLE"
@@ -427,8 +427,8 @@ export default function Gen3BootstrapStepper() {
                 Advanced Options
               </Button>
 
-              <Collapse in={showAdvanced}>
-                <Stack spacing="sm" mt="md">
+              <Collapse expanded={showAdvanced}>
+                <Stack gap="sm" mt="md">
                   <TextInput
                     label="VPC CIDR Block"
                     placeholder="10.0.0.0/16"
@@ -447,7 +447,7 @@ export default function Gen3BootstrapStepper() {
         const estimatedCost = calculateCost();
 
         return (
-          <Stack spacing="md">
+          <Stack gap="md">
             <Text size="xl" fw={600}>
               Review & Confirm
             </Text>
@@ -457,7 +457,7 @@ export default function Gen3BootstrapStepper() {
             {/* Configuration Summary */}
             <Paper withBorder p="md" radius="md">
               <Text fw={600} mb="sm">Configuration</Text>
-              <Stack spacing={6}>
+              <Stack gap={6}>
                 <Text><strong>CSOC Name:</strong> {csocName || '(not set)'}</Text>
                 <Text><strong>Domain:</strong> {domainName || '(not set)'}</Text>
                 <Text><strong>Region:</strong> {selectedRegion}</Text>
@@ -470,8 +470,8 @@ export default function Gen3BootstrapStepper() {
             <Paper withBorder p="md" radius="md">
               <Text fw={600} mb="sm">Resources to be Created</Text>
 
-              <Stack spacing="xs">
-                <Group position="apart">
+              <Stack gap="xs">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>Networking</strong>
                   </Text>
@@ -487,7 +487,7 @@ export default function Gen3BootstrapStepper() {
 
                 <Divider my="xs" />
 
-                <Group position="apart">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>EKS Cluster</strong>
                   </Text>
@@ -501,7 +501,7 @@ export default function Gen3BootstrapStepper() {
 
                 <Divider my="xs" />
 
-                <Group position="apart">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>Cluster Components</strong>
                   </Text>
@@ -515,7 +515,7 @@ export default function Gen3BootstrapStepper() {
 
                 <Divider my="xs" />
 
-                <Group position="apart">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>Observability Stack</strong>
                   </Text>
@@ -530,7 +530,7 @@ export default function Gen3BootstrapStepper() {
 
                 <Divider my="xs" />
 
-                <Group position="apart">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>CSOC Services</strong>
                   </Text>
@@ -542,7 +542,7 @@ export default function Gen3BootstrapStepper() {
 
                 <Divider my="xs" />
 
-                <Group position="apart">
+                <Group justify="space-between">
                   <Text size="sm">
                     <strong>DNS & Certificates</strong>
                   </Text>
@@ -557,7 +557,7 @@ export default function Gen3BootstrapStepper() {
 
             {/* Cost Estimate */}
             <Paper withBorder p="md" radius="md">
-              <Group position="apart" mb="sm">
+              <Group justify="space-between" mb="sm">
                 <Text fw={600}>Estimated Monthly Cost</Text>
                 <Badge size="lg" color="blue">${estimatedCost.toFixed(2)}/month</Badge>
               </Group>
@@ -609,7 +609,7 @@ export default function Gen3BootstrapStepper() {
             {/* Warnings */}
             {(!csocName || !domainName || !domainValidation || domainValidation.error) && (
               <Alert color="yellow" title="Configuration Incomplete" icon={<IconAlertTriangle />}>
-                <Stack spacing={4}>
+                <Stack gap={4}>
                   {!csocName && <Text size="sm">• CSOC Name is required</Text>}
                   {!domainName && <Text size="sm">• Domain Name is required</Text>}
                   {domainName && !domainValidation && <Text size="sm">• Domain has not been validated</Text>}
@@ -706,7 +706,7 @@ export default function Gen3BootstrapStepper() {
       <Container size="lg">
 
         <Box mt="xl" style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Group spacing="md">
+          <Group gap="md">
             <Button variant="default" onClick={prevStep} disabled={active === 0}>
               Back
             </Button>

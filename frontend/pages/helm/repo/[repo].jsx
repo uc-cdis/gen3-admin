@@ -93,28 +93,28 @@ export default function Repo() {
                     (<SimpleGrid cols={3} spacing="lg">
                         {latestCharts.map((chart) => (
                             <Card key={chart.name} shadow="sm" p="lg" radius="md" withBorder>
-                                <Group position="apart" style={{ marginBottom: 5 }}>
-                                    <Text weight={500}>{chart.name}</Text>
-                                    <Text size="xs" color="dimmed">Latest Version: {chart.version}</Text>
+                                <Group justify="space-between" style={{ marginBottom: 5 }}>
+                                    <Text fw={500}>{chart.name}</Text>
+                                    <Text size="xs" c="dimmed">Latest Version: {chart.version}</Text>
                                 </Group>
 
-                                <Group position="apart">
+                                <Group justify="space-between">
                                     {chart.icon ?
                                         <img src={chart.icon} height={50} radius="md" />
                                         : <IconMedicalCrossFilled style={{ height: 50 }} />}
-                                    <Text size="sm" color="dimmed" style={{ marginBottom: 10 }}>
+                                    <Text size="sm" c="dimmed" style={{ marginBottom: 10 }}>
                                         {chart.description}
                                     </Text>
                                 </Group>
 
                                 <Divider my="sm" />
 
-                                <Group position="apart">
-                                    <Text size="xs" color="dimmed">App Version: {chart.appVersion}</Text>
+                                <Group justify="space-between">
+                                    <Text size="xs" c="dimmed">App Version: {chart.appVersion}</Text>
                                 </Group>
 
-                                <Group position="apart">
-                                    <Text size="xs" color="dimmed">Release Date: {chart.releaseDate}</Text>
+                                <Group justify="space-between">
+                                    <Text size="xs" c="dimmed">Release Date: {chart.releaseDate}</Text>
                                     <Button variant="light" size="xs" color="blue">
                                         More Details
                                     </Button>
@@ -153,9 +153,9 @@ const OlderVersionsAccordion = ({ name, versions }) => {
                 <Accordion.Panel>
                     {versions.map((version, index) => (
                         <Card key={index} shadow="sm" p="md" radius="sm" withBorder style={{ marginBottom: 10 }}>
-                            <Text weight={500}>Version: {version.version}</Text>
-                            <Text size="xs" color="dimmed">App Version: {version.appVersion}</Text>
-                            <Text size="xs" color="dimmed" style={{ marginBottom: 10 }}>{version.description}</Text>
+                            <Text fw={500}>Version: {version.version}</Text>
+                            <Text size="xs" c="dimmed">App Version: {version.appVersion}</Text>
+                            <Text size="xs" c="dimmed" style={{ marginBottom: 10 }}>{version.description}</Text>
                         </Card>
                     ))}
                 </Accordion.Panel>

@@ -6,7 +6,7 @@ function Projects() {
 
   return (
     <div>
-      <Title order={2} align="center" mb="xl">Projects Overview</Title>
+      <Title order={2} ta="center" mb="xl">Projects Overview</Title>
       <ProjectDashboard />
     </div>
   );

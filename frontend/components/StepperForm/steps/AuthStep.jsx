@@ -6,9 +6,9 @@ const AuthStep = ({ form }) => {
   const isUsersyncEnabled = form.values.values.fence.usersync.usersync;
 
   return (
-    <Stack spacing="lg">
+    <Stack gap="lg">
       <Paper p="md" radius="md" withBorder>
-        <Group position="apart">
+        <Group justify="space-between">
           <IconBrandGoogle />
           <Text>Google Login</Text>
           <Switch
@@ -17,7 +17,7 @@ const AuthStep = ({ form }) => {
           />
         </Group>
 
-        <Collapse in={form.values.values.fence.FENCE_CONFIG.OPENID_CONNECT.google.enabled}>
+        <Collapse expanded={form.values.values.fence.FENCE_CONFIG.OPENID_CONNECT.google.enabled}>
           <Stack mt="md">
             {/* <TextInput
               label="Discovery URL"
@@ -80,7 +80,7 @@ const AuthStep = ({ form }) => {
 
 
       <Paper p="md" radius="md" withBorder>
-        <Group position="apart">
+        <Group justify="space-between">
           <IconBroadcast />
           <Text>Generic OIDC</Text>
           <Switch
@@ -89,7 +89,7 @@ const AuthStep = ({ form }) => {
           />
         </Group>
 
-        <Collapse in={form.values.values.fence.FENCE_CONFIG.OPENID_CONNECT.generic_oidc_idp.enabled}>
+        <Collapse expanded={form.values.values.fence.FENCE_CONFIG.OPENID_CONNECT.generic_oidc_idp.enabled}>
           <Stack mt="md">
             <TextInput
               label="Display Name (name)"
@@ -164,11 +164,11 @@ const AuthStep = ({ form }) => {
 
 
       {/* <Paper p="md" radius="md" withBorder>
-        <Group position="apart">
+        <Group justify="space-between">
           <Text>RAS Authentication</Text>
           <Switch {...form.getInputProps('auth.ras.enabled', { type: 'checkbox' })} size="lg" />
         </Group>
-        <Collapse in={form.values.auth.ras.enabled}>
+        <Collapse expanded={form.values.auth.ras.enabled}>
           <Stack>
             <TextInput label="Issuer URL" {...form.getInputProps('auth.ras.issuerURL')} withAsterisk />
             <TextInput label="Client ID" {...form.getInputProps('auth.ras.clientID')} withAsterisk />
@@ -182,7 +182,7 @@ const AuthStep = ({ form }) => {
         <Title order={3}>User Sync Configuration</Title>
 
 
-        <Stack spacing="lg">
+        <Stack gap="lg">
 
           <Anchor href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md" target="_blank">
             User yaml guide</Anchor>
@@ -205,7 +205,7 @@ const AuthStep = ({ form }) => {
           */}
 
 
-          <Stack spacing="xs">
+          <Stack gap="xs">
             <Text fw={500} size="sm">
               Authorization Source <Text span c="red">*</Text>
             </Text>
@@ -226,7 +226,7 @@ const AuthStep = ({ form }) => {
             />
           </Stack>
 
-          <Collapse in={isUsersyncEnabled}>
+          <Collapse expanded={isUsersyncEnabled}>
             <TextInput
               label="S3 URL to user.yaml"
               placeholder="s3://cdis-gen3-users/helm-test/user.yaml"
@@ -235,7 +235,7 @@ const AuthStep = ({ form }) => {
             />
           </Collapse>
 
-          <Collapse in={!isUsersyncEnabled}>
+          <Collapse expanded={!isUsersyncEnabled}>
             <Textarea
               label="Custom Role Definitions (YAML format)"
               placeholder={`users:\n  admin:\n    policies:\n      - all_programs\n      - services`}

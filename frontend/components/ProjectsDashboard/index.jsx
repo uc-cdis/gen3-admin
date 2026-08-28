@@ -167,9 +167,9 @@ const ClusterDashboard = () => {
   );
 
   const renderDeploymentStatus = (envData) => {
-    if (!envData) return <Text color="dimmed">No Data</Text>;
+    if (!envData) return <Text c="dimmed">No Data</Text>;
     return (
-      <Group spacing="xs">
+      <Group gap="xs">
         <Badge color={envData.status === 'Synced' ? 'green' : 'orange'} variant="filled">
           {envData.status === 'Synced' ? '✓' : '!'}
         </Badge>
@@ -227,7 +227,7 @@ const ClusterDashboard = () => {
     setInputReleaseName('');
   };
 
-  if (error) return <Text color="red">{error}</Text>;
+  if (error) return <Text c="red">{error}</Text>;
 
   return (
     <>
@@ -249,8 +249,8 @@ const ClusterDashboard = () => {
       </Drawer >
 
       <Box>
-        <Group position="apart" mb="md">
-          <Text size="xl" weight={700}>Helm Charts</Text>
+        <Group justify="space-between" mb="md">
+          <Text size="xl" fw={700}>Helm Charts</Text>
           {/* <Tooltip label="Not yet implemented"> */}
           <Button variant="filled" color="blue" component={Link} href="/helm/repo">Deploy a new app</Button>
           {/* </Tooltip> */}
@@ -422,7 +422,7 @@ const ClusterDashboard = () => {
                     title="Confirm Helm Release Deletion"
                     centered
                   >
-                    <Stack spacing="md">
+                    <Stack gap="md">
                       <Text size="sm">
                         To confirm deletion, please enter both the cluster name and release name.
                         Both must match exactly.
@@ -501,11 +501,11 @@ const ClusterDashboard = () => {
 
 
 
-        <Group position="apart" mt="md">
+        <Group justify="space-between" mt="md">
           <Text>
             {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCharts.length)} of {filteredCharts.length} Charts
           </Text>
-          <Group spacing={8}>
+          <Group gap={8}>
             <Button
               variant="subtle"
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}

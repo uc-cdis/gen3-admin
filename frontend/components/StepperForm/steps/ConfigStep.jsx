@@ -52,7 +52,7 @@ const ConfigStep = ({ form }) => {
   const v = form.values.values; // shorthand
 
   return (
-    <Stack spacing="lg">
+    <Stack gap="lg">
 
       {/* ── Hatchery / Workspace Configuration ── */}
       {(v?.hatchery?.enabled || v?.hatchery === true) && (
@@ -62,7 +62,7 @@ const ConfigStep = ({ form }) => {
               <Text fw={600}>Hatchery (Workspaces)</Text>
             </Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="lg">
+              <Stack gap="lg">
                 {/* Reaper Configuration */}
                 <Paper p="md" radius="md" withBorder>
                   <Text fw={500} mb="sm">Workspace Reaper</Text>
@@ -157,7 +157,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="portal">
             <Accordion.Control><Text fw={600}>Portal</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Textarea
                   label="Portal gitops.json"
                   description='Navigation, explorer, and feature flag configuration'
@@ -182,7 +182,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="revproxy">
             <Accordion.Control><Text fw={600}>Revproxy (Ingress)</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Switch
                   label="Custom Ingress"
                   checked={Boolean(v.revproxy?.ingress?.enabled)}
@@ -242,7 +242,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="aws-es-proxy">
             <Accordion.Control><Text fw={600}>AWS ES Proxy</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <TextInput label="Elasticsearch Endpoint" placeholder="test.us-east-1.es.amazonaws.com" {...form.getInputProps('values.aws-es-proxy.esEndpoint')} />
                 <Group grow>
                   <TextInput label="AWS Access Key ID" {...form.getInputProps('values.aws-es-proxy.secrets.awsAccessKeyId')} />
@@ -260,7 +260,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="neuvector">
             <Accordion.Control><Text fw={600}>NeuVector Security</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Switch
                   label="Include Predefined Policies"
                   checked={Boolean(v.neuvector?.policies?.include)}

@@ -83,7 +83,7 @@ export default function LogWindow({ namespace, pod, cluster, containers }) {
                         }
                     }}
                 >
-                    <Text size="sm" color="dimmed" inline>
+                    <Text size="sm" c="dimmed" inline>
                         {new Date(log.timestamp).toLocaleTimeString()}
                     </Text>
                     <Code inline sx={{ color: 'var(--color-text)', flex: 1 }}>

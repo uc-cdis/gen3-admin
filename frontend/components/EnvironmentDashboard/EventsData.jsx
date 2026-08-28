@@ -172,7 +172,7 @@ const EventCard = ({ event, showNamespace = false }) => {
 
           <Text 
             size="xs" 
-            color={isDark ? theme.colors.gray[5] : 'dimmed'} 
+            c={isDark ? theme.colors.gray[5] : 'dimmed'} 
             mb={6} 
             my={10} 
             style={{ wordBreak: "break-word", fontFamily: 'monospace' }}
@@ -182,16 +182,16 @@ const EventCard = ({ event, showNamespace = false }) => {
 
           <Group gap="xs" align="center">
             <IconClock size={12} color={isDark ? theme.colors.gray[6] : undefined} />
-            <Text size="xs" color={isDark ? theme.colors.gray[6] : 'dimmed'}>
+            <Text size="xs" c={isDark ? theme.colors.gray[6] : 'dimmed'}>
               {calculateAge(timestamp)}
             </Text>
             {event.count && event.count > 1 && (
               <>
-                <Text size="xs" color={isDark ? theme.colors.gray[6] : 'dimmed'}>
+                <Text size="xs" c={isDark ? theme.colors.gray[6] : 'dimmed'}>
                   •
                 </Text>
                 <Tooltip label="Event count">
-                  <Text size="xs" color={isDark ? theme.colors.gray[6] : 'dimmed'} fw={500}>
+                  <Text size="xs" c={isDark ? theme.colors.gray[6] : 'dimmed'} fw={500}>
                     {event.count}x
                   </Text>
                 </Tooltip>
@@ -201,7 +201,7 @@ const EventCard = ({ event, showNamespace = false }) => {
               event.involvedObject.namespace !== "default" &&
               showNamespace && (
                 <>
-                  <Text size="xs" color={isDark ? theme.colors.gray[6] : 'dimmed'}>
+                  <Text size="xs" c={isDark ? theme.colors.gray[6] : 'dimmed'}>
                     •
                   </Text>
                   <Badge 
@@ -275,7 +275,7 @@ const EventsCards = ({ eventsData, onRefresh }) => {
                 </Badge>
               )}
             </Title>
-            <Text color={isDark ? theme.colors.gray[6] : 'dimmed'} size="sm">
+            <Text c={isDark ? theme.colors.gray[6] : 'dimmed'} size="sm">
               Critical warnings and errors requiring attention
             </Text>
           </div>
@@ -324,10 +324,10 @@ const EventsCards = ({ eventsData, onRefresh }) => {
                 >
                   <IconCircleCheck size={20} />
                 </ThemeIcon>
-                <Text color={isDark ? theme.colors.dark[1] : 'dimmed'} fw={500}>
+                <Text c={isDark ? theme.colors.dark[1] : 'dimmed'} fw={500}>
                   No K8s warnings or errors
                 </Text>
-                <Text color={isDark ? theme.colors.dark[2] : 'dimmed'} size="sm">
+                <Text c={isDark ? theme.colors.dark[2] : 'dimmed'} size="sm">
                   This shows event-level alerts — check Services above for deployment status
                 </Text>
               </Paper>
@@ -353,7 +353,7 @@ const EventsCards = ({ eventsData, onRefresh }) => {
                 </Badge>
               )}
             </Title>
-            <Text color={isDark ? theme.colors.gray[6] : 'dimmed'} size="sm">
+            <Text c={isDark ? theme.colors.gray[6] : 'dimmed'} size="sm">
               Latest cluster activities and system events
             </Text>
           </div>
@@ -387,10 +387,10 @@ const EventsCards = ({ eventsData, onRefresh }) => {
                 >
                   <IconInfoCircle size={20} />
                 </ThemeIcon>
-                <Text color={isDark ? theme.colors.dark[2] : 'dimmed'}>
+                <Text c={isDark ? theme.colors.dark[2] : 'dimmed'}>
                   No recent events
                 </Text>
-                <Text color={isDark ? theme.colors.dark[3] : 'dimmed'} size="sm">
+                <Text c={isDark ? theme.colors.dark[3] : 'dimmed'} size="sm">
                   Events will appear here as they occur
                 </Text>
               </Paper>

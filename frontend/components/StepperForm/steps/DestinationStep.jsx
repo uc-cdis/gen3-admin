@@ -4,7 +4,7 @@ import { IconPencil, IconRefresh } from '@tabler/icons-react';
 const DestinationStep = ({ form, clusters, fetchClusters }) => {
   return (
     <Paper p="md" radius="md" withBorder>
-      <Stack spacing="md">
+      <Stack gap="md">
         <Group justify="space-between" align="flex-end">
           <Select
             label="Cluster"

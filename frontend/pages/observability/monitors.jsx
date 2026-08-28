@@ -182,7 +182,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
           {log.user_id || '/'}
         </Text>
 
-        <Text size="xs" color="dimmed" style={{ minWidth: '45px', textAlign: 'right' }}> {/* Right align verb */}
+        <Text size="xs" c="dimmed" style={{ minWidth: '45px', textAlign: 'right' }}> {/* Right align verb */}
           {log.http_verb || 'GET'}
         </Text>
         
@@ -197,7 +197,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
         
       </Flex>
 
-      <Collapse in={expanded}>
+      <Collapse expanded={expanded}>
         <Box mt="xs" pl={38}> {/* Indent details to align with content after icon+time */}
           <Divider my="xs" />
           {/* Display details of the representative log (latest in the group) */}
@@ -218,7 +218,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
                    .filter(item => item.timestamp !== log.timestamp) // Exclude the representative item shown above
                    .sort((a, b) => b.timestamp - a.timestamp) // Sort remaining items newest first
                    .map((item, idx) => (
-                      <Text key={idx} size="xs" mb={2} color="dimmed"> {/* Dim older entries */}
+                      <Text key={idx} size="xs" mb={2} c="dimmed"> {/* Dim older entries */}
                          {new Date(item.timestamp).toLocaleTimeString()} - {item.http_verb} {item.http_request} ({item.response_secs !== null ? `${(item.response_secs * 1000).toFixed(0)}ms` : 'N/A'})
                       </Text>
                 ))}
@@ -283,11 +283,11 @@ const LogList = ({ logs, filter }) => {
   }, [groupedLogs, filter]);
 
   if (filteredLogs.length === 0 && groupedLogs.length > 0) {
-     return <Text align="center" mt="xl" color="dimmed">No logs match your filter.</Text>;
+     return <Text ta="center" mt="xl" c="dimmed">No logs match your filter.</Text>;
   }
   
   if (filteredLogs.length === 0) {
-    return <Text align="center" mt="xl" color="dimmed">No logs found for the selected time range.</Text>;
+    return <Text ta="center" mt="xl" c="dimmed">No logs found for the selected time range.</Text>;
   }
 
   // Adjust scroll area height - consider header, filter, summary heights
@@ -351,7 +351,7 @@ const TimeNavigation = ({ onChange, value, setStartDate, setEndDate, currentStar
   }
 
   return (
-    <Group spacing="xs">
+    <Group gap="xs">
       <Menu shadow="md" width={220} position="bottom-end" closeOnItemClick={false}>
         <Menu.Target>
           <Button variant="default" size="xs" leftSection={<IconClock size={16} />} rightSection={<IconChevronDown size={14} />}>
@@ -441,8 +441,8 @@ const LogSummary = ({ logs }) => { // Expects grouped logs
   return (
     <Flex gap="md" mb="md" wrap="wrap"> {/* Allow wrapping on smaller screens */}
       <Card withBorder p="xs" shadow="xs">
-        <Text size="xs" color="dimmed">Total Requests</Text>
-        <Text size="lg" weight={700}>{totalRequests}</Text>
+        <Text size="xs" c="dimmed">Total Requests</Text>
+        <Text size="lg" fw={700}>{totalRequests}</Text>
       </Card>
 
       {/* Display status counts - sort them for consistency */}
@@ -463,15 +463,15 @@ const LogSummary = ({ logs }) => { // Expects grouped logs
                       borderLeft: `3px solid var(--mantine-color-${color}-6)`, // Use theme color
                   }}
               >
-                  <Text size="xs" color="dimmed">{label}</Text>
-                  <Text size="lg" weight={700}>{count}</Text>
+                  <Text size="xs" c="dimmed">{label}</Text>
+                  <Text size="lg" fw={700}>{count}</Text>
               </Card>
           );
       })}
 
       <Card withBorder p="xs" shadow="xs">
-        <Text size="xs" color="dimmed">Avg Response</Text>
-        <Text size="lg" weight={700} color={getResponseTimeColor(avgResponseTime)}>
+        <Text size="xs" c="dimmed">Avg Response</Text>
+        <Text size="lg" fw={700} c={getResponseTimeColor(avgResponseTime)}>
             {validResponseCount > 0 ? `${(avgResponseTime * 1000).toFixed(1)}ms` : 'N/A'}
         </Text>
       </Card>
@@ -683,7 +683,7 @@ const LokiView = () => {
         </Group>
 
         {/* Right aligned controls */}
-        <Group spacing="sm">
+        <Group gap="sm">
           <TimeNavigation
             value={timeRange} // Label state (e.g., "15", "Custom")
             onChange={handleTimeRangeChange} // Updates label state
@@ -749,21 +749,21 @@ const LokiView = () => {
           ) : (
             // Show specific message if loading finished but no logs found (and no error)
             !loading && logs.length === 0 && !error && (
-                <Text align="center" mt="xl" color="dimmed">No logs found for the selected hostname and time range.</Text>
+                <Text ta="center" mt="xl" c="dimmed">No logs found for the selected hostname and time range.</Text>
             )
           )}
         </>
       ) : (
          // Message when no hostname is selected
         !loadingHostnames && hostnames.length > 0 && ( // Only show if hostnames finished loading and exist
-             <Text align="center" mt="xl" color="dimmed">
+             <Text ta="center" mt="xl" c="dimmed">
                 Please select a hostname to view logs.
              </Text>
          )
       )}
        {/* Message if hostname loading failed or no hostnames available */}
        {!loadingHostnames && hostnames.length === 0 && !error && (
-           <Text align="center" mt="xl" color="dimmed">
+           <Text ta="center" mt="xl" c="dimmed">
                No hostnames available or failed to load hostnames.
            </Text>
        )}

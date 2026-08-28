@@ -179,7 +179,7 @@ export default function DockerRunner() {
             <h1 className="text-xl font-bold">IAC plugin demo</h1>
             <div className="mt-4">
                 <Card shadow="sm" padding="lg" radius="md" withBorder>
-                    <Group spacing="xs" align="center">
+                    <Group gap="xs" align="center">
                         <Select
                             style={{ flex: 1 }}
                             placeholder="Select previous execution"
@@ -199,7 +199,7 @@ export default function DockerRunner() {
             </div>
 
             <Card shadow="sm" padding="lg" mt={20} radius="md" withBorder>
-                <Group align="center" spacing="md">
+                <Group align="center" gap="md">
                     <Checkbox
                         label="Destroy"
                         checked={destroy}

@@ -100,7 +100,7 @@ export default function Detail() {
                                 render: ({ value }) => {
                                     if (!value?.length) return '-';
                                     return value.map((rule, index) => (
-                                        <Stack key={index} spacing={2}>
+                                        <Stack key={index} gap={2}>
                                             <Text size="sm" fw={500}>{rule.host || '*'}</Text>
                                             {rule.http?.paths?.map((path, pathIndex) => (
                                                 <Group key={pathIndex} gap={4}>

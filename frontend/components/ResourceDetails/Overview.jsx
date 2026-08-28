@@ -521,7 +521,7 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
     const initContainerStatuses = podStatus?.initContainerStatuses || [];
 
     return (
-        <Stack spacing="lg">
+        <Stack gap="lg">
             {renderSummary()}
             {renderMetadata()}
             {renderData()}

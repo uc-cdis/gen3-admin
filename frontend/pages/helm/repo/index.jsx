@@ -36,7 +36,7 @@ export default function Repo() {
         <>
             <div>
                 <Container>
-                    <Title order={1} align="center" mb="lg">Helm Repositories</Title>
+                    <Title order={1} ta="center" mb="lg">Helm Repositories</Title>
                     <List spacing="sm" size="lg" center>
                         {repos.map((repo) => (
                             <List.Item key={repo.name}>
