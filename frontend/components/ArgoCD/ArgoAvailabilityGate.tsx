@@ -1,7 +1,8 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
 import { Alert, Anchor, Button, Group, Stack, Text } from '@mantine/core';
-import { IconAlertTriangle, IconGitBranch, IconInfoCircle } from '@tabler/icons-react';
+import { IconAlertTriangle, IconGitBranch, IconInfoCircle, IconServer2 } from '@tabler/icons-react';
+import Link from 'next/link';
 
 import { EmptyState, LoadingState } from '@/components/ui';
 import { useArgoStatus } from '@/hooks/useArgoCD';
@@ -66,6 +67,11 @@ function explain(reason: ArgoUnavailableReason, message: string): { title: strin
 
 export type ArgoAvailabilityGateProps = {
   cluster: string | null | undefined;
+  /**
+   * True while the cluster is still being determined (state hydrating, or the
+   * agent list loading). Prevents a "no cluster" flash on first paint.
+   */
+  resolving?: boolean;
   /** Called when the user asks to install ArgoCD (not_installed only). */
   onInstall?: () => void;
   children: ReactNode;
@@ -83,11 +89,34 @@ export type ArgoAvailabilityGateProps = {
  *    with an explanation rather than disappearing -- a vanishing tab is more
  *    confusing than one that says why it is unavailable.
  */
-export function ArgoAvailabilityGate({ cluster, onInstall, children }: ArgoAvailabilityGateProps) {
+export function ArgoAvailabilityGate({
+  cluster,
+  resolving = false,
+  onInstall,
+  children,
+}: ArgoAvailabilityGateProps) {
   const status = useArgoStatus(cluster);
 
+  // Still working out which cluster this is; showing "no cluster" here would be a
+  // false negative on the first paint of a shared link.
+  if (!cluster && resolving) {
+    return <LoadingState label="Determining cluster..." />;
+  }
+
   if (!cluster) {
-    return <EmptyState title="No cluster selected" description="Choose a cluster to view its ArgoCD applications." />;
+    return (
+      <EmptyState
+        icon={<IconServer2 size={32} opacity={0.4} />}
+        title="No cluster selected"
+        description={
+          <>
+            These ArgoCD URLs do not name a cluster, so one has to be selected. Pick an
+            environment from the header, or open an agent from{' '}
+            <Anchor component={Link} href="/clusters">Clusters</Anchor>.
+          </>
+        }
+      />
+    );
   }
 
   if (status.isLoading && !status.data) {

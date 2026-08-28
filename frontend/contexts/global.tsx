@@ -28,6 +28,15 @@ type GlobalContextType = {
 
   activeClusterK8sVersion: string;
   setActiveClusterK8sVersion: Dispatch<SetStateAction<string>>;
+
+  /**
+   * False until the values above have been read back from localStorage.
+   *
+   * State is restored inside an effect, so every value is empty on the first
+   * render even when one is stored. Consumers that would otherwise report
+   * "nothing selected" need to wait for this rather than acting on that gap.
+   */
+  hydrated: boolean;
 };
 
 const GlobalContext = createContext<GlobalContextType | null>(null);
@@ -44,6 +53,7 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
 
   const [activeClusterProvider, setActiveClusterProvider] = useState<string>('');
   const [activeClusterK8sVersion, setActiveClusterK8sVersion] = useState<string>('');
+  const [hydrated, setHydrated] = useState<boolean>(false);
 
   useEffect(() => {
     const savedCluster = localStorage.getItem('active-cluster') || '';
@@ -54,26 +64,48 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
     setActiveCluster(savedCluster);
     setActiveGlobalEnv(savedEnv);
     setActiveEnvManager(savedManager);
-    setActiveEnvAppName(savedAppName);                                      // ✅ ADD THIS
+    setActiveEnvAppName(savedAppName);
+    setActiveClusterProvider(localStorage.getItem('active-cluster-provider') || '');
+    setActiveClusterK8sVersion(localStorage.getItem('active-cluster-k8s-version') || '');
+
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem('active-cluster', activeCluster);
-  }, [activeCluster]);
+  }, [hydrated, activeCluster]);
 
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem('active-environment', activeGlobalEnv);
-  }, [activeGlobalEnv]);
+  }, [hydrated, activeGlobalEnv]);
 
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem('active-env-manager', activeEnvManager);
-  }, [activeEnvManager]);
+  }, [hydrated, activeEnvManager]);
 
   useEffect(() => {
-    localStorage.setItem('active-env-app-name', activeEnvAppName);          // ✅ ADD THIS
-  }, [activeEnvAppName]);
+    if (!hydrated) return;
+    localStorage.setItem('active-env-app-name', activeEnvAppName);
+  }, [hydrated, activeEnvAppName]);
+
+  // Persist effects are gated on `hydrated`: without that guard the initial
+  // empty state is written over the stored values before restore runs.
+  // These two were also memory-only before, so they reset on every reload.
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem('active-cluster-provider', activeClusterProvider);
+  }, [hydrated, activeClusterProvider]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem('active-cluster-k8s-version', activeClusterK8sVersion);
+  }, [hydrated, activeClusterK8sVersion]);
 
   const value: GlobalContextType = {
+    hydrated,
     activeCluster,
     setActiveCluster,
     activeGlobalEnv,

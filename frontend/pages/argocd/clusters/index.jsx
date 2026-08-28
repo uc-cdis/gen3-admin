@@ -3,7 +3,7 @@ import { Badge, Code, Group, Paper, Stack, Table, Text } from '@mantine/core';
 import { ArgoAvailabilityGate } from '@/components/ArgoCD/ArgoAvailabilityGate';
 import { PageHeader, QueryState, StatusBadge } from '@/components/ui';
 import { useArgoClusters } from '@/hooks/useArgoCD';
-import { useResolvedCluster } from '@/hooks/useResolvedCluster';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 
 /**
  * Clusters ArgoCD can deploy to.
@@ -12,10 +12,12 @@ import { useResolvedCluster } from '@/hooks/useResolvedCluster';
  * the clusters this console has agents for.
  */
 export default function ArgoCDClustersPage() {
-  const cluster = useResolvedCluster();
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
 
   return (
-    <ArgoAvailabilityGate cluster={cluster}>
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
       <ClustersList cluster={cluster} />
     </ArgoAvailabilityGate>
   );

@@ -35,6 +35,7 @@ import {
 
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
 import { useGlobalState } from '@/contexts/global';
+import { useEnvironments } from '@/hooks/useEnvironments';
 import { callGoApi } from '@/lib/k8s';
 import callK8sApi from '@/lib/k8s';
 import classes from './Header.module.css';
@@ -99,9 +100,7 @@ function FullHeader({
   toggleDesktop,
 }: HeaderProps) {
   const [userMenuOpened, setUserMenuOpened] = useState(false);
-  const [environments, setEnvironments] = useState<EnvItem[]>([]);
   const [activeEnvironments, setActiveEnvironments] = useState<string | null>(null);
-  const [environmentsLoading, setEnvironmentsLoading] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
 
   const router = useRouter();
@@ -117,102 +116,32 @@ function FullHeader({
   const { data: sessionData } = useSession();
   const accessToken = (sessionData as any)?.accessToken;
 
-  const fetchEnvironments = async () => {
-    if (!accessToken) return;
-    setEnvironmentsLoading(true);
+  // Cached via SWR. Previously this ran from a useEffect keyed on
+  // activeGlobalEnv, so picking an environment re-ran the entire scan (agents ->
+  // helm releases -> a configmap per release) on every selection.
+  const {
+    environments,
+    loading: environmentsLoading,
+    validating: environmentsValidating,
+    refresh: fetchEnvironments,
+  } = useEnvironments();
 
-    try {
-      const agentsResponse = await callGoApi('/agents', 'GET', null, null, accessToken);
-      const connectedAgents = agentsResponse.filter((c: any) => c.connected);
+  // Clear stored selection if it no longer exists, so the picker cannot point at
+  // a deleted environment.
+  useEffect(() => {
+    if (!environments.length || !activeGlobalEnv) return;
+    if (environments.some((e) => e.value === activeGlobalEnv)) return;
 
-      const environmentsData = await Promise.all(
-        connectedAgents.map(async (agent: any) => {
-          try {
-            const chartsResponse = await callGoApi(
-              `/agents/${agent.name}/helm/list`,
-              'GET',
-              null,
-              null,
-              accessToken
-            );
-
-            const gen3Charts = chartsResponse.filter(
-              (chart: any) =>
-                chart.chart?.toLowerCase().includes('gen3') ||
-                chart.name?.toLowerCase().includes('gen3')
-            );
-
-            return await Promise.all(
-              gen3Charts.map(async (chart: any) => {
-                try {
-                  const configMapResponse = await callK8sApi(
-                    `/api/v1/namespaces/${chart.namespace}/configmaps/manifest-global`,
-                    'GET',
-                    null,
-                    null,
-                    agent.name,
-                    accessToken
-                  );
-
-                  const hostname =
-                    configMapResponse?.data?.hostname || chart.name;
-
-                  return {
-                    value: `${agent.name}/${chart.namespace}/${chart.name}`,
-                    label: `${hostname}`,
-                    status: chart.status || 'unknown',
-                    namespace: chart.namespace,
-                    manager: chart.helm === 'true' ? 'helm' : 'argocd',
-                    appName: chart.name,
-                    provider: agent.provider || "",
-                    k8sVersion: agent.k8sVersion || "",
-                  };
-                } catch {
-                  return {
-                    value: `${agent.name}/${chart.namespace}/${chart.name}`,
-                    label: `${agent.name}/${chart.name}`,
-                    status: chart.status || 'unknown',
-                    namespace: chart.namespace,
-                    manager: chart.helm === 'true' ? 'helm' : 'argocd',
-                    appName: chart.name,
-                    provider: agent.provider || "",
-                    k8sVersion: agent.k8sVersion || "",
-                  };
-                }
-              })
-            );
-          } catch (err) {
-            console.error(`Error fetching charts for ${agent.name}`, err);
-            return [];
-          }
-        })
-      );
-
-      const flat = environmentsData.flat();
-      setEnvironments(flat);
-
-      // If stored env no longer exists in fetched list, clear stale state
-      if (activeGlobalEnv && !flat.some((e: EnvItem) => e.value === activeGlobalEnv)) {
-        setActiveGlobalEnv('');
-        setActiveCluster('');
-        setActiveEnvManager('' as any);
-        setActiveEnvAppName('');
-        setActiveClusterProvider('');
-        setActiveClusterK8sVersion('');
-        setActiveEnvironments(null);
-        localStorage.removeItem('active-cluster');
-        localStorage.removeItem('active-environment');
-        localStorage.removeItem('active-env-manager');
-        localStorage.removeItem('active-env-app-name');
-      }
-    } finally {
-      setEnvironmentsLoading(false);
-    }
-  };
-
+    setActiveGlobalEnv('');
+    setActiveCluster('');
+    setActiveEnvManager('' as any);
+    setActiveEnvAppName('');
+    setActiveClusterProvider('');
+    setActiveClusterK8sVersion('');
+    setActiveEnvironments(null);
+  }, [environments, activeGlobalEnv]);
 
   useEffect(() => {
-    fetchEnvironments();
     if (activeGlobalEnv) setActiveEnvironments(activeGlobalEnv);
   }, [activeGlobalEnv]);
 
@@ -248,7 +177,9 @@ function FullHeader({
             }))}
             value={activeEnvironments || activeGlobalEnv || null}
             onChange={handleEnvironmentChange}
-            placeholder="Select Environment"
+            placeholder={environmentsLoading ? 'Loading environments...' : 'Select Environment'}
+            disabled={environmentsLoading}
+            nothingFoundMessage={environmentsLoading ? 'Loading...' : 'No environments found'}
             allowDeselect={false}
             searchable
             clearable
@@ -279,7 +210,7 @@ function FullHeader({
               );
             }}
           />
-          <Button onClick={fetchEnvironments} loading={environmentsLoading}>
+          <Button onClick={fetchEnvironments} loading={environmentsLoading || environmentsValidating} aria-label="Refresh environments">
             <IconRefresh />
           </Button>
         </Group>

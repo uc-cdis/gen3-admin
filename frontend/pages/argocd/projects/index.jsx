@@ -3,14 +3,16 @@ import { Badge, Code, Group, Paper, Stack, Table, Text } from '@mantine/core';
 import { ArgoAvailabilityGate } from '@/components/ArgoCD/ArgoAvailabilityGate';
 import { EmptyState, PageHeader, QueryState } from '@/components/ui';
 import { useArgoProjects } from '@/hooks/useArgoCD';
-import { useResolvedCluster } from '@/hooks/useResolvedCluster';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 
 /** AppProjects: the boundaries constraining what applications may deploy. */
 export default function ArgoCDProjectsPage() {
-  const cluster = useResolvedCluster();
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
 
   return (
-    <ArgoAvailabilityGate cluster={cluster}>
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
       <ProjectsList cluster={cluster} />
     </ArgoAvailabilityGate>
   );

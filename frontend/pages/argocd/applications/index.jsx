@@ -25,7 +25,7 @@ import {
 import { PageHeader, QueryState, StatusBadge } from '@/components/ui';
 import { useArgoApplications, useArgoInvalidate } from '@/hooks/useArgoCD';
 import { useAccessToken } from '@/hooks/useK8s';
-import { useResolvedCluster } from '@/hooks/useResolvedCluster';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 import { syncApplication, syncViaCRDFallback } from '@/lib/argocd';
 
 function timeAgo(timestamp) {
@@ -55,10 +55,12 @@ function KpiCard({ label, value }) {
 }
 
 export default function ArgoCDApplicationsPage() {
-  const cluster = useResolvedCluster();
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
 
   return (
-    <ArgoAvailabilityGate cluster={cluster}>
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
       <ApplicationsList cluster={cluster} />
     </ArgoAvailabilityGate>
   );

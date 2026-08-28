@@ -4,7 +4,7 @@ import { IconInfoCircle } from '@tabler/icons-react';
 import { ArgoAvailabilityGate } from '@/components/ArgoCD/ArgoAvailabilityGate';
 import { PageHeader, QueryState, StatusBadge } from '@/components/ui';
 import { useArgoRepositories } from '@/hooks/useArgoCD';
-import { useResolvedCluster } from '@/hooks/useResolvedCluster';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 
 /**
  * Configured repositories, read-only.
@@ -13,10 +13,12 @@ import { useResolvedCluster } from '@/hooks/useResolvedCluster';
  * deserves its own security review rather than being bolted on here.
  */
 export default function ArgoCDRepositoriesPage() {
-  const cluster = useResolvedCluster();
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
 
   return (
-    <ArgoAvailabilityGate cluster={cluster}>
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
       <RepositoriesList cluster={cluster} />
     </ArgoAvailabilityGate>
   );

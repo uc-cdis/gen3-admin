@@ -47,7 +47,7 @@ import SourceEditor from '@/components/ArgoCD/SourceEditor';
 import SyncDialog from '@/components/ArgoCD/SyncDialog';
 import { EmptyState, PageHeader, QueryState, StatusBadge } from '@/components/ui';
 import { useAccessToken } from '@/hooks/useK8s';
-import { useResolvedCluster } from '@/hooks/useResolvedCluster';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 import {
   useArgoApplication,
   useArgoHistory,
@@ -105,10 +105,12 @@ export default function ArgoCDApplicationDetailPage() {
   const params = useParams();
   const namespace = params?.namespace;
   const name = params?.name;
-  const cluster = useResolvedCluster();
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
 
   return (
-    <ArgoAvailabilityGate cluster={cluster}>
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
       <ApplicationDetail cluster={cluster} name={name} appNamespace={namespace} />
     </ArgoAvailabilityGate>
   );
