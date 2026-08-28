@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button, Center, Group, Loader, Tabs, useMantineColorScheme, Modal, Text, Card, Badge, Stack, Title, Paper, Divider } from '@mantine/core';
 
 import callK8sApi from '@/lib/k8s';
@@ -16,14 +16,11 @@ import { notifications } from '@mantine/notifications';
 
 import { useSession } from 'next-auth/react';
 import { resolveStatus } from '@/lib/status';
+import { useK8sResource } from '@/hooks/useK8s';
 
 export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions, columnConfig }) {
     const { height } = useViewportSize();
     const [activeTab, setActiveTab] = useState('overview');
-    const [resourceData, setResourceData] = useState(null);
-
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
     const { data: sessionData } = useSession();
@@ -32,29 +29,26 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
     const { colorScheme } = useMantineColorScheme();
     const isDarkMode = colorScheme === 'dark';
 
-    const fetchResource = async () => {
-        setIsLoading(true);
-        setError(null);
+    // Fetching runs through the shared SWR layer, reaching the ~26 pages that
+    // render through this component. The immediate win is deduplication: a detail
+    // page and the components inside it frequently request the same object, and
+    // the result now survives navigating between resources.
+    const query = useK8sResource(resource && type && url ? url : null, { cluster });
 
-        try {
-            const response = await callK8sApi(url, 'GET', null, null, cluster, accessToken);
-            setResourceData(response);
-            return response;
-        } catch (error) {
-            // A 404 is an ordinary outcome here, not a fault: completed Job pods
-            // and other short-lived resources get garbage-collected, and links to
-            // them go stale. Report it plainly instead of logging it as an error,
-            // which also stops Next.js raising its dev error overlay.
-            if (error?.isNotFound) {
-                setError(`This ${String(type || 'resource').toLowerCase()} no longer exists. It may have been deleted or garbage-collected.`);
-            } else {
-                setError(error.message || 'Failed to fetch resource');
-            }
-            return null;
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const resourceData = query.data ?? null;
+    // Only a genuine first load blocks the page; a background revalidation keeps
+    // the current content on screen.
+    const isLoading = query.isLoading && query.data === undefined;
+
+    // A 404 is an ordinary outcome here, not a fault: completed Job pods and other
+    // short-lived resources get garbage-collected, so links to them go stale.
+    const error = query.error
+        ? query.error.isNotFound
+            ? `This ${String(type || 'resource').toLowerCase()} no longer exists. It may have been deleted or garbage-collected.`
+            : query.error.message || 'Failed to fetch resource'
+        : null;
+
+    const fetchResource = query.refresh;
 
     const deleteResource = async () => {
         try {
@@ -64,6 +58,11 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 message: `${type} ${resource} was successfully deleted.`,
                 color: 'green'
             });
+            // Previously the deleted resource stayed on screen as though nothing
+            // had happened. Revalidating surfaces the 404 as the "no longer
+            // exists" state, which is the honest result of a successful delete.
+            setDeleteModalOpen(false);
+            query.refresh();
         } catch (error) {
             notifications.show({
                 title: 'Deletion Failed',
@@ -98,14 +97,21 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 accessToken
             );
 
-            setResourceData((current) => ({
-                ...(updated || current),
-                data: {
-                    ...(current?.data || {}),
-                    ...(updated?.data || {}),
-                    [key]: encodedValue,
-                },
-            }));
+            // Write the confirmed value straight into the cache so the editor
+            // reflects it immediately. revalidate: false because the PATCH
+            // response is already authoritative -- refetching would only risk
+            // showing a stale read.
+            query.mutate(
+                (current) => ({
+                    ...(updated || current),
+                    data: {
+                        ...(current?.data || {}),
+                        ...(updated?.data || {}),
+                        [key]: encodedValue,
+                    },
+                }),
+                { revalidate: false }
+            );
 
             notifications.show({
                 title: 'Secret updated',
@@ -122,12 +128,6 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
         }
     };
 
-    useEffect(() => {
-        if (!resource || !cluster || !type || !url) return;
-        fetchResource().then((data) => {
-            if (data) setResourceData(data);
-        });
-    }, [type, resource, namespace, cluster]);
 
     // Determine status for the header badge
     // Pick the right status domain for this resource kind; the colours and
