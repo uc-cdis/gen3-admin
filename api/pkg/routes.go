@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -48,21 +52,32 @@ type pluginParams struct {
 }
 
 func ssmWebSocketHandler(c *gin.Context) {
+	// Validate input *before* upgrading, so a bad request gets an HTTP 400 the
+	// client can actually read rather than a successful 101 followed by an error
+	// frame on a socket that is already open.
+	instanceId := c.Query("instanceId")
+	if instanceId == "" {
+		log.Warn().Msg("missing instanceId")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing instanceId query parameter"})
+		return
+	}
+
+	if !validInstanceID.MatchString(instanceId) {
+		log.Warn().Str("instanceId", instanceId).Msg("rejecting malformed instanceId")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid instanceId format"})
+		return
+	}
+
 	conn, err := wsupgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		// Upgrade already wrote an HTTP error response (e.g. 403 on origin
+		// rejection), so do not write another one here.
 		log.Error().Err(err).Msg("failed to upgrade websocket")
-		c.JSON(500, gin.H{"error": "can't upgrade to ws"})
 		return
 	}
 	defer conn.Close()
 
 	conn.WriteMessage(websocket.TextMessage, []byte("Connected to instance. Press any key to start...\r\n"))
-	instanceId := c.Query("instanceId")
-	if instanceId == "" {
-		log.Warn().Msg("missing instanceId")
-		conn.WriteMessage(websocket.TextMessage, []byte("Missing instanceId query parameter"))
-		return
-	}
 
 	region := "us-east-1"
 	ctx := context.Background()
@@ -189,15 +204,43 @@ func ssmWebSocketHandler(c *gin.Context) {
 	cmd.Wait()
 }
 
-var wsupgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins — for dev/testing only
-		return true
+// validInstanceID matches EC2 instance IDs (i-<8 or 17 hex chars>). Validating
+// this before opening an SSM session keeps arbitrary caller-supplied targets out
+// of the AWS API call.
+var validInstanceID = regexp.MustCompile(`^i-[0-9a-f]{8}([0-9a-f]{9})?$`)
 
-		// OR: Restrict to your frontend's origin
-		// return r.Header.Get("Origin") == "https://your-frontend.com"
-	},
+var wsupgrader = websocket.Upgrader{
+	CheckOrigin: checkWebSocketOrigin,
 
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+// checkWebSocketOrigin enforces the same origin allowlist as CORS. Browsers do
+// not apply the CORS policy to WebSocket handshakes, so without this any site a
+// logged-in user visits could open a socket using their cookie and get an
+// interactive SSM shell.
+func checkWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Non-browser client (CLI, test harness); no ambient cookie to abuse.
+		return true
+	}
+
+	allowed := strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",")
+	for _, a := range allowed {
+		if trimmed := strings.TrimSpace(a); trimmed != "" && trimmed == origin {
+			return true
+		}
+	}
+
+	// Same-origin requests are always safe: the Host the browser connected to
+	// matches the Origin it claims.
+	if u, err := url.Parse(origin); err == nil && u.Host == r.Host {
+		return true
+	}
+
+	log.Warn().Str("origin", origin).Str("host", r.Host).
+		Msg("rejecting websocket upgrade from disallowed origin")
+	return false
 }

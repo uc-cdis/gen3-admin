@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -134,9 +133,11 @@ func (e *Execution) Terminate() error {
 		return fmt.Errorf("execution not running")
 	}
 
-	// Kill it:
+	// Kill it. A failure here must be returned, never fatal: this runs on the
+	// request path (DELETE /api/runner/executions/:id), so exiting would let any
+	// caller terminate the whole API process.
 	if err := e.cmd.Process.Kill(); err != nil {
-		log.Fatal("failed to kill process: ", err)
+		return fmt.Errorf("failed to kill process: %w", err)
 	}
 
 	e.Status = StatusComplete

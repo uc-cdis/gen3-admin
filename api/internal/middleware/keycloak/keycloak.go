@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -107,6 +108,51 @@ func keyFunc(token *jwt.Token) (interface{}, error) {
 	return getPublicKey(kid)
 }
 
+// mockAuthWarnLimiter throttles the MOCK_AUTH warning to at most one line per
+// interval, so an unauthenticated deployment is loud in the logs without the
+// warning drowning out everything else on a busy server.
+var mockAuthWarnLimiter = &intervalLimiter{interval: time.Minute}
+
+type intervalLimiter struct {
+	interval time.Duration
+	mu       sync.Mutex
+	last     time.Time
+}
+
+func (l *intervalLimiter) Allow() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	if l.last.IsZero() || now.Sub(l.last) >= l.interval {
+		l.last = now
+		return true
+	}
+	return false
+}
+
+// audienceMatches reports whether the token was issued for the expected client.
+// The `aud` claim is either a string or an array of strings per RFC 7519. Keycloak
+// access tokens frequently omit the client from `aud` and record it in `azp`
+// instead, so both are accepted.
+func audienceMatches(claims jwt.MapClaims, expected string) bool {
+	switch aud := claims["aud"].(type) {
+	case string:
+		if aud == expected {
+			return true
+		}
+	case []interface{}:
+		for _, entry := range aud {
+			if s, ok := entry.(string); ok && s == expected {
+				return true
+			}
+		}
+	}
+
+	azp, ok := claims["azp"].(string)
+	return ok && azp == expected
+}
+
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -170,27 +216,55 @@ func AuthMiddleware() gin.HandlerFunc {
 			os.Getenv("KEYCLOAK_REALM"),
 		)
 
-		if iss, ok := claims["iss"].(string); ok {
+		// A missing or non-string `iss` must be rejected, not skipped: otherwise a
+		// token from any issuer whose signature happens to verify is accepted.
+		iss, ok := claims["iss"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing issuer claim"})
+			c.Abort()
+			return
+		}
 
-			legacyIssuer := fmt.Sprintf("%s/auth/realms/%s",
-				os.Getenv("KEYCLOAK_URL"),
-				os.Getenv("KEYCLOAK_REALM"),
-			)
+		legacyIssuer := fmt.Sprintf("%s/auth/realms/%s",
+			os.Getenv("KEYCLOAK_URL"),
+			os.Getenv("KEYCLOAK_REALM"),
+		)
 
-			if iss != expectedIssuer && iss != legacyIssuer {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token issuer"})
-				c.Abort()
-				return
-			}
+		if iss != expectedIssuer && iss != legacyIssuer {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token issuer"})
+			c.Abort()
+			return
 		}
 
 		// -------------------------
 		// Check expiration
 		// -------------------------
 
-		if exp, ok := claims["exp"].(float64); ok {
-			if time.Now().Unix() > int64(exp) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
+		// A missing `exp` must be rejected: treating it as "no expiry" turns a
+		// short-lived token into a permanent credential.
+		exp, ok := claims["exp"].(float64)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing expiration claim"})
+			c.Abort()
+			return
+		}
+
+		if time.Now().Unix() > int64(exp) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
+			c.Abort()
+			return
+		}
+
+		// -------------------------
+		// Validate audience
+		// -------------------------
+
+		// Only enforced when KEYCLOAK_CLIENT_ID is configured, so existing
+		// deployments are not broken by an unset variable. Without this, a token
+		// minted for any other client in the same realm is accepted here.
+		if expectedAudience := os.Getenv("KEYCLOAK_CLIENT_ID"); expectedAudience != "" {
+			if !audienceMatches(claims, expectedAudience) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token audience"})
 				c.Abort()
 				return
 			}
@@ -429,12 +503,16 @@ func SuccessMiddleware() gin.HandlerFunc {
 			groupStrings[i] = fmt.Sprintf("%v", g)
 		}
 
-		// log.Warn().
-		// 	Str("username", fakeUser).
-		// 	Str("email", fakeEmail).
-		// 	Strs("groups", groupStrings).
-		// 	Strs("roles", fakeRoles).
-		// 	Msg("⚠️  MOCK_AUTH mode active — requests are NOT authenticated! This must NEVER be used in production.")
+		// Rate-limited so the warning stays visible in logs without emitting once
+		// per request, which is why it was previously commented out entirely.
+		if mockAuthWarnLimiter.Allow() {
+			log.Warn().
+				Str("username", fakeUser).
+				Str("email", fakeEmail).
+				Strs("groups", groupStrings).
+				Strs("roles", fakeRoles).
+				Msg("MOCK_AUTH mode active - requests are NOT authenticated! This must NEVER be used in production.")
+		}
 
 		c.Next()
 	}
