@@ -190,7 +190,7 @@ function Clusters() {
   const createCluster = async (data) => {
     try {
       const eks = data.eks === 'true'; // coerce to boolean for the API
-      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName, rolearn: data.roleARN, eks, assumemethod: data.assumeMethod, accesskey: data.accessKey, secretaccesskey: data.secretAccessKey }, null, sessionData.accessToken, 'text');
+      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName, rolearn: data.roleARN, eks, assumemethod: data.assumeMethod, accesskey: data.accessKey, secretaccesskey: data.secretAccessKey, serveraddress: data.serverAddress?.trim() }, null, sessionData.accessToken, 'text');
       setSubmitResponse(responseData);
       fetchClusters();
     } catch (error) {
@@ -208,6 +208,16 @@ function Clusters() {
       assumeMethod: '',
       accessKey: '',
       secretAccessKey: '',
+      serverAddress: '',
+    },
+    validate: {
+      clusterName: (value) => (value?.trim() ? null : 'Cluster name is required'),
+      serverAddress: (value) => {
+        const v = value?.trim();
+        if (!v) return 'Server address is required so the agent can reach the CSOC server';
+        if (!/^[^\s/]+:\d+$/.test(v)) return 'Use host:port, e.g. 163.7.10.20:32678';
+        return null;
+      },
     },
   });
   const showEksFollowup = form.values.eks === 'true'
@@ -232,6 +242,13 @@ function Clusters() {
                 label="Cluster Name"
                 placeholder="Enter cluster name"
                 {...form.getInputProps('clusterName')}
+              />
+              <TextInput
+                label="CSOC gRPC Server Address"
+                description="Address (host:port) this cluster will use to reach the CSOC gRPC server. Must be reachable from inside the remote cluster."
+                placeholder="163.7.10.20:32678"
+                withAsterisk
+                {...form.getInputProps('serverAddress')}
               />
           <Radio.Group
             label="EKS?"
@@ -291,6 +308,11 @@ function Clusters() {
               ) : (
                 <Box mt="xl">
                   <Title order={3}>Configuration:</Title>
+                  <Text size="sm" c="dimmed" mt="xs" mb="sm">
+                    Copy the manifest below and apply it against the target cluster. It creates the{' '}
+                    <Code>csoc</Code> namespace and deploys all resources into it:
+                  </Text>
+                  <Code block mb="sm">{`kubectl apply -f - <<'EOF'\n# paste the configuration below\nEOF`}</Code>
                   <Code block>
                     {submitResponse}
                   </Code>

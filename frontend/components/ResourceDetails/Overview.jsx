@@ -16,7 +16,8 @@ import {
     Modal,
     Alert,
 } from '@mantine/core';
-import { IconBox, IconDisc, IconClipboardCheck, IconDatabase, IconFolderPlus, IconContainer, IconVariable, IconAlertCircle, IconCircleCheck, IconTag, IconInfoCircle, IconPencil, IconDeviceFloppy } from '@tabler/icons-react';
+import { formatAge, partitionColumns, podReadiness } from '@/lib/resourceHighlights';
+import { IconBox, IconDisc, IconClipboardCheck, IconDatabase, IconFolderPlus, IconContainer, IconVariable, IconAlertCircle, IconCircleCheck, IconTag, IconInfoCircle, IconPencil, IconDeviceFloppy, IconSettings } from '@tabler/icons-react';
 
 const SecretValueCell = ({ raw, decoded, secretKey, onSave }) => {
     const [showRaw, setShowRaw] = useState(false);
@@ -148,19 +149,100 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
         );
     };
 
-    const renderSummary = () => {
-        const summaryColumns = [...leftColumns, ...rightColumns];
+    /**
+     * Headline strip: the few facts you check when something looks wrong.
+     *
+     * Rendered as inline label/value pairs rather than cards so they read as one
+     * line of context instead of competing tiles.
+     */
+    const renderHeadline = (headlineColumns) => {
+        const readiness = podReadiness(resource);
+        const age = formatAge(resource?.metadata?.creationTimestamp);
+
+        const facts = headlineColumns
+            .map((column) => ({ label: column.label, value: getNestedValue(resource, column.path) }))
+            .filter((fact) => fact.value !== undefined && fact.value !== null && fact.value !== '');
+
+        if (!facts.length && !readiness && age === '-') return null;
+
+        return (
+            <Card p="md" radius="md" withBorder>
+                <Group gap="xl" wrap="wrap">
+                    {readiness && (
+                        <Stack gap={2}>
+                            <Text size="xs" c="dimmed">Ready</Text>
+                            <Group gap={6}>
+                                <Text fw={600} size="sm">{readiness.ready}/{readiness.total}</Text>
+                                {/* A pod can report Running while crash-looping; the
+                                    restart count is what gives that away. */}
+                                {readiness.restarts > 0 && (
+                                    <Badge size="sm" color={readiness.restarts > 5 ? 'statusError' : 'statusWarn'}>
+                                        {readiness.restarts} restart{readiness.restarts === 1 ? '' : 's'}
+                                    </Badge>
+                                )}
+                            </Group>
+                        </Stack>
+                    )}
+
+                    {facts.map((fact) => (
+                        <Stack gap={2} key={fact.label} style={{ minWidth: 0 }}>
+                            <Text size="xs" c="dimmed">{fact.label}</Text>
+                            <Text fw={600} size="sm" style={{ ...codeStyle, wordBreak: 'break-word' }}>
+                                {Array.isArray(fact.value)
+                                    ? fact.value.map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(', ')
+                                    : String(fact.value)}
+                            </Text>
+                        </Stack>
+                    ))}
+
+                    {age !== '-' && (
+                        <Stack gap={2}>
+                            <Text size="xs" c="dimmed">Age</Text>
+                            <Text fw={600} size="sm">{age}</Text>
+                        </Stack>
+                    )}
+                </Group>
+            </Card>
+        );
+    };
+
+    const renderSummary = (summaryColumns, { title = 'Details', icon = <IconInfoCircle size={18} /> } = {}) => {
         if (!summaryColumns.length) return null;
         return (
             <Card p="lg" radius="md" withBorder>
                 <Group gap="xs" mb="md">
-                    <IconInfoCircle size={18} />
-                    <Text fw={600} size="lg">Summary</Text>
+                    {icon}
+                    <Text fw={600} size="lg">{title}</Text>
                 </Group>
                 <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
                     {summaryColumns.map((col) => <DetailItem key={col.path} column={col} />)}
                 </SimpleGrid>
             </Card>
+        );
+    };
+
+    /**
+     * Server-assigned bookkeeping, collapsed. Occasionally needed, never the
+     * reason you opened the page.
+     */
+    const renderAdvanced = (advancedColumns) => {
+        if (!advancedColumns.length) return null;
+        return (
+            <Accordion variant="contained" chevronPosition="right">
+                <Accordion.Item value="advanced">
+                    <Accordion.Control icon={<IconSettings size={18} />}>
+                        <Group gap="xs">
+                            <Text fw={600}>Advanced</Text>
+                            <Badge size="sm" variant="light">{advancedColumns.length}</Badge>
+                        </Group>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                            {advancedColumns.map((col) => <DetailItem key={col.path} column={col} />)}
+                        </SimpleGrid>
+                    </Accordion.Panel>
+                </Accordion.Item>
+            </Accordion>
         );
     };
 
@@ -381,7 +463,16 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
         };
 
         return (
-            <Accordion variant="contained" radius="md" mb="lg">
+            <Accordion
+                variant="contained"
+                radius="md"
+                mb="lg"
+                // Open by default: the containers are what you came to look at, so
+                // requiring a click to see images and restart counts is friction.
+                // Init containers stay collapsed since they are usually only
+                // interesting when they are the thing that failed.
+                defaultValue={containerType === 'init' ? null : title.toLowerCase()}
+            >
                 <Accordion.Item value={title.toLowerCase()}>
                     <Accordion.Control>
                         <Group gap="xs">
@@ -520,15 +611,23 @@ const KubernetesResourceViewer = ({ resource, columns = [], columnConfig = {}, t
     const containerStatuses = podStatus?.containerStatuses || [];
     const initContainerStatuses = podStatus?.initContainerStatuses || [];
 
+    // Sort fields by how useful they are for this kind, rather than rendering
+    // every one at equal weight. See lib/resourceHighlights.ts.
+    const { headline, secondary, advanced } = partitionColumns(type, [...leftColumns, ...rightColumns]);
+
+    // Ordered by what you look at first when triaging: state, then what is
+    // running, then why it is in that state, then reference detail.
     return (
         <Stack gap="lg">
-            {renderSummary()}
-            {renderMetadata()}
-            {renderData()}
+            {renderHeadline(headline)}
             {renderContainers(containers, containerStatuses, 'Containers', 'regular')}
             {renderContainers(initContainers, initContainerStatuses, 'Init Containers', 'init')}
-            {renderVolumes(podSpec?.volumes, containers.flatMap(c => (c.volumeMounts || []).map(m => ({ ...m, containerName: c.name }))))}
             {renderConditions(podStatus?.conditions)}
+            {renderData()}
+            {renderSummary(secondary)}
+            {renderVolumes(podSpec?.volumes, containers.flatMap(c => (c.volumeMounts || []).map(m => ({ ...m, containerName: c.name }))))}
+            {renderMetadata()}
+            {renderAdvanced(advanced)}
         </Stack>
     );
 };

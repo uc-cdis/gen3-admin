@@ -4,20 +4,31 @@ import { IconHelp, IconLock } from '@tabler/icons-react';
 
 import { SERVICE_CATEGORIES } from '../serviceRegistry';
 
+// Sentinel for "no proxy selected" in the mutually-exclusive ES proxy control.
+const NO_PROXY = '__none';
+
 const ModulesStep = ({ form }) => {
   // Default expanded categories (all visible by default)
   const [expandedCategories] = useState(SERVICE_CATEGORIES.map(c => c.id));
 
-  // Toggle all services in a category (skip disabled)
+  // Services that belong to a mutually-exclusive toggle group are deliberately
+  // excluded from bulk selection. They are infrastructure choices (the AWS ES
+  // proxies replace the in-cluster elasticsearch Service), so turning them on as a
+  // side effect of "Select All" silently breaks Elasticsearch.
+  const bulkSelectable = (category) => category.services.filter(s => !s.disabled && !s.toggleGroup);
+
+  // Toggle all services in a category (skip disabled and toggle-group members)
   const toggleCategory = (category, enabled) => {
-    category.services.filter(s => !s.disabled).forEach(svc => {
+    bulkSelectable(category).forEach(svc => {
       form.setFieldValue(`values.${svc.key}.enabled`, enabled);
     });
   };
 
   // Check if all services in a category are enabled
-  const isCategoryAllEnabled = (category) =>
-    category.services.filter(s => !s.disabled).every(svc => form.values.values?.[svc.key]?.enabled);
+  const isCategoryAllEnabled = (category) => {
+    const svcs = bulkSelectable(category);
+    return svcs.length > 0 && svcs.every(svc => form.values.values?.[svc.key]?.enabled);
+  };
 
   // Count enabled services in a category (excluding disabled)
   const enabledCount = (category) => {
@@ -40,7 +51,7 @@ const ModulesStep = ({ form }) => {
     return { regular, toggleGroups };
   };
 
-  // Handle ES proxy toggle — only one can be enabled at a time
+  // Handle ES proxy toggle — at most one can be enabled; NO_PROXY disables both.
   const handleToggleGroupChange = (groupServices, selectedKey) => {
     groupServices.forEach(svc => {
       form.setFieldValue(`values.${svc.key}.enabled`, svc.key === selectedKey);
@@ -120,21 +131,31 @@ const ModulesStep = ({ form }) => {
                         </SimpleGrid>
                       )}
 
-                      {/* Toggle group services (mutually exclusive) — only show for AWS */}
-                      {(form.values.values?.global?._cloudProvider === 'aws' || form.values.values?.global?._cloudProvider === undefined) && Object.entries(toggleGroups).map(([groupName, svcs]) => {
-                        const activeValue = svcs.find(s => form.values.values?.[s.key]?.enabled)?.key || '';
+                      {/* Toggle group services (mutually exclusive).
+                          Always rendered — previously this was hidden unless the cloud
+                          provider was AWS, which made an enabled proxy impossible to
+                          turn back off from the UI. */}
+                      {Object.entries(toggleGroups).map(([groupName, svcs]) => {
+                        const activeValue = svcs.find(s => form.values.values?.[s.key]?.enabled)?.key || NO_PROXY;
                         return (
                           <Stack key={groupName} gap="xs">
                             <Text size="sm" fw={500}>AWS Elasticsearch Proxy</Text>
-                            <Text size="xs" c="dimmed">Choose one proxy type (only needed for AWS environments)</Text>
+                            <Text size="xs" c="dimmed">
+                              Only for AWS-managed Elasticsearch/OpenSearch. Either proxy replaces the
+                              in-cluster <strong>elasticsearch</strong> Service with one pointing at AWS,
+                              so leave this on <strong>None</strong> when using the bundled Elasticsearch.
+                            </Text>
                             <SegmentedControl
                               fullWidth
                               value={activeValue}
                               onChange={(val) => handleToggleGroupChange(svcs, val)}
-                              data={svcs.map(svc => ({
-                                value: svc.key,
-                                label: svc.label,
-                              }))}
+                              data={[
+                                { value: NO_PROXY, label: 'None (in-cluster ES)' },
+                                ...svcs.map(svc => ({
+                                  value: svc.key,
+                                  label: svc.label,
+                                })),
+                              ]}
                             />
                             {svcs.map(svc => (
                               svc.tooltip && form.values.values?.[svc.key]?.enabled ? (

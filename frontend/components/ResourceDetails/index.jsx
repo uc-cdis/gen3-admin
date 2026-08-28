@@ -41,8 +41,15 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
             setResourceData(response);
             return response;
         } catch (error) {
-            console.error('Failed to fetch resource:', error);
-            setError(error.message || 'Failed to fetch resource');
+            // A 404 is an ordinary outcome here, not a fault: completed Job pods
+            // and other short-lived resources get garbage-collected, and links to
+            // them go stale. Report it plainly instead of logging it as an error,
+            // which also stops Next.js raising its dev error overlay.
+            if (error?.isNotFound) {
+                setError(`This ${String(type || 'resource').toLowerCase()} no longer exists. It may have been deleted or garbage-collected.`);
+            } else {
+                setError(error.message || 'Failed to fetch resource');
+            }
             return null;
         } finally {
             setIsLoading(false);
