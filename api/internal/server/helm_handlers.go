@@ -116,6 +116,13 @@ func collectAgentProxyResponse(agentID string, msg *pb.ServerMessage, parentCtx 
 	setStreamIDOnMessage(msg, streamID)
 
 	agent.mutex.Lock()
+	// An entry can exist in AgentConnections before the gRPC stream is fully
+	// established, in which case these maps are still nil. Assigning into one
+	// would panic, so report it as an unavailable agent instead.
+	if agent.requestChannels == nil || agent.cancelFuncs == nil || agent.contexts == nil {
+		agent.mutex.Unlock()
+		return nil, fmt.Errorf("agent %s is registered but not connected", agentID)
+	}
 	agent.requestChannels[streamID] = responseChan
 	agent.cancelFuncs[streamID] = cancel
 	agent.contexts[streamID] = ctx

@@ -86,3 +86,34 @@ func TestIntervalLimiter(t *testing.T) {
 		}
 	})
 }
+
+func TestExtractAgentFromPath(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		// All three agent-scoped prefixes must resolve, including the new
+		// /api/argocd/ one -- a prefix missing from the list falls through to the
+		// superadmin-only default deny, locking out -read/-write users.
+		{"/api/k8s/prod/proxy/api/v1/pods", "prod"},
+		{"/api/agents/staging/http", "staging"},
+		{"/api/argocd/prod/applications", "prod"},
+		{"/api/argocd/prod/applications/my-app/sync", "prod"},
+		{"/api/argocd/prod", "prod"},
+
+		// Not agent-scoped.
+		{"/api/bootstrap/status", ""},
+		{"/ping", ""},
+		{"/api/aws/identity", ""},
+
+		// Empty agent segment must not be treated as agent-scoped.
+		{"/api/argocd/", ""},
+		{"/api/k8s/", ""},
+	}
+
+	for _, tc := range tests {
+		if got := extractAgentFromPath(tc.url); got != tc.want {
+			t.Errorf("extractAgentFromPath(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}

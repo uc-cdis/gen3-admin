@@ -131,6 +131,33 @@ func (l *intervalLimiter) Allow() bool {
 	return false
 }
 
+// agentScopedPrefixes are the route prefixes whose first path segment names a
+// cluster agent, and which are therefore governed by <agent>-read /
+// <agent>-write roles.
+var agentScopedPrefixes = []string{
+	"/api/k8s/",
+	"/api/agents/",
+	"/api/argocd/",
+}
+
+// extractAgentFromPath returns the agent name a request targets, or "" when the
+// route is not agent-scoped.
+func extractAgentFromPath(url string) string {
+	for _, prefix := range agentScopedPrefixes {
+		if !strings.HasPrefix(url, prefix) {
+			continue
+		}
+		remainder := strings.TrimPrefix(url, prefix)
+		parts := strings.SplitN(remainder, "/", 2)
+		// Guard the empty segment: "/api/argocd/" would otherwise yield "" and
+		// fall through to the superadmin check rather than being agent-scoped.
+		if len(parts) > 0 && parts[0] != "" {
+			return parts[0]
+		}
+	}
+	return ""
+}
+
 // audienceMatches reports whether the token was issued for the expected client.
 // The `aud` claim is either a string or an array of strings per RFC 7519. Keycloak
 // access tokens frequently omit the client from `aud` and record it in `azp`
@@ -379,21 +406,11 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Extract agent (k8s or agents routes)
 		// -------------------------
 
-		var agent string
-
-		if strings.HasPrefix(url, "/api/k8s/") {
-			parts := strings.Split(strings.TrimPrefix(url, "/api/k8s/"), "/")
-			if len(parts) > 0 {
-				agent = parts[0]
-			}
-		}
-
-		if strings.HasPrefix(url, "/api/agents/") {
-			parts := strings.Split(strings.TrimPrefix(url, "/api/agents/"), "/")
-			if len(parts) > 0 {
-				agent = parts[0]
-			}
-		}
+		// One loop over every agent-scoped prefix rather than a block per prefix.
+		// A new prefix that is not listed here falls through to the superadmin-only
+		// default deny, which is how /api/argocd/ would silently have been
+		// unusable for users holding only <agent>-read / <agent>-write roles.
+		agent := extractAgentFromPath(url)
 
 		// -------------------------
 		// RBAC for agent routes

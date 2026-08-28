@@ -252,6 +252,10 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 
 		delete(AgentConnections, agentName)
 
+		// Drop the cached ArgoCD client: a reconnecting agent may be pointed at a
+		// different cluster, so its session token must not be reused.
+		InvalidateArgoCDClient(agentName)
+
 		for _, cancel := range existingAgent.cancelFuncs {
 			cancel()
 		}

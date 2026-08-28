@@ -147,6 +147,7 @@ func SetupHTTPServer() {
 	// Register route groups from extracted handler files
 	RegisterAgentRoutes(r)
 	RegisterProxyRoutes(protected)
+	RegisterArgoCDRoutes(protected)
 	RegisterHelmRoutes(r)
 	RegisterTerminalRoutes(r)
 	RegisterDbUiRoutes(r)
