@@ -19,7 +19,7 @@ import {
   IconActivityHeartbeat,
   IconChevronDown,
   IconCode,
-  IconDiff,
+  IconGitCompare,
   IconEye,
   IconFileText,
   IconGitBranch,
@@ -346,7 +346,7 @@ function ApplicationDetail({ cluster, name, appNamespace }) {
             <Tabs.List mb="md">
               <Tabs.Tab value="overview" leftSection={<IconEye size={16} />}>Overview</Tabs.Tab>
               <Tabs.Tab value="tree" leftSection={<IconHierarchy size={16} />}>Tree</Tabs.Tab>
-              <Tabs.Tab value="diff" leftSection={<IconDiff size={16} />}>Diff</Tabs.Tab>
+              <Tabs.Tab value="diff" leftSection={<IconGitCompare size={16} />}>Diff</Tabs.Tab>
               <Tabs.Tab value="resources" leftSection={<IconActivityHeartbeat size={16} />}>Resources</Tabs.Tab>
               <Tabs.Tab value="history" leftSection={<IconHistory size={16} />}>History</Tabs.Tab>
               <Tabs.Tab value="events" leftSection={<IconActivityHeartbeat size={16} />}>Events</Tabs.Tab>
