@@ -21,6 +21,7 @@ import { resolveStatus } from '@/lib/status';
 
 import callK8sApi from '@/lib/k8s';
 import { useSession } from "next-auth/react";
+import { useK8sList } from '@/hooks/useK8s';
 
 // Constants
 const SEARCH_DEBOUNCE_MS = 300;
@@ -341,67 +342,54 @@ const GenericDataTable = ({
     fields,
     metricsEndpoint,
     buttonsConfig,
-    searchableFields // Optional: specify which fields to search
+    searchableFields, // Optional: specify which fields to search
+    // Opt-in polling, in ms. Off by default: turning it on for every table would
+    // multiply load on the Go proxy and each agent's gRPC stream.
+    refreshInterval = 0,
 }) => {
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [metricsData, setMetricsData] = useState([]);
-    const [metricsError, setMetricsError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRecords, setSelectedRecords] = useState([]);
 
+    // Still needed for the per-row events popover, which fetches on demand
+    // rather than through the shared hooks.
     const { data: sessionData } = useSession();
     const accessToken = sessionData?.accessToken;
 
     // Debounce search term for better performance
     const [debouncedSearchTerm] = useDebouncedValue(searchTerm, SEARCH_DEBOUNCE_MS);
 
-    const fetchData = useCallback(async () => {
-        if (!agent) {
-            setData([]);
-            setLoading(false);
-            return;
-        }
-        try {
-            setLoading(true);
-            setError(null);
-            const response = await callK8sApi(endpoint, 'GET', null, null, agent, accessToken);
-            setData(response.items || []);
-        } catch (err) {
-            console.error("Error fetching data:", err);
-            setError(err.message || "Failed to fetch data");
-            setData([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [agent, endpoint, accessToken]);
+    // Fetching runs on the shared SWR layer rather than a local
+    // useEffect/useState pair. This single edit reaches the ~49 pages that render
+    // through GenericDataTable: identical requests are deduplicated, results
+    // survive navigation instead of refetching from scratch, and the access token
+    // is resolved by the hook rather than threaded through each call.
+    const listQuery = useK8sList(agent ? endpoint : null, {
+        cluster: agent,
+        refreshInterval,
+        keepPreviousData: true,
+    });
 
-    const fetchMetrics = useCallback(async () => {
-        if (!metricsEndpoint || !agent) {
-            setMetricsData([]);
-            return;
-        }
-        try {
-            setMetricsError(null);
-            const response = await callK8sApi(metricsEndpoint, 'GET', null, null, agent, accessToken);
-            setMetricsData(response.items || []);
-        } catch (err) {
-            console.error("Error fetching metrics:", err);
-            setMetricsError(err.message || "Failed to fetch metrics");
-            setMetricsData([]);
-        }
-    }, [agent, metricsEndpoint, accessToken]);
+    const metricsQuery = useK8sList(agent && metricsEndpoint ? metricsEndpoint : null, {
+        cluster: agent,
+        refreshInterval,
+        keepPreviousData: true,
+    });
 
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    const data = listQuery.data ?? [];
+    // Block the table only on a genuine first load. A background revalidation
+    // should not blank out rows the user is already reading.
+    const loading = listQuery.isLoading && listQuery.data === undefined;
+    const error = listQuery.error ? listQuery.error.message : null;
 
-    useEffect(() => {
-        if (metricsEndpoint) {
-            fetchMetrics();
-        }
-    }, [fetchMetrics, metricsEndpoint]);
+    const metricsData = metricsQuery.data ?? [];
+    // Metrics degrade rather than break the table: metrics-server is often not
+    // installed, and the columns render fine without it.
+    const metricsError = metricsQuery.error ? metricsQuery.error.message : null;
+
+    const fetchData = useCallback(() => {
+        listQuery.refresh();
+        if (metricsEndpoint) metricsQuery.refresh();
+    }, [listQuery, metricsQuery, metricsEndpoint]);
 
     // Format columns with enhanced status rendering
     const columns = useMemo(() => fields.map((field) => {
@@ -533,7 +521,7 @@ const GenericDataTable = ({
                         style={{ flexGrow: 1, maxWidth: 400 }}
                     />
                     <Group>
-                        <Button onClick={fetchData} loading={loading}>
+                        <Button onClick={fetchData} loading={loading || listQuery.isValidating}>
                             Refresh
                         </Button>
                     </Group>
