@@ -1,6 +1,9 @@
 import { useEffect } from "react";
+import { Center } from "@mantine/core";
 import { useSession, signOut, signIn } from "next-auth/react";
 import { useRouter } from "next/router";
+
+import { LoadingState } from "@/components/ui";
 
 export function AuthenticatedLayout({ children }) {
   const { data: session, status } = useSession();
@@ -32,33 +35,11 @@ export function AuthenticatedLayout({ children }) {
   // This prevents the "Hello World" or protected content from flashing.
   if (status === "loading" || status === "unauthenticated") {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        width: '100vw',
-      }}>
-        <div className="spinner"></div>
-        <style>
-          {`
-            .spinner {
-              width: 40px;
-              height: 40px;
-              border: 4px solid rgba(0, 0, 0, 0.1);
-              border-radius: 50%;
-              border-left-color: #09f;
-              animation: spin 1s linear infinite;
-              margin: 20px auto;
-            }
-
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}
-        </style>
-      </div>
+      <Center h="100vh" w="100vw">
+        <LoadingState
+          label={status === "loading" ? "Checking your session..." : "Redirecting to sign in..."}
+        />
+      </Center>
     );
   }
 

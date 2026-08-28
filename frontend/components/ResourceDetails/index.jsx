@@ -15,6 +15,7 @@ import { IconRefresh, IconTrash, IconCode, IconEye, IconActivityHeartbeat } from
 import { notifications } from '@mantine/notifications';
 
 import { useSession } from 'next-auth/react';
+import { resolveStatus } from '@/lib/status';
 
 export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions, columnConfig }) {
     const { height } = useViewportSize();
@@ -122,20 +123,23 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
     }, [type, resource, namespace, cluster]);
 
     // Determine status for the header badge
+    // Pick the right status domain for this resource kind; the colours and
+    // labels themselves come from lib/status.ts so they match every other view.
     const getStatusInfo = () => {
         if (type === 'Node') {
             const ready = resourceData?.status?.conditions?.find(c => c.type === 'Ready');
-            return ready?.status === 'True' ? { label: 'Ready', color: 'green' } : { label: 'NotReady', color: 'red' };
+            if (!ready) return null;
+            return resolveStatus('node', ready.status);
         }
         if (type === 'Pod') {
-            const phase = resourceData?.status?.phase;
-            const colors = { Running: 'green', Pending: 'orange', Succeeded: 'blue', Failed: 'red' };
-            return { label: phase || 'Unknown', color: colors[phase] || 'gray' };
+            const containers = resourceData?.status?.containerStatuses;
+            return resolveStatus('pod', resourceData?.status?.phase, {
+                reason: containers?.[0]?.state?.waiting?.reason,
+                ready: containers?.every(c => c.ready),
+            });
         }
         if (resourceData?.status?.phase) {
-            const phase = resourceData.status.phase;
-            const colors = { Bound: 'green', Pending: 'orange', Available: 'blue', Failed: 'red' };
-            return { label: phase, color: colors[phase] || 'gray' };
+            return resolveStatus('pvc', resourceData.status.phase);
         }
         return null;
     };

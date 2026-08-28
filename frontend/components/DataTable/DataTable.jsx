@@ -17,6 +17,7 @@ import {
 import { IconFilter, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import PropTypes from 'prop-types';
+import { resolveStatus } from '@/lib/status';
 
 import callK8sApi from '@/lib/k8s';
 import { useSession } from "next-auth/react";
@@ -181,15 +182,9 @@ const StatusBadgeWithEvents = ({ status, resourceName, resourceNamespace, agent,
         }
     };
 
-    // Determine badge color based on status
-    const getBadgeColor = (status) => {
-        const statusLower = String(status).toLowerCase();
-        if (statusLower.includes('running') || statusLower.includes('ready')) return 'green';
-        if (statusLower.includes('pending')) return 'yellow';
-        if (statusLower.includes('failed') || statusLower.includes('error')) return 'red';
-        if (statusLower.includes('succeeded')) return 'blue';
-        return 'gray';
-    };
+    // Status colors come from the shared status table so this table agrees with
+    // every other view. See lib/status.ts.
+    const getBadgeColor = (status) => resolveStatus('pod', status).color;
 
     const EventsList = ({ compact = false }) => (
         <>
@@ -552,7 +547,7 @@ const GenericDataTable = ({
                 p="md"
                 radius="md"
                 my="md"
-                style={{ border: '1px solid #dee2e6', borderRadius: '4px' }}
+                style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 'var(--mantine-radius-sm)' }}
             >
                 {/* Error Messages */}
                 {error && !loading && (

@@ -13,6 +13,7 @@ import { NavBar } from '@/components/NewNavbar/Navbar';
 import { Header } from '../components/Header/Header';
 import { theme } from '../theme';
 import { Notifications } from '@mantine/notifications';
+import { SWRConfig } from 'swr';
 
 import { useRouter } from 'next/router'
 
@@ -176,6 +177,16 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 }
 
 
+// Shared SWR behaviour. Deduping alone removes real duplicate work: a resource
+// detail page and the components inside it often request the same object.
+const swrConfig = {
+  revalidateOnFocus: true,
+  errorRetryCount: 2,
+  dedupingInterval: 2000,
+  // Only retry transient server-side failures; a 403/404 will not fix itself.
+  shouldRetryOnError: (error) => Boolean(error?.isServerError),
+};
+
 export default function App({
   Component,
   pageProps: { session, ...pageProps },
@@ -193,7 +204,8 @@ export default function App({
       >
         {/* <KeycloakProvider> */}
         <BootstrapAuthGate>
-          <MantineProvider theme={theme}>
+          <SWRConfig value={swrConfig}>
+          <MantineProvider theme={theme} defaultColorScheme="auto">
             <AuthenticatedLayout>
               <Head>
                 <title>Gen3 - Admin</title>
@@ -209,6 +221,7 @@ export default function App({
               {/* <Component {...pageProps} /> */}
             </AuthenticatedLayout>
           </MantineProvider>
+          </SWRConfig>
         </BootstrapAuthGate>
         {/* </KeycloakProvider> */}
       </SessionProvider>
