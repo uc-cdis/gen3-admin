@@ -13,3 +13,6 @@ deployments/
 .vscode/
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Local dev stack logs and generated kubeconfig
+.dev-logs/
