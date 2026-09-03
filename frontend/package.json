@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@datadog/browser-rum": "^6.25.4",
+    "@datadog/browser-rum-nextjs": "^7.11.0",
     "@mantine/charts": "^9.5.2",
     "@mantine/core": "^9.5.2",
     "@mantine/dates": "^9.5.2",
