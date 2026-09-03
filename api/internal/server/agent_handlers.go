@@ -11,13 +11,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"html/template"
 	"math/big"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -55,15 +55,23 @@ type Metadata struct {
 	Namespace string `json:"namespace"`
 }
 
+// agentNamespace is the namespace every agent resource is deployed into. The
+// ServiceAccount, TLS secret and Deployment must all agree on it, otherwise the
+// pod fails to start with "error looking up service account".
+const agentNamespace = "csoc"
+
 type ServiceAccountData struct {
 	EKS             bool
 	RoleARN         string
 	AssumeMethod    string
 	AccessKey       string
 	SecretAccessKey string
+	Name            string
+	ServerAddress   string
+	Namespace       string
 }
 
-func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMethod string, accessKey string, secretAccessKey string) (string, error) {
+func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMethod string, accessKey string, secretAccessKey string, serverAddress string) (string, error) {
 	caCert, caKey, err := ca.LoadOrCreateCA()
 	if err != nil {
 		return "", fmt.Errorf("error loading/creating CA: %v", err)
@@ -127,14 +135,22 @@ func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMetho
 	config := fmt.Sprintf(`
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+---
+apiVersion: v1
 kind: Secret
 metadata:
   name: csoc-tls
+  namespace: %s
 type: opaque
 data:
   %s.crt: %s
   %s.key: %s
   ca.crt: %s`,
+		agentNamespace,
+		agentNamespace,
 		agentName,
 		base64.StdEncoding.EncodeToString(agentCertPEM),
 		agentName,
@@ -148,7 +164,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: csoc
-  namespace: csoc
+  namespace: {{ .Namespace }}
 {{- if and .EKS (eq .AssumeMethod "role") }}
   annotations:
     eks.amazonaws.com/role-arn: {{ .RoleARN }}
@@ -158,7 +174,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: aws-creds
-  namespace: csoc
+  namespace: {{ .Namespace }}
 type: Opaque
 stringData:
   aws_access_key_id: {{ .AccessKey }}
@@ -169,6 +185,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: csoc-agent
+  namespace: {{ .Namespace }}
 spec:
   replicas: 1
   selector:
@@ -185,7 +202,7 @@ spec:
           image: quay.io/cdis/csoc-agent:feat_bootstrap-onboarding-impl
           imagePullPolicy: Always
           command: ["agent"]
-          args: ["--name", "%s"]
+          args: ["--name", "{{ .Name }}", "--server-address", "{{ .ServerAddress }}"]
           {{- if and .EKS (eq .AssumeMethod "user") }}
           env:
             - name: AWS_REGION
@@ -216,6 +233,9 @@ spec:
 		AssumeMethod:    assumeMethod,
 		AccessKey:       accessKey,
 		SecretAccessKey: secretAccessKey,
+		Name:            agentName,
+		ServerAddress:   serverAddress,
+		Namespace:       agentNamespace,
 	}
 
 	var saBuffer bytes.Buffer
@@ -244,8 +264,8 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: csoc
-    namespace: csoc
-`)
+    namespace: %s
+`, agentNamespace)
 
 	return strings.TrimSpace(config), nil
 }
@@ -261,6 +281,7 @@ func CreateAgentHandler(c *gin.Context) {
 		AssumeMethod    string `json:"assumemethod"`
 		AccessKey       string `json:"accesskey"`
 		SecretAccessKey string `json:"secretaccesskey"`
+		ServerAddress   string `json:"serveraddress"`
 	}
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err != nil {
@@ -269,7 +290,20 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	config, err := generateAgentConfig(requestData.Name, requestData.RoleARN, requestData.EKS, requestData.AssumeMethod, requestData.AccessKey, requestData.SecretAccessKey)
+	if strings.TrimSpace(requestData.Name) == "" {
+		http.Error(w, "Agent name is required", http.StatusBadRequest)
+		return
+	}
+
+	// A remote agent has no way to reach the CSOC server unless the address is
+	// supplied explicitly -- the in-cluster default would resolve to localhost
+	// inside the agent's own pod.
+	if strings.TrimSpace(requestData.ServerAddress) == "" {
+		http.Error(w, "Server address is required. Provide the address (host:port) that the remote cluster uses to reach the CSOC gRPC server.", http.StatusBadRequest)
+		return
+	}
+
+	config, err := generateAgentConfig(requestData.Name, requestData.RoleARN, requestData.EKS, requestData.AssumeMethod, requestData.AccessKey, requestData.SecretAccessKey, strings.TrimSpace(requestData.ServerAddress))
 	if err != nil {
 		log.Error().Err(err).Msg("Error generating agent config")
 		http.Error(w, "Error generating agent config: "+err.Error(), http.StatusInternalServerError)
@@ -295,6 +329,8 @@ func CreateLocalAgentHandler(c *gin.Context) {
 		requestData.Name = "local-agent"
 	}
 
+	serverAddress := detectLocalServerAddress()
+
 	yamlManifest, err := generateAgentConfig(
 		requestData.Name,
 		"",
@@ -302,6 +338,7 @@ func CreateLocalAgentHandler(c *gin.Context) {
 		"",
 		"",
 		"",
+		serverAddress,
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("Error generating agent config for local agent")
@@ -309,12 +346,7 @@ func CreateLocalAgentHandler(c *gin.Context) {
 		return
 	}
 
-	yamlManifest = strings.ReplaceAll(yamlManifest, "%s", requestData.Name)
-
-	serverAddress := detectLocalServerAddress()
-	yamlManifest = injectServerAddress(yamlManifest, serverAddress)
-
-	err = k8s.ApplyYAMLToCluster(yamlManifest, "csoc")
+	err = k8s.ApplyYAMLToCluster(yamlManifest, agentNamespace)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to apply agent manifest to local cluster")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to deploy agent: " + err.Error()})
@@ -331,28 +363,6 @@ func CreateLocalAgentHandler(c *gin.Context) {
 
 func detectLocalServerAddress() string {
 	return "csoc-grpc.csoc.svc:50051"
-}
-
-func injectServerAddress(yamlManifest string, serverAddress string) string {
-	prefix := `args: ["--name", "`
-	idx := strings.Index(yamlManifest, prefix)
-	if idx < 0 {
-		log.Warn().Msg("Could not find agent args in generated YAML")
-		return yamlManifest
-	}
-
-	afterPrefix := yamlManifest[idx+len(prefix):]
-	closeQuote := strings.Index(afterPrefix, `"`)
-	if closeQuote < 0 {
-		log.Warn().Msg("Malformed agent args in generated YAML")
-		return yamlManifest
-	}
-
-	insertPoint := idx + len(prefix) + closeQuote + 1
-	result := yamlManifest[:insertPoint] +
-		fmt.Sprintf(`, "--server-address", "%s"`, serverAddress) +
-		yamlManifest[insertPoint:]
-	return result
 }
 
 func GetAgentsHandler(c *gin.Context) {

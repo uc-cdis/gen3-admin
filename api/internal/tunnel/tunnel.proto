@@ -21,6 +21,10 @@ message AgentMessage {
     HelmInstallResponse helmInstall = 6;              // Helm install responses
     TerminalStream terminalStream = 7;
     PgWebResponse pgwebResponse = 8;
+    TunnelOpened tunnelOpened = 9;   // Ack (or failure) for a TunnelOpen
+    TunnelData tunnelData = 10;      // Bytes read from the forwarded port
+    TunnelClose tunnelClose = 11;    // Forwarded connection ended
+    SqlQueryResponse sqlQueryResponse = 12; // Result of a SQL query
   }
 }
 
@@ -36,6 +40,10 @@ message ServerMessage {
     HelmInstallRequest helmInstallRequest = 7;          // Helm install request
     TerminalStream terminalStream = 8;
     DbUiRequest dbuiRequest = 9;
+    TunnelOpen tunnelOpen = 10;      // Ask the agent to port-forward to a service/pod
+    TunnelData tunnelData = 11;      // Bytes to write to the forwarded port
+    TunnelClose tunnelClose = 12;    // Caller closed the local connection
+    SqlQueryRequest sqlQueryRequest = 13;   // Run a SQL query against a database
   }
 }
 
@@ -188,6 +196,75 @@ message PgWebResponse {
   string pod_name = 3;         // Name of the created pod
   string service_name = 4;     // Name of the created service
   int32 port = 5;             // Port the service is running on
+}
+
+// SqlQueryRequest asks the agent to run a query against a database.
+//
+// The agent resolves credentials from the `<db_name>-dbcreds` secret and
+// connects directly, so no in-cluster proxy pod is involved.
+message SqlQueryRequest {
+  string stream_id = 1;
+  string namespace = 2;
+  string db_name = 3;      // resolves the <db_name>-dbcreds secret
+  string sql = 4;
+  int32 max_rows = 5;      // agent-enforced row cap
+  bool allow_write = 6;    // when false the session is read-only
+}
+
+message SqlColumn {
+  string name = 1;
+  string type = 2;
+}
+
+// SqlRow carries stringified cell values. `nulls` keeps a real NULL distinct
+// from the literal string "NULL", which is the distinction that matters when
+// rendering a table.
+message SqlRow {
+  repeated string values = 1;
+  repeated bool nulls = 2;
+}
+
+message SqlQueryResponse {
+  string stream_id = 1;
+  repeated SqlColumn columns = 2;
+  repeated SqlRow rows = 3;
+  int64 rows_affected = 4;
+  bool truncated = 5;      // more rows existed than max_rows
+  int64 duration_ms = 6;
+  string error = 7;
+}
+
+// TunnelOpen asks the agent to establish a raw TCP tunnel to a service or pod.
+//
+// The agent forwards via the pod's `portforward` subresource, which routes
+// API server -> kubelet -> pod. That path does not traverse the pod network, so
+// it works where a direct dial or Service proxy would be blocked (e.g. Cilium),
+// and it works whether the agent runs in-cluster or locally with a kubeconfig.
+message TunnelOpen {
+  string stream_id = 1;
+  string namespace = 2;
+  string service = 3;   // Service to resolve to a ready pod; ignored if pod is set
+  string pod = 4;       // Optional: target this pod directly
+  int32 port = 5;       // Target container port
+}
+
+// TunnelOpened acknowledges a TunnelOpen. error is empty on success.
+message TunnelOpened {
+  string stream_id = 1;
+  string error = 2;
+  string pod = 3;       // Pod actually selected, for diagnostics
+}
+
+// TunnelData carries raw bytes in either direction for an open tunnel.
+message TunnelData {
+  string stream_id = 1;
+  bytes data = 2;
+}
+
+// TunnelClose ends a tunnel from either side. error is empty on a clean close.
+message TunnelClose {
+  string stream_id = 1;
+  string error = 2;
 }
 
 // Message to stop/cleanup pgweb resources

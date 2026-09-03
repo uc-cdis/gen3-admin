@@ -66,6 +66,8 @@ type Agent struct {
 	statusUpdateInterval time.Duration
 	proxyCancelMu        sync.Mutex
 	proxyCancelFuncs     map[string]context.CancelFunc
+	// tunnels tracks open TCP port-forwards (see tunnel.go).
+	tunnels *tunnelRegistry
 }
 
 func (a *Agent) sendMessage(msg *pb.AgentMessage) error {
@@ -134,6 +136,7 @@ func NewAgent(name, version, serverAddress string, statusInterval time.Duration)
 		client:               client,
 		statusUpdateInterval: statusInterval,
 		proxyCancelFuncs:     make(map[string]context.CancelFunc),
+		tunnels:              newTunnelRegistry(),
 	}, nil
 }
 
@@ -1541,6 +1544,19 @@ func (a *Agent) Run(ctx context.Context) error {
 		case *pb.ServerMessage_TerminalStream:
 			log.Info().Msgf("Received terminal request from server.")
 			go a.HandleTerminal(content.TerminalStream)
+		// TCP tunnel (see tunnel.go). Open runs in its own goroutine because it
+		// dials the API server; data and close are cheap map operations and must
+		// stay ordered relative to each other, so they run inline.
+		case *pb.ServerMessage_TunnelOpen:
+			go a.handleTunnelOpen(content.TunnelOpen)
+		case *pb.ServerMessage_TunnelData:
+			a.handleTunnelData(content.TunnelData)
+		case *pb.ServerMessage_TunnelClose:
+			a.handleTunnelClose(content.TunnelClose)
+		// SQL explorer (see sql.go). Runs on its own goroutine so a slow query
+		// cannot stall the receive loop.
+		case *pb.ServerMessage_SqlQueryRequest:
+			go a.handleSqlQuery(content.SqlQueryRequest)
 		default:
 			log.Warn().Msgf("Unknown message type: %T", content)
 		}

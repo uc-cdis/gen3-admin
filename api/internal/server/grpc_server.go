@@ -43,6 +43,14 @@ type AgentConnection struct {
 	mutex           sync.Mutex
 	agent           Agent
 	terminalStreams map[string]*websocket.Conn
+	// tunnelConns maps a tunnel stream ID to the local TCP connection whose bytes
+	// are being forwarded to a pod (see tunnel_handlers.go).
+	tunnelConns map[string]net.Conn
+	// tunnelOpened receives the agent's ack for a pending TunnelOpen, so the
+	// handler can fail fast instead of writing into a tunnel that never opened.
+	tunnelOpened map[string]chan *pb.TunnelOpened
+	// sqlResponses correlates SQL query results with their waiting HTTP handler.
+	sqlResponses map[string]chan *pb.SqlQueryResponse
 }
 
 func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
@@ -267,6 +275,9 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		contexts:        preservedContexts,
 		cancelFuncs:     preservedCancelFuncs,
 		terminalStreams: make(map[string]*websocket.Conn),
+		tunnelConns:     make(map[string]net.Conn),
+		tunnelOpened:    make(map[string]chan *pb.TunnelOpened),
+		sqlResponses:    make(map[string]chan *pb.SqlQueryResponse),
 		agent: Agent{
 			Id:              cert.Subject.SerialNumber,
 			Name:            agentName,
@@ -371,6 +382,57 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				s.mu.Unlock()
 			}
 			agent.mutex.Unlock()
+		// ── SQL explorer (see sql_handlers.go) ──
+		case *pb.AgentMessage_SqlQueryResponse:
+			sqlResp := msg.SqlQueryResponse
+			agent.mutex.Lock()
+			ch, exists := agent.sqlResponses[sqlResp.StreamId]
+			agent.mutex.Unlock()
+			if exists {
+				// Buffered by the handler, so this never blocks the receive loop.
+				select {
+				case ch <- sqlResp:
+				default:
+				}
+			} else {
+				log.Debug().Msgf("No waiter for SQL response: %s", sqlResp.StreamId)
+			}
+
+		// ── TCP tunnel (see tunnel_handlers.go) ──
+		case *pb.AgentMessage_TunnelOpened:
+			opened := msg.TunnelOpened
+			agent.mutex.Lock()
+			ack, exists := agent.tunnelOpened[opened.StreamId]
+			agent.mutex.Unlock()
+			if exists {
+				// Buffered by the handler, so this never blocks the receive loop.
+				select {
+				case ack <- opened:
+				default:
+				}
+			}
+
+		case *pb.AgentMessage_TunnelData:
+			data := msg.TunnelData
+			agent.mutex.Lock()
+			conn, exists := agent.tunnelConns[data.StreamId]
+			agent.mutex.Unlock()
+			if !exists {
+				log.Debug().Msgf("No tunnel connection for stream ID: %s", data.StreamId)
+				continue
+			}
+			if _, err := conn.Write(data.Data); err != nil {
+				log.Warn().Err(err).Msgf("Failed writing tunnel data for stream ID: %s", data.StreamId)
+				agent.closeTunnel(data.StreamId)
+			}
+
+		case *pb.AgentMessage_TunnelClose:
+			closeMsg := msg.TunnelClose
+			if closeMsg.Error != "" {
+				log.Warn().Msgf("Tunnel %s closed by agent: %s", closeMsg.StreamId, closeMsg.Error)
+			}
+			agent.closeTunnel(closeMsg.StreamId)
+
 		case *pb.AgentMessage_TerminalStream:
 			termResp := msg.TerminalStream
 			log.Debug().Msgf("Received terminal stream from server %s: %v", agentName, termResp.Data)

@@ -150,6 +150,8 @@ func SetupHTTPServer() {
 	RegisterArgoCDRoutes(protected)
 	RegisterHelmRoutes(r)
 	RegisterTerminalRoutes(r)
+	RegisterTunnelRoutes(r)
+	RegisterSqlRoutes(r)
 	RegisterDbUiRoutes(r)
 
 	// Bootstrap endpoints (public, for workshop/onboarding)
