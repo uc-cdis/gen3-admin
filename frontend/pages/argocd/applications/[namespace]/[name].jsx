@@ -8,6 +8,7 @@ import {
   Group,
   Menu,
   Paper,
+  Progress,
   SimpleGrid,
   Stack,
   Table,
@@ -86,11 +87,43 @@ function timeAgo(timestamp) {
   return `${Math.max(minutes, 0)}m ago`;
 }
 
-function FieldCard({ label, value }) {
+/**
+ * Bucket a sync's per-resource results.
+ *
+ * ArgoCD reports each resource with a `status` (Synced / OutOfSync / …) and a
+ * `hookPhase` for hooks. A resource is "done" once it has a terminal status;
+ * anything still Running/Progressing is what the sync is currently working on.
+ */
+function summarizeSyncResources(resources) {
+  const pending = [];
+  let done = 0;
+  let failed = 0;
+
+  for (const r of resources) {
+    const phase = r.hookPhase && r.hookPhase !== 'Succeeded' ? r.hookPhase : r.status;
+    if (phase === 'Running' || phase === 'Progressing') {
+      pending.push(r);
+    } else if (phase === 'Failed' || phase === 'Error' || phase === 'SyncFailed') {
+      failed += 1;
+    } else {
+      done += 1;
+    }
+  }
+  return { pending, done, failed, total: resources.length };
+}
+
+/** "apps/Deployment fence" -- enough to identify a resource without wrapping. */
+function resourceLabel(r) {
+  const kind = r.kind || 'Resource';
+  return r.namespace ? `${kind} ${r.namespace}/${r.name}` : `${kind} ${r.name}`;
+}
+
+function FieldCard({ label, value, title }) {
   return (
     <Card>
       <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={600} style={{ wordBreak: 'break-word' }}>{value || '-'}</Text>
+      {/* `title` surfaces the exact ISO timestamp on hover for the relative-time cards. */}
+      <Text fw={600} style={{ wordBreak: 'break-word' }} title={title}>{value || '-'}</Text>
     </Card>
   );
 }
@@ -143,6 +176,21 @@ function ApplicationDetail({ cluster, name, appNamespace }) {
   const running = operation?.phase === 'Running' || operation?.phase === 'Terminating';
   const source = primarySource(data?.spec);
   const appKey = `${cluster}/${appNamespace}/${name}`;
+
+  // When the last sync actually finished applying. Distinct from reconciledAt,
+  // which is just the periodic desired-vs-live comparison and ticks every few
+  // minutes even when nothing has been synced for days.
+  const lastSyncedAt = operation?.finishedAt || null;
+  const lastSyncedLabel = running
+    ? 'Syncing now…'
+    : lastSyncedAt
+      ? timeAgo(lastSyncedAt)
+      : 'Never';
+
+  // Per-resource results ArgoCD reports as a sync progresses. Present while the
+  // operation runs and retained afterwards, so this doubles as a post-sync summary.
+  const syncedResources = operation?.syncResult?.resources || [];
+  const syncProgress = summarizeSyncResources(syncedResources);
 
   const notifyError = (title, error) =>
     notifications.show({
@@ -365,7 +413,8 @@ function ApplicationDetail({ cluster, name, appNamespace }) {
                   <FieldCard label="Target revision" value={source.targetRevision} />
                   <FieldCard label="Destination namespace" value={application.spec?.destination?.namespace} />
                   <FieldCard label="Destination cluster" value={application.spec?.destination?.name || application.spec?.destination?.server} />
-                  <FieldCard label="Last reconciled" value={timeAgo(status.reconciledAt)} />
+                  <FieldCard label="Last synced" value={lastSyncedLabel} title={lastSyncedAt || undefined} />
+                  <FieldCard label="Last reconciled" value={timeAgo(status.reconciledAt)} title={status.reconciledAt || undefined} />
                   <FieldCard label="Synced revision" value={status.sync?.revision?.slice(0, 12)} />
                   <FieldCard label="Managed resources" value={String((status.resources || []).length)} />
                 </SimpleGrid>
@@ -384,6 +433,43 @@ function ApplicationDetail({ cluster, name, appNamespace }) {
                       </Stack>
                       <StatusBadge domain="argoOp" value={operation.phase} />
                     </Group>
+
+                    {syncProgress.total > 0 && (
+                      <Stack gap={6} mt="md">
+                        <Group justify="space-between">
+                          <Text size="xs" c="dimmed">
+                            {running ? 'Syncing' : 'Applied'} {syncProgress.done}/{syncProgress.total} resources
+                            {syncProgress.failed > 0 ? ` · ${syncProgress.failed} failed` : ''}
+                          </Text>
+                          {running && syncProgress.pending.length > 0 && (
+                            <Text size="xs" c="dimmed">
+                              {syncProgress.pending.length} in progress
+                            </Text>
+                          )}
+                        </Group>
+                        <Progress.Root size="sm">
+                          <Progress.Section
+                            value={(syncProgress.done / syncProgress.total) * 100}
+                            color="teal"
+                            animated={running}
+                          />
+                          {syncProgress.failed > 0 && (
+                            <Progress.Section
+                              value={(syncProgress.failed / syncProgress.total) * 100}
+                              color="red"
+                            />
+                          )}
+                        </Progress.Root>
+                        {/* Name what's actually in flight -- the main thing missing when
+                            watching a long sync. Capped so a big app doesn't flood the card. */}
+                        {running && syncProgress.pending.length > 0 && (
+                          <Text size="xs" c="dimmed">
+                            Currently: {syncProgress.pending.slice(0, 3).map(resourceLabel).join(', ')}
+                            {syncProgress.pending.length > 3 ? ` +${syncProgress.pending.length - 3} more` : ''}
+                          </Text>
+                        )}
+                      </Stack>
+                    )}
                   </Card>
                 )}
 

@@ -8,6 +8,10 @@ import {
   Alert,
   LoadingOverlay,
   Group,
+  Paper,
+  Badge,
+  Stack,
+  SegmentedControl,
 } from "@mantine/core";
 import dynamic from "next/dynamic";
 import { useState, useEffect, useRef } from "react";
@@ -18,6 +22,7 @@ const Terminal = dynamic(() => import("@/components/Shell/Terminal"), {
 });
 
 import callK8sApi from "@/lib/k8s";
+import SqlExplorer from "@/components/SqlExplorer";
 import { useGlobalState } from "@/contexts/global";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -42,6 +47,15 @@ export default function Databases() {
   const [loading, setLoading] = useState(false);
 
   const [modalOpened, setModalOpened] = useState(false);
+  // "sql" uses the native explorer (agent connects to Postgres directly);
+  // "pgweb" keeps the original pod-based UI.
+  const [uiMode, setUiMode] = useState<string>("sql");
+
+  // Sessions already running in this namespace. The agent labels every pod it
+  // creates, so these can be discovered rather than tracked client-side -- they
+  // outlive a page reload and may have been started by someone else.
+  const [runningSessions, setRunningSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
 
   // Refs for DOM manipulation
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -65,6 +79,37 @@ export default function Databases() {
   // ---- NEW: Single source of truth for PgWeb service proxy URL ----
   const getPgwebProxyUrl = (dbName: string) =>
     `/api/k8s/${clusterName}/proxy/api/v1/namespaces/${namespace}/services/pgweb-${dbName}-service:8081/proxy/`;
+
+  // Tunnel ids keyed by db name, so a pgweb session reuses one listener.
+  const tunnelIdRef = useRef<Record<string, string>>({});
+
+  /**
+   * Open (or reuse) a TCP tunnel to a pgweb service and return a URL the iframe
+   * can load.
+   *
+   * The Kubernetes Service proxy (getPgwebProxyUrl) needs the API server to reach
+   * the pod network, which returns 503 under an isolating CNI. The tunnel instead
+   * port-forwards via API server -> kubelet -> pod.
+   */
+  const getPgwebTunnelUrl = async (dbName: string) => {
+    let id = tunnelIdRef.current[dbName];
+    if (!id) {
+      const res = await authedFetch(`/api/agents/${clusterName}/tunnel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          namespace,
+          service: `pgweb-${dbName}-service`,
+          port: 8081,
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed to open tunnel: ${res.status}`);
+      const data = await res.json();
+      id = data.id;
+      tunnelIdRef.current[dbName] = id as string;
+    }
+    return `/api/agents/${clusterName}/tunnel/${id}/http?path=`;
+  };
 
   // ---- NEW: fetch helper that consistently includes auth (if your server expects it) ----
   const authedFetch = (url: string, options: RequestInit = {}) => {
@@ -144,6 +189,72 @@ export default function Databases() {
       setPollingInterval(null);
     }
   }, [activeGlobalEnv]);
+
+  /**
+   * Discover pgweb pods the agent has created in this namespace.
+   *
+   * Keyed off the labels the agent sets (`app=pgweb`, `managed-by=tunnel-agent`)
+   * rather than local state, so sessions survive a reload and sessions started
+   * by another user are visible too.
+   */
+  const fetchRunningSessions = async () => {
+    if (!clusterName || !namespace || !accessToken) {
+      setRunningSessions([]);
+      return;
+    }
+    setSessionsLoading(true);
+    try {
+      const data: any = await callK8sApi(
+        `/api/v1/namespaces/${namespace}/pods?labelSelector=${encodeURIComponent(
+          "app=pgweb,managed-by=tunnel-agent"
+        )}`,
+        "GET",
+        null,
+        null,
+        clusterName,
+        accessToken
+      );
+      const sessions = (data?.items || []).map((pod: any) => ({
+        name: pod.metadata?.name,
+        dbName: pod.metadata?.labels?.["db-name"] || pod.metadata?.name?.replace(/^pgweb-/, ""),
+        phase: pod.status?.phase,
+        ready: (pod.status?.containerStatuses || []).every((cs: any) => cs.ready),
+        startedAt: pod.status?.startTime,
+      }));
+      sessions.sort((a: any, b: any) => (a.dbName || "").localeCompare(b.dbName || ""));
+      setRunningSessions(sessions);
+    } catch (error) {
+      console.error("Error fetching running pgweb sessions:", error);
+      setRunningSessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  // Refresh the session list when the environment changes, then on an interval so
+  // pods started elsewhere (or torn down) show up without a manual reload.
+  useEffect(() => {
+    fetchRunningSessions();
+    if (!clusterName || !namespace || !accessToken) return;
+    const interval = setInterval(fetchRunningSessions, 15000);
+    return () => clearInterval(interval);
+  }, [clusterName, namespace, accessToken]);
+
+  /** Attach to an already-running session without going through the launch path. */
+  const attachToSession = async (dbName: string) => {
+    setSelectedDatabase(`${dbName}-dbcreds`);
+    setPgwebError(null);
+    setPgwebStatus("health_checking");
+
+    if (await checkProxyHealth(dbName)) {
+      setPgwebUrl(getPgwebProxyUrl(dbName));
+      setPgwebStatus("running");
+    } else {
+      // Pod exists but the service isn't answering yet -- fall back to the normal
+      // launch/poll path, which handles "already_running" idempotently.
+      launchPgWeb(dbName);
+    }
+  };
 
   // Function to launch PgWeb (unchanged behavior, but now uses authedFetch)
   const launchPgWeb = async (dbName: string) => {
@@ -312,7 +423,8 @@ export default function Databases() {
       setPollingInterval(null);
     }
 
-    if (value) {
+    // Launching spawns a pod, so only do it for the pgweb view.
+    if (value && uiMode === "pgweb") {
       const dbName = value.replace("-dbcreds", "");
       launchPgWeb(dbName);
     }
@@ -346,7 +458,7 @@ export default function Databases() {
         </Container>
       ) : selectData.length > 0 ? (
         <Container fluid my={20}>
-          <Group grow justify="space-between">
+          <Group align="flex-end" justify="space-between">
             <Select
               data={selectData}
               placeholder="Select a database"
@@ -355,10 +467,106 @@ export default function Databases() {
               onChange={handleDatabaseSelect}
               searchable
               leftSection={<IconDatabase size={16} />}
+              style={{ flex: 1 }}
+            />
+            <SegmentedControl
+              value={uiMode}
+              onChange={(mode) => {
+                setUiMode(mode);
+                // Switching into pgweb with a database already chosen needs the
+                // pod launched, since selection skipped it while in SQL mode.
+                if (mode === "pgweb" && selectedDatabase && !pgwebUrl) {
+                  launchPgWeb(selectedDatabase.replace("-dbcreds", ""));
+                }
+              }}
+              data={[
+                { value: "sql", label: "SQL Explorer" },
+                { value: "pgweb", label: "pgweb" },
+              ]}
             />
           </Group>
 
-          {pgwebStatus === "running" && pgwebUrl && (
+          {/* SQL explorer: the agent connects to Postgres directly, so no pgweb
+              pod is launched and nothing depends on pod-network reachability. */}
+          {uiMode === "sql" && selectedDatabase && (
+            <Container fluid mt="md" p={0}>
+              <SqlExplorer
+                cluster={clusterName}
+                namespace={namespace}
+                dbName={selectedDatabase.replace("-dbcreds", "")}
+                accessToken={accessToken}
+              />
+            </Container>
+          )}
+
+          {uiMode === "sql" && !selectedDatabase && (
+            <Text c="dimmed" mt="md">Select a database to browse its tables and run queries.</Text>
+          )}
+
+          {/* Sessions already running in this namespace, discovered from pod
+              labels so they survive reloads and show other users' sessions. */}
+          {uiMode === "pgweb" && runningSessions.length > 0 && (
+            <Paper withBorder p="md" radius="md" mt="md">
+              <Group justify="space-between" mb="xs">
+                <Group gap="xs">
+                  <Text fw={600} size="sm">Running pgweb sessions</Text>
+                  <Badge size="sm" variant="light">{runningSessions.length}</Badge>
+                </Group>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  onClick={fetchRunningSessions}
+                  loading={sessionsLoading}
+                >
+                  Refresh
+                </Button>
+              </Group>
+              <Stack gap="xs">
+                {runningSessions.map((s) => {
+                  const isActive = selectedDatabase?.replace("-dbcreds", "") === s.dbName;
+                  return (
+                    <Group key={s.name} justify="space-between" wrap="nowrap">
+                      <Group gap="xs" wrap="nowrap">
+                        <IconDatabase size={16} />
+                        <Text size="sm" fw={isActive ? 600 : 400}>{s.dbName}</Text>
+                        <Badge
+                          size="xs"
+                          color={s.ready ? "green" : s.phase === "Running" ? "yellow" : "gray"}
+                          variant="light"
+                        >
+                          {s.ready ? "ready" : (s.phase || "unknown").toLowerCase()}
+                        </Badge>
+                        {isActive && <Badge size="xs" variant="outline">current</Badge>}
+                      </Group>
+                      <Group gap="xs" wrap="nowrap">
+                        <Button
+                          size="xs"
+                          variant="light"
+                          disabled={!s.ready || isActive}
+                          onClick={() => attachToSession(s.dbName)}
+                        >
+                          Attach
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color="red"
+                          onClick={async () => {
+                            await killPgwebPod(s.dbName);
+                            fetchRunningSessions();
+                          }}
+                        >
+                          Stop
+                        </Button>
+                      </Group>
+                    </Group>
+                  );
+                })}
+              </Stack>
+            </Paper>
+          )}
+
+          {uiMode === "pgweb" && pgwebStatus === "running" && pgwebUrl && (
             <Group justify="space-between">
               <Group>
                 <Button onClick={() => setModalOpened(true)} m="md">
@@ -379,7 +587,7 @@ export default function Databases() {
             </Group>
           )}
 
-          {(pgwebStatus === "launching" || pgwebStatus === "health_checking") && (
+          {uiMode === "pgweb" && (pgwebStatus === "launching" || pgwebStatus === "health_checking") && (
             <Alert icon={<LoadingOverlay visible />} title="Launching PgWeb" color="blue" mt="md">
               {pgwebStatus === "health_checking"
                 ? "Pod is ready, waiting for service to be healthy..."
@@ -387,13 +595,13 @@ export default function Databases() {
             </Alert>
           )}
 
-          {pgwebStatus === "deleting" && (
+          {uiMode === "pgweb" && pgwebStatus === "deleting" && (
             <Alert icon={<LoadingOverlay visible />} title="Deleting PgWeb Pod" color="red" mt="md">
               Removing the PgWeb pod… Please wait until deletion is fully completed.
             </Alert>
           )}
 
-          {pgwebStatus === "error" && (
+          {uiMode === "pgweb" && pgwebStatus === "error" && (
             <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mt="md">
               {pgwebError}
               <Button
@@ -418,7 +626,7 @@ export default function Databases() {
       )}
 
       {/* PgWeb iframe */}
-      {pgwebStatus === "running" && pgwebUrl && (
+      {uiMode === "pgweb" && pgwebStatus === "running" && pgwebUrl && (
         <Container fluid my={20} style={{ position: "relative" }}>
           <div ref={normalContainerRef}>
             <iframe

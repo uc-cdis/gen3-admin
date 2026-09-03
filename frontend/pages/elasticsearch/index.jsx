@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from '@mantine/form';
 import { IconRefresh, IconPencil, IconSend, IconCopy, IconCheck, IconHistory, IconTrendingUp, IconDatabase, IconChevronRight, IconExternalLink, IconMaximize, IconMinimize } from '@tabler/icons-react';
 import {
@@ -125,7 +125,10 @@ export default function Elasticsearch() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [proxyMode, setProxyMode] = useState("auto");
-  // "auto" | "k8s" | "agent"
+  // Cache of open tunnels keyed by cluster/namespace. Each POST to the tunnel
+  // endpoint binds a new listener, so reuse one per target rather than per request.
+  const tunnelIdRef = useRef({});
+  // "auto" | "k8s" | "agent" | "tunnel"
 
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
@@ -170,12 +173,26 @@ export default function Elasticsearch() {
       callGoApi(proxyPath, method, body, null, accessToken, "text");
 
     if (proxyMode === "auto") {
+      // Tier 1: the Kubernetes API Service proxy. Needs the API server to reach
+      // the pod network, which an isolating CNI may block.
       try {
         return await doCall(buildK8sProxyPath(esPath));
-      } catch (err) {
-        console.warn("K8s proxy failed — falling back to agent proxy", err);
-        return await doCall(buildAgentProxyPath(esPath));
+      } catch (k8sErr) {
+        console.warn("K8s proxy failed — falling back to agent proxy", k8sErr);
       }
+      // Tier 2: the agent dials the service directly. Fails when the agent runs
+      // outside the cluster, where `.svc` names do not resolve.
+      try {
+        return await doCall(buildAgentProxyPath(esPath));
+      } catch (agentErr) {
+        console.warn("Agent proxy failed — falling back to TCP tunnel", agentErr);
+      }
+      // Tier 3: port-forward through the agent (API server -> kubelet -> pod).
+      return await callViaTunnel(doCall, esPath);
+    }
+
+    if (proxyMode === "tunnel") {
+      return await callViaTunnel(doCall, esPath);
     }
 
     const proxyPath =
@@ -350,6 +367,53 @@ export default function Elasticsearch() {
     return `/agents/${cluster}/http?url=${encodeURIComponent(target)}`;
   };
 
+  /**
+   * Open (or reuse) a TCP tunnel and return an agent-proxy path pointed at its
+   * loopback port.
+   *
+   * The tunnel is cached per cluster/namespace: each call to the tunnel endpoint
+   * binds a new listener, so building one per request would leak ports.
+   */
+  const openTunnel = async () => {
+    const res = await callGoApi(
+      `/agents/${cluster}/tunnel`,
+      "POST",
+      { namespace, service: "gen3-elasticsearch-master", port: 9200 },
+      null,
+      accessToken
+    );
+    const id = typeof res === "string" ? JSON.parse(res).id : res.id;
+    tunnelIdRef.current[`${cluster}/${namespace}`] = id;
+    return id;
+  };
+
+  const buildTunnelPath = async (url) => {
+    const key = `${cluster}/${namespace}`;
+    const tunnelId = tunnelIdRef.current[key] || (await openTunnel());
+    // The listener lives on the CSOC server, so this is served there rather than
+    // through the agent HTTP proxy.
+    return `/agents/${cluster}/tunnel/${tunnelId}/http?path=${encodeURIComponent(url)}`;
+  };
+
+  /**
+   * Call through the tunnel, re-opening once if the cached tunnel is gone.
+   *
+   * Tunnel listeners live in the CSOC server's memory, so they disappear on a
+   * backend restart (and are reaped when idle) while this ref still holds the old
+   * id. Rather than surfacing a confusing "tunnel not found", drop the cache and
+   * open a fresh one.
+   */
+  const callViaTunnel = async (doCall, esPath) => {
+    try {
+      return await doCall(await buildTunnelPath(esPath));
+    } catch (err) {
+      const stale = String(err?.message || "").includes("tunnel not found");
+      if (!stale) throw err;
+      delete tunnelIdRef.current[`${cluster}/${namespace}`];
+      return await doCall(await buildTunnelPath(esPath));
+    }
+  };
+
   const parseResponseForLinks = (responseData) => {
     try {
       const parsed = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
@@ -515,7 +579,8 @@ export default function Elasticsearch() {
                     data={[
                       { value: "auto", label: "Auto (fallback)" },
                       { value: "k8s", label: "Kubernetes API Proxy" },
-                      { value: "agent", label: "Agent HTTP Proxy" }
+                      { value: "agent", label: "Agent HTTP Proxy" },
+                      { value: "tunnel", label: "Agent TCP Tunnel" }
                     ]}
                   />
                 </Group>

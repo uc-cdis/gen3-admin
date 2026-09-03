@@ -363,8 +363,10 @@ function FullNavBar() {
             label: 'Observability',
             icon: IconEye,
             links: [
-                { label: 'Monitors', link: '/observability/monitors' },
-                { label: 'Logs', link: '/observability/logs' },
+                // Single environment-scoped view; the old Monitors and Logs pages
+                // queried an in-cluster Loki that does not exist and are superseded.
+                { label: 'Overview', link: '/observability' },
+                { label: 'Logs (legacy)', link: '/observability/logs' },
                 { label: 'Dashboards', link: '/observability/dashboards' },
             ]
         },

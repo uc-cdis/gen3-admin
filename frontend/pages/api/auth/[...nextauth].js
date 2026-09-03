@@ -69,9 +69,40 @@ async function refreshAccessToken(token) {
 
 /** ================= HANDLER ================= */
 
+/**
+ * Follow the port the app is actually served on, in local development.
+ *
+ * NextAuth builds redirect URLs from NEXTAUTH_URL and falls back to
+ * http://localhost:3000 when unset, so `next dev --port 3002` would bounce you
+ * to 3000 after login. Its `detectOrigin` helper reads the origin off the
+ * request instead, but only when AUTH_TRUST_HOST (or VERCEL) is set.
+ *
+ * Enabling that automatically is safe for localhost only. Trusting the Host
+ * header in production would let an attacker-supplied header steer OAuth
+ * redirects, so anything non-local must set NEXTAUTH_URL (or opt in explicitly
+ * via AUTH_TRUST_HOST when a trusted proxy sets x-forwarded-host).
+ */
+function trustHostForLocalDev(req) {
+  if (process.env.NEXTAUTH_URL || process.env.AUTH_TRUST_HOST || process.env.VERCEL) return;
+
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "";
+  const hostname = String(Array.isArray(host) ? host[0] : host).split(":")[0];
+  if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "[::1]") return;
+
+  process.env.AUTH_TRUST_HOST = "true";
+  // detectOrigin defaults to https unless x-forwarded-proto says otherwise, which
+  // would yield https://localhost:3001 and break the redirect. `next dev` serves
+  // plain http, so state it explicitly.
+  if (!req.headers["x-forwarded-proto"]) {
+    req.headers["x-forwarded-proto"] = "http";
+  }
+}
+
 export default async function handler(req, res) {
   // FIXED: Scoped to the individual request to prevent race conditions
   let pendingCookies = [];
+
+  trustHostForLocalDev(req);
 
   const providers = [
     KeycloakProvider({
