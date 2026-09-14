@@ -1,26 +1,24 @@
 # syntax=docker/dockerfile:1.7
 
-FROM quay.io/cdis/golang-build-base:master AS go-builder
+FROM quay.io/cdis/golang-build-base:go1.26.0 AS go-builder
 
-# RUN yum update -y
-# RUN yum install -y git golang make gcc glibc-devel openssl-devel sqlite-devel bzip2-devel libffi-devel
-
-# ENV GO_VERSION 1.20.4
-# ENV GOPATH /go
-# ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
-
-WORKDIR /go
+# The build base runs as uid 1000 (gen3) with GOPATH=/go, so the source tree and
+# the BuildKit cache mounts have to be owned by that uid. The binary stays at
+# /go/bin/csoc, which is what the deployment manifests reference.
+USER root
+RUN mkdir -p /go/src/api /go/bin && chown -R 1000:1000 /go/src /go/bin
+USER 1000:1000
 
 WORKDIR /go/src/api
 
-COPY api/go.mod api/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
+COPY --chown=1000:1000 api/go.mod api/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod,uid=1000,gid=1000 \
     go mod download
 
-COPY api ./
+COPY --chown=1000:1000 api ./
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod,uid=1000,gid=1000 \
+    --mount=type=cache,target=/home/gen3/.cache/go-build,uid=1000,gid=1000 \
     go build -o /go/bin/csoc
 
 RUN chmod +x /go/bin/csoc
@@ -28,15 +26,17 @@ RUN chmod +x /go/bin/csoc
 CMD ["/go/bin/csoc"]
 
 
-FROM quay.io/cdis/golang-build-base:master AS final
+FROM quay.io/cdis/golang-build-base:go1.26.0 AS final
 
 # need these for bootstrap (kubectl) and agent proxy
+USER root
 RUN yum install -y docker && \
     curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" && \
     chmod +x kubectl && mv kubectl /usr/local/bin/kubectl
+USER 1000:1000
 
 WORKDIR /go/src/api
 
-COPY --from=go-builder /go/bin/csoc /go/bin/csoc
+COPY --from=go-builder --chown=1000:1000 /go/bin/csoc /go/bin/csoc
 
 CMD ["/go/bin/csoc"]
