@@ -1,42 +1,7 @@
 # Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
 version: v1.25.1
-# ignores vulnerabilities until expiry date; change duration by modifying expiry date
-ignore:
-  508a3515-2e81-41bb-af8d-0232133a4c72:
-    - '*':
-        reason: >-
-          False positive: agentName is gated by the anchored regex
-          ^[a-zA-Z0-9_-]+$ (server.go:29) at grpc_server.go:192, before the
-          ReadFile at :197. Separators and dots cannot appear, so no traversal
-          is reachable. Snyk's dataflow does not model the regex gate.
-        expires: 2026-10-14T20:59:04.135Z
-        created: 2026-09-14T20:59:04.136Z
-  66b40fd8-35fc-4daa-9967-cbc7299c5c8f:
-    - '*':
-        reason: >-
-          Accepted: intra-cluster hop to an allowlisted target that serves a
-          self-signed cert (see comment at agent-helpers.go:361). Revisit if the
-          agent proxy ever egresses outside the cluster.
-        expires: 2026-10-14T21:00:13.328Z
-        created: 2026-09-14T21:00:13.333Z
-  93c9e449-d8a3-4121-beee-0be26cef8b87:
-    - '*':
-        reason: >-
-          Accepted: ArgoCD serves a self-signed cert by default and
-          LocalTransport is the in-cluster path (see comment at
-          transport.go:56). Revisit if ArgoCD is fronted by a trusted CA.
-        expires: 2026-10-14T21:00:15.326Z
-        created: 2026-09-14T21:00:15.330Z
-  73ee2df8-3559-4417-8276-6290f5ce0393:
-    - '*':
-        reason: >-
-          Fixed, not suppressed: both inputs are now validated before the join
-          -- req.WorkDir via resolveWorkDir() (single [A-Za-z0-9_-] segment
-          confined under TERRAFORM_WORK_ROOT) and the filename via
-          safeTFVarsName() (bare filename, .tfvars/.tfvars.json only). Covered
-          by TestResolveWorkDirRejectsEscapes and
-          TestSafeTFVarsNameRejectsTraversal. Snyk's dataflow does not model
-          either validator.
-        expires: 2026-10-14T21:01:35.533Z
-        created: 2026-09-14T21:01:35.540Z
+# All previously-ignored Snyk Code findings are now fixed in code rather than
+# suppressed, so there is nothing to ignore here. Kept as a placeholder so the
+# policy file stays under version control.
+ignore: {}
 patch: {}
