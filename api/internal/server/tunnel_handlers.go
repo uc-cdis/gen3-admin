@@ -5,6 +5,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -316,13 +319,39 @@ func TunnelHTTPHandler(c *gin.Context) {
 	}
 	t.touch()
 
-	path := c.Query("path")
-	if path == "" {
-		path = "/"
+	// Build the URL structurally rather than by interpolating into a format
+	// string. Host and scheme are set as fields here, so the caller's `path`
+	// can only ever land in URL.Path/RawQuery -- it cannot move the request off
+	// loopback no matter what it contains.
+	rawPath := c.Query("path")
+	if rawPath == "" {
+		rawPath = "/"
+	}
+	if !strings.HasPrefix(rawPath, "/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path must start with /"})
+		return
 	}
 
-	target := fmt.Sprintf("http://127.0.0.1:%d%s", t.LocalPort, path)
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
+	parsedPath, err := url.Parse(rawPath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
+		return
+	}
+	// A path parsed from a caller-supplied string must not carry its own scheme
+	// or authority; those only appear if it was an absolute URL.
+	if parsedPath.Scheme != "" || parsedPath.Host != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path must be relative"})
+		return
+	}
+
+	target := &url.URL{
+		Scheme:   "http",
+		Host:     net.JoinHostPort("127.0.0.1", strconv.Itoa(t.LocalPort)),
+		Path:     parsedPath.Path,
+		RawQuery: parsedPath.RawQuery,
+	}
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target.String(), c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
