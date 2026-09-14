@@ -52,6 +52,19 @@ const readBody = async (req) => {
   return Buffer.concat(chunks);
 };
 
+// Response content types this proxy will reflect back to the browser. Anything
+// else is downgraded to text/plain (see below).
+const ALLOWED_RESPONSE_TYPES = [
+  'application/json',
+  'application/connect+json',
+  'application/connect+proto',
+  'application/proto',
+  'application/protobuf',
+  'application/grpc-web+proto',
+  'application/grpc-web+json',
+  'text/plain',
+];
+
 export default async function handler(req, res) {
   const { backend } = req.query;
   const cfg = BACKENDS[backend];
@@ -97,8 +110,15 @@ export default async function handler(req, res) {
     const text = await upstream.text();
 
     res.status(upstream.status);
-    const contentType = upstream.headers.get('content-type');
-    if (contentType) res.setHeader('Content-Type', contentType);
+    // Never pass the upstream Content-Type through verbatim. These backends
+    // return JSON or Connect-RPC, and echoing an upstream text/html back on
+    // our own origin would let a compromised or misconfigured backend land
+    // script in the user's session. Anything unrecognised is served as plain
+    // text, which renders inert.
+    const upstreamType = (upstream.headers.get('content-type') || '').toLowerCase();
+    const passThrough = ALLOWED_RESPONSE_TYPES.find((t) => upstreamType.startsWith(t));
+    res.setHeader('Content-Type', passThrough ? upstreamType : 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(text);
   } catch (error) {
     console.error(`[observability:${backend}] proxy error`, error);
