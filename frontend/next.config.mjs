@@ -26,12 +26,20 @@ const rewritesConfig = isDevelopment
       destination: "/api/auth/:path*",
     },
     {
-      source: "/api/:path*/", // Matches paths ending with /
+      // Trailing-slash variant; same exclusions as below.
+      source: "/api/:path((?!auth/|obs/).*)/",
       destination: `${API_BASE_URL}/api/:path*/`,
     },
     {
-      source: "/api/:path*", // Matched parameters can be used in the destination
-      destination: `${API_BASE_URL}/api/:path*`, // Destination URL can be configured by providing a "destination" property
+      // Everything else under /api goes to the Go API.
+      //
+      // The negative lookahead keeps Next's own API routes local. Without it a
+      // flat rewrites array (which Next treats as `afterFiles`) still shadows
+      // *dynamic* routes such as /api/obs/[backend], because those resolve after
+      // afterFiles rewrites -- static ones like /api/obs/capabilities survive,
+      // which makes the failure look inconsistent.
+      source: "/api/:path((?!auth/|obs/).*)",
+      destination: `${API_BASE_URL}/api/:path*`,
     },
   ]
   : [];

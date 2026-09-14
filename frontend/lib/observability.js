@@ -12,7 +12,7 @@
 
 const proxy = (backend, path, params = {}) => {
   const search = new URLSearchParams({ path, ...params });
-  return `/api/observability/${backend}?${search.toString()}`;
+  return `/api/obs/${backend}?${search.toString()}`;
 };
 
 const asJson = async (res) => {
@@ -32,7 +32,7 @@ const asJson = async (res) => {
 
 /** Which backends are actually reachable. */
 export async function fetchCapabilities() {
-  const res = await fetch('/api/observability/capabilities');
+  const res = await fetch('/api/obs/capabilities');
   const data = await asJson(res);
   return data.capabilities || {};
 }
