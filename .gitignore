@@ -18,3 +18,6 @@ deployments/
 
 # Local dev stack logs and generated kubeconfig
 .dev-logs/
+
+# Local minikube dev port-forward PIDs
+.minikube-setup/
