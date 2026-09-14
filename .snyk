@@ -27,4 +27,16 @@ ignore:
           transport.go:56). Revisit if ArgoCD is fronted by a trusted CA.
         expires: 2026-10-14T21:00:15.326Z
         created: 2026-09-14T21:00:15.330Z
+  73ee2df8-3559-4417-8276-6290f5ce0393:
+    - '*':
+        reason: >-
+          Fixed, not suppressed: both inputs are now validated before the join
+          -- req.WorkDir via resolveWorkDir() (single [A-Za-z0-9_-] segment
+          confined under TERRAFORM_WORK_ROOT) and the filename via
+          safeTFVarsName() (bare filename, .tfvars/.tfvars.json only). Covered
+          by TestResolveWorkDirRejectsEscapes and
+          TestSafeTFVarsNameRejectsTraversal. Snyk's dataflow does not model
+          either validator.
+        expires: 2026-10-14T21:01:35.533Z
+        created: 2026-09-14T21:01:35.540Z
 patch: {}
