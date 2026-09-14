@@ -277,7 +277,12 @@ func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
 		return
 	}
 
-	target, err := validateProxyTarget(req.Path)
+	// An out-of-cluster agent cannot resolve `<svc>.<ns>.svc`, so transparently
+	// route those through an on-demand port-forward (see svc_fallback.go). This is
+	// a no-op for an in-cluster agent, which is the production path.
+	rewritten := a.rewriteForLocalAgent(req.Path)
+
+	target, err := validateProxyTarget(rewritten)
 	if err != nil {
 		log.Warn().
 			Err(err).
