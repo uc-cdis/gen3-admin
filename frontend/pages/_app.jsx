@@ -4,7 +4,25 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { datadogRum } from "@datadog/browser-rum";
+import { datadogRum } from '@datadog/browser-rum';
+import { nextjsPlugin } from '@datadog/browser-rum-nextjs';
+
+datadogRum.init({
+  applicationId: 'aec8849d-4032-46ad-8492-a0a91148df3a',
+  clientToken: 'pub1ae338dfcf906e3b187c40ea3391986c',
+  site: 'ddog-gov.com',
+  service: 'csoc',
+  env: process.env.NEXT_PUBLIC_ENV ?? 'production',
+  version: '1.0.0',
+  sessionSampleRate: 100,
+  sessionReplaySampleRate: 20,
+  trackResources: true,
+  trackUserInteractions: true,
+  trackLongTasks: true,
+  plugins: [nextjsPlugin()],
+});
+
+export { onRouterTransitionStart } from '@datadog/browser-rum-nextjs';
 
 import SpotLight from '@/components/Spotlight/Spotlight';
 
