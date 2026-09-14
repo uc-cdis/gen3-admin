@@ -37,6 +37,42 @@ export async function fetchCapabilities() {
   return data.capabilities || {};
 }
 
+/**
+ * Resolve the Mimir/Loki `cluster` label for an environment.
+ *
+ * The app's environment key is "<agent>/<namespace>", and the agent name is
+ * local to this deployment ("local" in dev) -- it is not the cluster label the
+ * centralized backends were scraped with. Querying cluster="local" therefore
+ * matches nothing, which reads as "no data" rather than a misconfiguration.
+ *
+ * Namespaces are unique across the fleet in practice, so ask Mimir which cluster
+ * actually holds this namespace. Cached per namespace: the answer is stable and
+ * this is on the path of every panel load.
+ */
+const clusterLabelCache = new Map();
+
+export async function resolveClusterLabel(agentName, namespace) {
+  if (!namespace) return agentName;
+  if (clusterLabelCache.has(namespace)) return clusterLabelCache.get(namespace);
+
+  try {
+    const res = await queryMetric(
+      `count by (cluster) (kube_pod_info{namespace="${namespace}"})`
+    );
+    const results = res?.data?.result || [];
+    // Prefer an exact match on the agent name when one exists -- an agent may
+    // legitimately be named after its cluster.
+    const exact = results.find((r) => r.metric?.cluster === agentName);
+    const chosen = exact?.metric?.cluster
+      || results[0]?.metric?.cluster
+      || agentName;
+    clusterLabelCache.set(namespace, chosen);
+    return chosen;
+  } catch {
+    return agentName;
+  }
+}
+
 // ── Loki ────────────────────────────────────────────────────────────────────
 
 const nanos = (date) => `${Math.floor(date.getTime())}000000`;

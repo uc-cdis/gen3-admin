@@ -7,7 +7,7 @@ import {
 } from '@tabler/icons-react';
 
 import { useGlobalState } from '@/contexts/global';
-import { fetchCapabilities } from '@/lib/observability';
+import { fetchCapabilities, resolveClusterLabel } from '@/lib/observability';
 import MetricsPanel from '@/components/Observability/MetricsPanel';
 import LogsPanel from '@/components/Observability/LogsPanel';
 import TracesPanel from '@/components/Observability/TracesPanel';
@@ -31,12 +31,21 @@ export default function Observability() {
 
   const [caps, setCaps] = useState(null);
   const [tab, setTab] = useState('metrics');
+  // The agent name is not the label the centralized backends were scraped with,
+  // so resolve the real one before querying (see resolveClusterLabel).
+  const [clusterLabel, setClusterLabel] = useState(null);
 
   useEffect(() => {
     fetchCapabilities()
       .then(setCaps)
       .catch(() => setCaps({}));
   }, []);
+
+  useEffect(() => {
+    if (!cluster || !namespace) return;
+    setClusterLabel(null);
+    resolveClusterLabel(cluster, namespace).then(setClusterLabel);
+  }, [cluster, namespace]);
 
   const available = (name) => caps?.[name]?.available;
 
@@ -68,7 +77,8 @@ export default function Observability() {
         <Stack gap={2}>
           <Title order={2}>Observability</Title>
           <Text size="sm" c="dimmed">
-            Logs, metrics and traces for <strong>{namespace}</strong> on <strong>{cluster}</strong>
+            Logs, metrics and traces for <strong>{namespace}</strong> on{' '}
+            <strong>{clusterLabel || cluster}</strong>
           </Text>
         </Stack>
         <Group gap="xs">
@@ -107,11 +117,11 @@ export default function Observability() {
         </Tabs.List>
 
         <Tabs.Panel value="metrics" pt="md">
-          {tab === 'metrics' && <MetricsPanel cluster={cluster} namespace={namespace} />}
+          {tab === 'metrics' && clusterLabel && <MetricsPanel cluster={clusterLabel} namespace={namespace} />}
         </Tabs.Panel>
 
         <Tabs.Panel value="logs" pt="md">
-          {tab === 'logs' && <LogsPanel cluster={cluster} namespace={namespace} />}
+          {tab === 'logs' && clusterLabel && <LogsPanel cluster={clusterLabel} namespace={namespace} />}
         </Tabs.Panel>
 
         <Tabs.Panel value="traces" pt="md">
