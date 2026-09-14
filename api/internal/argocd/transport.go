@@ -2,13 +2,14 @@ package argocd
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/uc-cdis/gen3-admin/internal/tlsconfig"
 )
 
 // AgentDoer is satisfied by the server's agent-tunnel helper. Declared as an
@@ -54,9 +55,10 @@ func NewLocalTransport(timeout time.Duration) *LocalTransport {
 		Client: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				// ArgoCD serves a self-signed certificate by default and the hop
-				// is intra-cluster.
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				// ArgoCD serves a cluster-CA certificate by default under a name
+				// that often will not match the address dialled. Verify the
+				// chain, skip the name -- see tlsconfig.
+				TLSClientConfig: tlsconfig.IntraCluster(),
 			},
 		},
 	}

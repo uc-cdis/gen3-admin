@@ -38,6 +38,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport"
+
+	"github.com/uc-cdis/gen3-admin/internal/tlsconfig"
 )
 
 var (
@@ -359,10 +361,10 @@ func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			// In-cluster services (ArgoCD among them) commonly serve a
-			// self-signed certificate. The hop is inside the cluster and the
-			// target is allowlisted above.
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			// In-cluster services (ArgoCD among them) serve certificates from
+			// the cluster CA under a name that often will not match the address
+			// dialled. Verify the chain, skip the name -- see tlsconfig.
+			TLSClientConfig: tlsconfig.IntraCluster(),
 		},
 	}
 
