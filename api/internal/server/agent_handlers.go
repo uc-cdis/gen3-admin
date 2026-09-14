@@ -14,7 +14,6 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -127,8 +126,8 @@ func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMetho
 			Name:        agentName,
 			Id:          id,
 			Certificate: string(agentCertPEM),
-			Connected: false,
-			RoleARN:   roleArn,
+			Connected:   false,
+			RoleARN:     roleArn,
 		},
 	}
 
@@ -442,8 +441,10 @@ func deleteAgent(agentName string) error {
 		return fmt.Errorf("agent not found")
 	}
 
-	os.Remove(filepath.Join("certs", path.Clean(agent.agent.Name+".crt")))
-	os.Remove(filepath.Join("certs", path.Clean(agent.agent.Name+".key")))
+	// filepath.Base confines these to certsDir regardless of what the name
+	// contains; see the equivalent read in grpc_server.go.
+	os.Remove(filepath.Join(certsDir, filepath.Base(agent.agent.Name+".crt")))
+	os.Remove(filepath.Join(certsDir, filepath.Base(agent.agent.Name+".key")))
 
 	delete(AgentConnections, agentName)
 
@@ -522,7 +523,7 @@ func InitializeAgentsFromCerts() error {
 		log.Error().Err(err).Msg("Error loading/creating CA")
 		return err
 	}
-	files, err := os.ReadDir("certs")
+	files, err := os.ReadDir(certsDir)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error reading agent cert directory")
 		return err
@@ -532,7 +533,7 @@ func InitializeAgentsFromCerts() error {
 		if !strings.HasSuffix(file.Name(), ".crt") {
 			continue
 		}
-		certFile, err := os.ReadFile(filepath.Join("certs", file.Name()))
+		certFile, err := os.ReadFile(filepath.Join(certsDir, filepath.Base(file.Name())))
 		if err != nil {
 			log.Fatal().Err(err).Msg("Error reading agent cert file")
 			return err

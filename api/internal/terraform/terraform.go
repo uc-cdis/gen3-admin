@@ -271,7 +271,7 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 		// Add any init-specific flags
 	case OpPlan:
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 		args = append(args, "-out=/workspace/gen3-terraform/tfplan")
 	case OpApply:
@@ -279,14 +279,14 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 	case OpDestroy:
 		if req.AutoApprove {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 	case OpOutput:
 		args = append(args, "-json")
@@ -532,7 +532,10 @@ func HandleTerraformExecute() gin.HandlerFunc {
 				c.JSON(400, gin.H{"error": err.Error()})
 				return
 			}
-			tfvarsPath := filepath.Join(req.WorkDir+"-vars", name)
+			// safeTFVarsName already rejects anything but a bare filename;
+			// filepath.Base makes that confinement local to this statement and
+			// is what static analysis recognises as the sanitizer.
+			tfvarsPath := filepath.Join(req.WorkDir+"-vars", filepath.Base(name))
 			if err := os.WriteFile(tfvarsPath, []byte(req.DockerTFVars), 0o640); err != nil {
 				log.Error().
 					Err(err).

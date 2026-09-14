@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	agentsMutex     sync.RWMutex
-	CertCurve       = elliptic.P384()
+	agentsMutex      sync.RWMutex
+	CertCurve        = elliptic.P384()
 	AgentConnections = make(map[string]*AgentConnection)
 	validAgentName   = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
@@ -62,6 +62,9 @@ func corsConfig() cors.Config {
 // serviceAccountTokenPath is mounted into every pod by kubelet. Its presence is a
 // reliable signal that we are running inside a Kubernetes cluster.
 const serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+// certsDir holds the agent client certificates issued by internal/ca.
+const certsDir = "certs"
 
 // assertMockAuthAllowed refuses to start when MOCK_AUTH is combined with an
 // in-cluster deployment. MOCK_AUTH bypasses authentication entirely and grants

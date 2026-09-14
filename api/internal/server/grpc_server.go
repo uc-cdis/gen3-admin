@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime/debug"
 	"sync"
@@ -193,8 +192,15 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "invalid agent name")
 	}
 
-	// Read agent cert file
-	certFile, err := os.ReadFile(filepath.Join("certs", path.Clean(agentName+".crt")))
+	// Read agent cert file.
+	//
+	// agentName is already constrained to ^[a-zA-Z0-9_-]+$ above, so it cannot
+	// contain a separator. filepath.Base is applied anyway: it makes the
+	// confinement local to this statement rather than depending on a check
+	// twenty lines up, and it is what static analysis recognises as the
+	// sanitizer for a path built from a parameter.
+	certName := filepath.Base(agentName + ".crt")
+	certFile, err := os.ReadFile(filepath.Join(certsDir, certName))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error reading agent cert file")
 		return err
