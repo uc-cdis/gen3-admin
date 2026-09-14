@@ -5,10 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Credentials for the ArgoCD API. Either a pre-issued Token, or a
@@ -138,7 +142,18 @@ func ResolveServerURL(ctx context.Context, agentName, namespace string, kube Kub
 		os.Getenv("ARGOCD_SERVER_URL_"+suffix),
 		os.Getenv("ARGOCD_SERVER_URL"),
 	); override != "" {
-		return strings.TrimRight(override, "/")
+		trimmed := strings.TrimRight(override, "/")
+		// A loopback override is a developer port-forward. Those die with the
+		// terminal that started them, and a stale one is worse than no override:
+		// it masks the Service lookup below, which the agent can satisfy on its
+		// own. Only skip it when nothing is actually listening -- an explicit,
+		// working override still wins.
+		if isDeadLoopback(trimmed) {
+			log.Warn().Str("url", trimmed).
+				Msg("ignoring ARGOCD_SERVER_URL: nothing listening on that loopback port")
+		} else {
+			return trimmed
+		}
 	}
 
 	ns := namespace
@@ -195,4 +210,34 @@ func serviceBaseURL(raw []byte, namespace string) string {
 		return fmt.Sprintf("http://%s:%d", host, svc.Spec.Ports[0].Port)
 	}
 	return ""
+}
+
+// isDeadLoopback reports whether a URL points at a loopback address with nothing
+// accepting connections. Used to disregard a stale developer port-forward while
+// honouring one that works.
+func isDeadLoopback(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return false
+	}
+
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 750*time.Millisecond)
+	if err != nil {
+		return true
+	}
+	conn.Close()
+	return false
 }
