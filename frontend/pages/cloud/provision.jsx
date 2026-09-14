@@ -46,32 +46,19 @@ export default function DockerRunner() {
         setStatus(null);
         setLoading(true);
 
-        const container = selectedOption.container;
-
-        const envs = {
-            "DESTROY": destroy,
-            "DEPLOY": deploy,
-            "CLOUD": cloud,
-            "PLAN": plan,
-        };
-
-        // Create environment variable arguments for Docker
-        const envArgs = Object.entries(envs)
-            .map(([key, value]) => `-e ${key}=${value}`)
-            .join(' ');
-
-        const args = [
-            "-c",
-            `docker volume create ${container} && docker run ${envArgs} -v ${container}:/workspace/.terraform -v /Users/qureshi/.aws:/root/.aws ${container}`
-        ];
-
+        // The API takes provisioning parameters, not a command line -- it builds
+        // and runs the container itself. Host credential mounting is configured
+        // server-side via RUNNER_CLOUD_CREDENTIALS_DIR.
         try {
             const response = await fetch("/api/runner/execute", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    cmd: "sh",
-                    args: args,
+                    container: selectedOption.container,
+                    cloud,
+                    plan,
+                    deploy,
+                    destroy,
                 })
             });
 

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,9 +14,71 @@ import (
 	"github.com/google/uuid"
 )
 
-type CommandRequest struct {
-	Command string   `json:"cmd"`
-	Args    []string `json:"args"`
+// ProvisionRequest is the provisioning job the UI can ask for.
+//
+// This deliberately does *not* accept a command line. The endpoint previously
+// took {cmd, args} straight from the request body and handed it to exec, which
+// gave any authenticated user a shell on the API host. Callers now pick a
+// container from a fixed set and supply typed flags; the command is built here.
+type ProvisionRequest struct {
+	Container string `json:"container"`
+	Cloud     string `json:"cloud"`
+	Plan      bool   `json:"plan"`
+	Deploy    bool   `json:"deploy"`
+	Destroy   bool   `json:"destroy"`
+}
+
+// Containers the runner is allowed to start, keyed by the value the UI sends.
+// Anything not in this map is rejected.
+var allowedContainers = map[string]bool{
+	"gen3tf":                              true,
+	"gen3cdk":                             true,
+	"krumwarer_gcp_terraform-container":   true,
+	"community_azure_terraform-container": true,
+}
+
+// Clouds the runner is allowed to target.
+var allowedClouds = map[string]bool{
+	"aws":   true,
+	"gcp":   true,
+	"azure": true,
+}
+
+// validate reports the first problem with the request, or nil.
+func (r ProvisionRequest) validate() error {
+	if !allowedContainers[r.Container] {
+		return fmt.Errorf("unknown container %q", r.Container)
+	}
+	if !allowedClouds[r.Cloud] {
+		return fmt.Errorf("unknown cloud %q", r.Cloud)
+	}
+	return nil
+}
+
+// argv builds the docker invocation. Every value interpolated here has been
+// checked against an allowlist or is a bool rendered by strconv, so there is
+// nothing a caller can inject through. Passed to exec as separate argv entries
+// rather than through a shell.
+func (r ProvisionRequest) argv() (string, []string) {
+	volume := r.Container
+
+	args := []string{
+		"run", "--rm",
+		"-e", "CLOUD=" + r.Cloud,
+		"-e", "PLAN=" + strconv.FormatBool(r.Plan),
+		"-e", "DEPLOY=" + strconv.FormatBool(r.Deploy),
+		"-e", "DESTROY=" + strconv.FormatBool(r.Destroy),
+		"-v", volume + ":/workspace/.terraform",
+	}
+
+	// Mount host cloud credentials when an explicit path is configured. This
+	// used to be a hardcoded developer home directory sent from the browser.
+	if credDir := os.Getenv("RUNNER_CLOUD_CREDENTIALS_DIR"); credDir != "" {
+		args = append(args, "-v", credDir+":/root/.aws:ro")
+	}
+
+	args = append(args, r.Container)
+	return "docker", args
 }
 
 type ExecutionStatus string
@@ -146,62 +210,6 @@ func (e *Execution) Terminate() error {
 	return nil
 }
 
-func Runner(c *gin.Context) {
-	var cmdReq CommandRequest
-	if err := c.BindJSON(&cmdReq); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	cmd := exec.Command(cmdReq.Command, cmdReq.Args...)
-
-	// Get pipe to stdout
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Start command
-	if err := cmd.Start(); err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	scanner := bufio.NewScanner(stdout)
-	errorScanner := bufio.NewScanner(stderr)
-
-	// Stream errors
-	go func() {
-		for errorScanner.Scan() {
-			text := errorScanner.Text()
-			c.SSEvent("error", text)
-			c.Writer.Flush()
-		}
-	}()
-
-	// Stream in goroutine
-	go func() {
-		for scanner.Scan() {
-			text := scanner.Text()
-			// Write to response with SSE format
-			c.SSEvent("message", text)
-			c.Writer.Flush()
-		}
-	}()
-
-	// Wait for command to finish
-	if err := cmd.Wait(); err != nil {
-		c.SSEvent("error", err.Error())
-		return
-	}
-}
-
 func ExecuteCommand(ex *Execution) {
 	// ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -257,18 +265,24 @@ func ExecuteCommand(ex *Execution) {
 
 func HandleExecute(store *ExecutionStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cmdReq CommandRequest
-		if err := c.BindJSON(&cmdReq); err != nil {
+		var req ProvisionRequest
+		if err := c.BindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
+		if err := req.validate(); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		command, args := req.argv()
 
 		// Create new execution
 		execID := uuid.New().String()
 		execution := &Execution{
 			ID:        execID,
-			Command:   cmdReq.Command,
-			Args:      cmdReq.Args,
+			Command:   command,
+			Args:      args,
 			Status:    StatusRunning,
 			Output:    make([]string, 0),
 			StartTime: time.Now(),
