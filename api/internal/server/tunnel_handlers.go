@@ -331,7 +331,18 @@ func TunnelHTTPHandler(c *gin.Context) {
 		req.Header.Set("Content-Type", ct)
 	}
 
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	// The target host and port come from server-side tunnel state, so `path`
+	// cannot redirect this off loopback. Redirects can, though: a tunneled
+	// service answering 302 would otherwise be followed to wherever it points,
+	// so return the redirect to the caller instead of chasing it.
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Warn().Err(err).Str("tunnel", id).Msg("Tunnel HTTP request failed")
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
