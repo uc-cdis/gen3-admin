@@ -168,8 +168,8 @@ func HandleArgoCDStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"available": true,
-		"version":   version.Version,
+		"available":   true,
+		"version":     version.Version,
 		"kubeVersion": version.KubeVersion,
 	})
 }
