@@ -14,16 +14,34 @@ import (
 	"time"
 )
 
-// The point of this package: a name mismatch is tolerated, but an untrusted
-// chain is not. InsecureSkipVerify alone would have accepted both.
-func TestBuildVerifiesChainWhileSkippingHostname(t *testing.T) {
+// Default mode must not verify. In-cluster targets self-sign (ArgoCD) or use
+// issuers whose roots are not distributed, so verifying by default would break
+// every hop this config is used for.
+func TestDefaultDoesNotVerify(t *testing.T) {
+	t.Setenv(envVerify, "")
+	cfg := build()
+
+	if !cfg.InsecureSkipVerify {
+		t.Error("default mode verifies; this breaks hops to self-signed in-cluster services")
+	}
+	if cfg.VerifyConnection != nil {
+		t.Error("default mode installed a chain verifier")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %d, want TLS 1.2", cfg.MinVersion)
+	}
+}
+
+// Opt-in mode: a name mismatch is tolerated, but an untrusted chain is not.
+func TestVerifyModeChecksChainButNotHostname(t *testing.T) {
+	t.Setenv(envVerify, "true")
 	cfg := build()
 
 	if cfg.VerifyConnection == nil {
-		t.Fatal("build() returned no VerifyConnection; an untrusted chain would be accepted")
+		t.Fatal("verify mode returned no VerifyConnection; an untrusted chain would be accepted")
 	}
 	if cfg.RootCAs == nil {
-		t.Error("build() returned no RootCAs")
+		t.Error("verify mode returned no RootCAs")
 	}
 	if cfg.MinVersion != tls.VersionTLS12 {
 		t.Errorf("MinVersion = %d, want TLS 1.2", cfg.MinVersion)
@@ -31,6 +49,7 @@ func TestBuildVerifiesChainWhileSkippingHostname(t *testing.T) {
 }
 
 func TestVerifyConnectionRejectsEmptyPeerChain(t *testing.T) {
+	t.Setenv(envVerify, "true")
 	cfg := build()
 	err := cfg.VerifyConnection(tls.ConnectionState{})
 	if err == nil {
@@ -39,6 +58,7 @@ func TestVerifyConnectionRejectsEmptyPeerChain(t *testing.T) {
 }
 
 func TestVerifyConnectionRejectsUntrustedChain(t *testing.T) {
+	t.Setenv(envVerify, "true")
 	cfg := build()
 
 	// A self-signed cert from a CA that is not in the pool must be rejected.
@@ -60,7 +80,7 @@ func TestExtraCAFileIsTrusted(t *testing.T) {
 	}
 
 	t.Setenv(envExtraCAFile, caPath)
-	t.Setenv(envInsecure, "")
+	t.Setenv(envVerify, "true")
 
 	cfg := build()
 	if cfg.RootCAs == nil {
@@ -72,27 +92,30 @@ func TestExtraCAFileIsTrusted(t *testing.T) {
 	}
 }
 
-// The escape hatch must still work, and must be explicit.
-func TestInsecureOptOut(t *testing.T) {
-	t.Setenv(envInsecure, "true")
-	cfg := build()
-
-	if !cfg.InsecureSkipVerify {
-		t.Error("INTRACLUSTER_TLS_INSECURE=true did not disable verification")
-	}
-	if cfg.VerifyConnection != nil {
-		t.Error("opt-out should not also install a verifier")
+// Only the exact string "true" turns verification on, so a typo fails safe
+// toward today's working behaviour rather than breaking every hop.
+func TestVerifyRequiresExactTrue(t *testing.T) {
+	for _, v := range []string{"", "1", "yes", "TRUE", "on"} {
+		t.Setenv(envVerify, v)
+		if cfg := build(); cfg.VerifyConnection != nil {
+			t.Errorf("INTRACLUSTER_TLS_VERIFY=%q enabled verification", v)
+		}
 	}
 }
 
-func TestDefaultIsNotBlanketInsecure(t *testing.T) {
-	t.Setenv(envInsecure, "")
-	cfg := build()
-
-	// InsecureSkipVerify is set, but only because VerifyConnection does the
-	// checking. Without the verifier that combination would be unsafe.
-	if cfg.InsecureSkipVerify && cfg.VerifyConnection == nil {
-		t.Error("verification is disabled with no replacement verifier")
+// This config is for server-auth hops only. If it ever carried client
+// certificates it would start participating in mTLS, which is handled
+// separately in internal/ca and NewAgent.
+func TestNoClientCertificatesInEitherMode(t *testing.T) {
+	for _, v := range []string{"", "true"} {
+		t.Setenv(envVerify, v)
+		cfg := build()
+		if len(cfg.Certificates) != 0 {
+			t.Errorf("verify=%q: config carries client certificates", v)
+		}
+		if cfg.GetClientCertificate != nil {
+			t.Errorf("verify=%q: config sets GetClientCertificate", v)
+		}
 	}
 }
 
