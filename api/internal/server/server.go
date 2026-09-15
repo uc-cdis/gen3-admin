@@ -43,8 +43,15 @@ func corsConfig() cors.Config {
 	if raw == "" {
 		// No configured origins: same-origin requests still work (the browser
 		// does not apply CORS to them), but cross-origin ones are refused.
+		//
+		// This cannot be expressed as an empty AllowOrigins: cors.New panics
+		// with "conflict settings: all origins disabled" on a config that
+		// permits nothing, taking the whole process down at startup. Use a
+		// predicate that rejects every origin instead, which is the same policy
+		// without the panic.
 		log.Warn().Msg("CORS_ALLOWED_ORIGINS is not set; all cross-origin browser requests will be rejected")
-		cfg.AllowOrigins = []string{}
+		cfg.AllowOrigins = nil
+		cfg.AllowOriginFunc = func(string) bool { return false }
 		return cfg
 	}
 
