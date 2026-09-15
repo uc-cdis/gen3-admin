@@ -55,9 +55,9 @@ func NewLocalTransport(timeout time.Duration) *LocalTransport {
 		Client: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				// ArgoCD serves a cluster-CA certificate by default under a name
-				// that often will not match the address dialled. Verify the
-				// chain, skip the name -- see tlsconfig.
+				// ArgoCD self-signs by default and is addressed by Service DNS,
+				// so neither the chain nor the name is verifiable out of the
+				// box. See tlsconfig for what this does and how to tighten it.
 				TLSClientConfig: tlsconfig.IntraCluster(),
 			},
 		},

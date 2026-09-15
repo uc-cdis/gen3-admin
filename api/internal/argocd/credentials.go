@@ -170,7 +170,8 @@ func ResolveServerURL(ctx context.Context, agentName, namespace string, kube Kub
 		}
 	}
 
-	return fmt.Sprintf("http://argocd-server.%s.svc", ns)
+	// Same reasoning as serviceBaseURL: https is the port that serves the API.
+	return fmt.Sprintf("https://argocd-server.%s.svc", ns)
 }
 
 // serviceBaseURL picks a base URL from the argocd-server Service definition.
@@ -189,15 +190,17 @@ func serviceBaseURL(raw []byte, namespace string) string {
 
 	host := fmt.Sprintf("argocd-server.%s.svc", namespace)
 
-	// Plaintext first: avoids the self-signed cert entirely.
-	for _, p := range svc.Spec.Ports {
-		if p.Name == "http" || p.Port == 80 {
-			if p.Port == 80 {
-				return fmt.Sprintf("http://%s", host)
-			}
-			return fmt.Sprintf("http://%s:%d", host, p.Port)
-		}
-	}
+	// HTTPS first.
+	//
+	// Both ports target the same container port, and unless ArgoCD is running
+	// with server.insecure=true the plaintext one does not serve the API at all
+	// -- it answers 307 to the https URL. Preferring http therefore breaks every
+	// authenticated call: Go follows the cross-scheme redirect but drops the
+	// request body and the Authorization header when it does, so the retry
+	// arrives unauthenticated and without its payload.
+	//
+	// The self-signed certificate that plaintext was chosen to avoid is handled
+	// by the transport's TLS config instead (see internal/tlsconfig).
 	for _, p := range svc.Spec.Ports {
 		if p.Name == "https" || p.Port == 443 {
 			if p.Port == 443 {
@@ -206,8 +209,17 @@ func serviceBaseURL(raw []byte, namespace string) string {
 			return fmt.Sprintf("https://%s:%d", host, p.Port)
 		}
 	}
+	// Only reachable on an insecure-mode install, which exposes http alone.
+	for _, p := range svc.Spec.Ports {
+		if p.Name == "http" || p.Port == 80 {
+			if p.Port == 80 {
+				return fmt.Sprintf("http://%s", host)
+			}
+			return fmt.Sprintf("http://%s:%d", host, p.Port)
+		}
+	}
 	if len(svc.Spec.Ports) > 0 {
-		return fmt.Sprintf("http://%s:%d", host, svc.Spec.Ports[0].Port)
+		return fmt.Sprintf("https://%s:%d", host, svc.Spec.Ports[0].Port)
 	}
 	return ""
 }

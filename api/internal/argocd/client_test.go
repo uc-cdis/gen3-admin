@@ -122,10 +122,10 @@ func TestClientDetectsAgentDroppingBody(t *testing.T) {
 
 func TestClientRetriesOnceOn401(t *testing.T) {
 	transport := &fakeTransport{responses: []fakeResponse{
-		{status: 200, body: `{"token":"first"}`},  // initial login
+		{status: 200, body: `{"token":"first"}`},     // initial login
 		{status: 401, body: `{"message":"expired"}`}, // list rejected
-		{status: 200, body: `{"token":"second"}`}, // re-login
-		{status: 200, body: `{"items":[]}`},       // list succeeds
+		{status: 200, body: `{"token":"second"}`},    // re-login
+		{status: 200, body: `{"items":[]}`},          // list succeeds
 	}}
 	client := NewClient(transport, "http://argo", staticCreds{Credentials{Username: "admin", Password: "pw"}})
 
@@ -274,11 +274,21 @@ func TestApplicationOwnershipHelpers(t *testing.T) {
 	}
 }
 
-func TestServiceBaseURLPrefersPlaintextPort(t *testing.T) {
-	// Preferring http avoids ArgoCD's self-signed certificate entirely.
+func TestServiceBaseURLPrefersHTTPS(t *testing.T) {
+	// A default ArgoCD install (server.insecure=false) exposes both ports
+	// against the same container port, but plaintext only answers 307 to the
+	// https URL -- it does not serve the API. Picking http breaks authenticated
+	// calls, because Go drops the body and Authorization header when it follows
+	// the cross-scheme redirect.
 	both := []byte(`{"spec":{"ports":[{"name":"https","port":443},{"name":"http","port":80}]}}`)
-	if got := serviceBaseURL(both, "argocd"); got != "http://argocd-server.argocd.svc" {
-		t.Errorf("got %q, want the http URL", got)
+	if got := serviceBaseURL(both, "argocd"); got != "https://argocd-server.argocd.svc" {
+		t.Errorf("got %q, want the https URL", got)
+	}
+
+	// Order in the Service definition must not matter.
+	reversed := []byte(`{"spec":{"ports":[{"name":"http","port":80},{"name":"https","port":443}]}}`)
+	if got := serviceBaseURL(reversed, "argocd"); got != "https://argocd-server.argocd.svc" {
+		t.Errorf("got %q, want the https URL regardless of port order", got)
 	}
 
 	httpsOnly := []byte(`{"spec":{"ports":[{"name":"https","port":443}]}}`)
@@ -286,8 +296,20 @@ func TestServiceBaseURLPrefersPlaintextPort(t *testing.T) {
 		t.Errorf("got %q, want the https URL", got)
 	}
 
-	nonStandard := []byte(`{"spec":{"ports":[{"name":"http","port":8080}]}}`)
-	if got := serviceBaseURL(nonStandard, "argocd"); got != "http://argocd-server.argocd.svc:8080" {
+	// An insecure-mode install exposes http alone; that is the one case where
+	// plaintext is correct.
+	httpOnly := []byte(`{"spec":{"ports":[{"name":"http","port":80}]}}`)
+	if got := serviceBaseURL(httpOnly, "argocd"); got != "http://argocd-server.argocd.svc" {
+		t.Errorf("got %q, want the http URL for an http-only service", got)
+	}
+
+	nonStandardHTTPS := []byte(`{"spec":{"ports":[{"name":"https","port":8443}]}}`)
+	if got := serviceBaseURL(nonStandardHTTPS, "argocd"); got != "https://argocd-server.argocd.svc:8443" {
+		t.Errorf("got %q, want an explicit port", got)
+	}
+
+	nonStandardHTTP := []byte(`{"spec":{"ports":[{"name":"http","port":8080}]}}`)
+	if got := serviceBaseURL(nonStandardHTTP, "argocd"); got != "http://argocd-server.argocd.svc:8080" {
 		t.Errorf("got %q, want an explicit port", got)
 	}
 
