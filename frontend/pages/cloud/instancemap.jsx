@@ -591,7 +591,7 @@ function InstancesCostViz() {
                     </Group>
 
                     <div className="total-cost-banner">
-                        <Group position="apart" align="center">
+                        <Group justify="space-between" align="center">
                             <div>
                                 <Text style={{
                                     fontFamily: 'Outfit, sans-serif',
@@ -764,7 +764,7 @@ function InstancesCostViz() {
                             </div>
                             <div>
                                 <Text style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Monthly Cost</Text>
-                                <Group spacing="xs">
+                                <Group gap="xs">
                                     <Text style={{ fontFamily: 'Space Mono, monospace', color: '#fbbf24', fontWeight: 700 }}>
                                         ${selectedInstance.Cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo
                                     </Text>
@@ -796,7 +796,7 @@ function InstancesCostViz() {
                         <Divider />
                         <div>
                             <Text style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Tags</Text>
-                            <Group spacing="xs">
+                            <Group gap="xs">
                                 {selectedInstance.Tags?.map((tag, idx) => (
                                     <Badge key={idx} variant="outline" style={{ borderColor: '#475569', color: '#e2e8f0' }}>
                                         {tag.Key}: {tag.Value}

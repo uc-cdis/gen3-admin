@@ -6,9 +6,11 @@ const createJestConfig = nextJest({
 
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.cjs'],
+  // Mirror the `@/*` -> `./*` mapping in tsconfig.json. Listing only components
+  // and pages meant imports from @/lib, @/hooks, @/contexts and @/utils failed
+  // to resolve under Jest even though they compile fine.
   moduleNameMapper: {
-    '^@/components/(.*)$': '<rootDir>/components/$1',
-    '^@/pages/(.*)$': '<rootDir>/pages/$1',
+    '^@/(.*)$': '<rootDir>/$1',
   },
   testEnvironment: 'jest-environment-jsdom',
 };

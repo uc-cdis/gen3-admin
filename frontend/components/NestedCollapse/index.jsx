@@ -75,7 +75,7 @@ function NestedCollapses({ data, path = [], onChange }) {
         <div style={{ paddingLeft: '20px', marginTop: '10px' }}>
           {localData.map((item, index) => (
             <div key={index} style={{ marginLeft: '10px', marginTop: '10px', position: 'relative' }}>
-              <Group position="apart">
+              <Group justify="space-between">
                 <NestedCollapses
                   data={item}
                   path={path.concat(index)}
@@ -149,7 +149,7 @@ function NestedCollapses({ data, path = [], onChange }) {
                       <IconTrash size={16} />
                     </ActionIcon>
                   </Group>
-                  <Collapse in={opened[key]}>
+                  <Collapse expanded={opened[key]}>
                     <div style={{ paddingLeft: '15px', paddingTop: '5px', borderLeft: '1px solid #dee2e6' }}>
                       <NestedCollapses
                         data={value}
@@ -201,7 +201,7 @@ function NestedCollapses({ data, path = [], onChange }) {
                       />
                     )
                   ) : (
-                    <Group spacing={2}>
+                    <Group gap={2}>
                       <Text
                         style={{ color: '#495057' }}
                         onClick={() => handleEditToggle(key)}
@@ -227,7 +227,7 @@ function NestedCollapses({ data, path = [], onChange }) {
             </div>
           ))}
           {/* Add New Key-Value Input */}
-          <Group spacing={5} style={{ marginTop: '10px' }}>
+          <Group gap={5} style={{ marginTop: '10px' }}>
             <TextInput
               value={newKey}
               placeholder="New Key"

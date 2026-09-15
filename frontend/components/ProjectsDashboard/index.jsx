@@ -20,6 +20,8 @@ import YamlEditor from '@/components/YamlEditor/YamlEditor';
 import NestedCollapses from '@/components/NestedCollapse';
 
 import callK8sApi from '@/lib/k8s';
+import { StatusBadge } from '@/components/ui';
+import { syncApplication } from '@/lib/argocd';
 
 const ClusterDashboard = () => {
   const [clusters, setClusters] = useState([]);
@@ -57,31 +59,14 @@ const ClusterDashboard = () => {
   const deleteValidate = inputClusterName === deleteCluster && inputReleaseName === deleteRelease && inputNamespace === deleteNamespace;
 
   const { data: sessionData } = useSession();
-  const accessToken = sessionData?.accessToken || "fake";
+  const accessToken = sessionData?.accessToken;
 
-  async function triggerArgoCDAppSync(appName, namespace, clusterName, accessToken) {
-    const endpoint = `/apis/argoproj.io/v1alpha1/namespaces/${namespace}/applications/${appName}`;
-
-    // Using JSON Merge Patch format (RFC 7386)
-    // This is a simpler approach that just specifies the fields to modify
-    const syncPayload = {
-      operation: {
-        sync: {
-          syncOptions: [
-            "RespectIgnoreDifferences=true",
-            "CreateNamespace=true"
-          ]
-        }
-      }
-    };
-
+  // Uses the real ArgoCD sync API (see lib/argocd.ts) rather than patching the
+  // Application CRD's `.operation` field, which the controller can silently
+  // ignore when an operation is already running.
+  async function triggerArgoCDAppSync(appName, namespace, clusterName, token) {
     try {
-      const response = await callK8sApi(endpoint, 'PATCH', syncPayload, {
-        'Content-Type': 'application/merge-patch+json'
-      }, clusterName, accessToken);
-
-      console.log(`Triggered sync for Argo CD app '${appName}' in '${namespace}'`);
-      return response;
+      return await syncApplication(clusterName, appName, {}, namespace, token);
     } catch (error) {
       console.error(`Failed to trigger sync for '${appName}':`, error);
       throw error;
@@ -183,9 +168,9 @@ const ClusterDashboard = () => {
   );
 
   const renderDeploymentStatus = (envData) => {
-    if (!envData) return <Text color="dimmed">No Data</Text>;
+    if (!envData) return <Text c="dimmed">No Data</Text>;
     return (
-      <Group spacing="xs">
+      <Group gap="xs">
         <Badge color={envData.status === 'Synced' ? 'green' : 'orange'} variant="filled">
           {envData.status === 'Synced' ? '✓' : '!'}
         </Badge>
@@ -243,7 +228,7 @@ const ClusterDashboard = () => {
     setInputReleaseName('');
   };
 
-  if (error) return <Text color="red">{error}</Text>;
+  if (error) return <Text c="red">{error}</Text>;
 
   return (
     <>
@@ -265,8 +250,8 @@ const ClusterDashboard = () => {
       </Drawer >
 
       <Box>
-        <Group position="apart" mb="md">
-          <Text size="xl" weight={700}>Helm Charts</Text>
+        <Group justify="space-between" mb="md">
+          <Text size="xl" fw={700}>Helm Charts</Text>
           {/* <Tooltip label="Not yet implemented"> */}
           <Button variant="filled" color="blue" component={Link} href="/helm/repo">Deploy a new app</Button>
           {/* </Tooltip> */}
@@ -333,7 +318,7 @@ const ClusterDashboard = () => {
                   color="green"
                   onClick={() => {
                     console.log("Syncing app", selectedChart.name, selectedChart.namespace, selectedChart.clusterName);
-                    triggerArgoCDAppSync(selectedChart.name, "argocd", selectedChart.clusterName, "")
+                    triggerArgoCDAppSync(selectedChart.name, selectedChart.namespace || "argocd", selectedChart.clusterName, accessToken)
                     // callGoApi() here if you want to implement actual sync
                   }}
                 >
@@ -374,7 +359,14 @@ const ClusterDashboard = () => {
             },
 
             { accessor: 'namespace', render: ({ helm, namespace, environment }) => (<Text> {helm ? namespace : environment} </Text>) },
-            { accessor: 'status', render: ({ status }) => <Badge color={status === 'deployed' || status === 'Healthy' ? 'green' : 'orange'} variant="filled">{status}</Badge> },
+            {
+              accessor: 'status',
+              // noWrap stops the column squeezing "Deployed" down to "D...".
+              // Colours come from the shared status table rather than a local
+              // green/orange guess, so this agrees with every other status view.
+              width: 130,
+              render: ({ status }) => <StatusBadge domain="helm" value={status} />,
+            },
             { accessor: 'chart' },
             {
               id: 'Development', header: 'Development', accessor: 'helm',
@@ -438,7 +430,7 @@ const ClusterDashboard = () => {
                     title="Confirm Helm Release Deletion"
                     centered
                   >
-                    <Stack spacing="md">
+                    <Stack gap="md">
                       <Text size="sm">
                         To confirm deletion, please enter both the cluster name and release name.
                         Both must match exactly.
@@ -517,11 +509,11 @@ const ClusterDashboard = () => {
 
 
 
-        <Group position="apart" mt="md">
+        <Group justify="space-between" mt="md">
           <Text>
             {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCharts.length)} of {filteredCharts.length} Charts
           </Text>
-          <Group spacing={8}>
+          <Group gap={8}>
             <Button
               variant="subtle"
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}

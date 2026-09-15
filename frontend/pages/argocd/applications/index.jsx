@@ -1,296 +1,359 @@
-import { useEffect, useMemo, useState } from 'react';
-
-import callK8sApi from '@/lib/k8s';
-import { syncArgoCD } from '@/lib/argocd';
-import { useGlobalState } from '@/contexts/global';
+import { useMemo, useState } from 'react';
 
 import {
   Anchor,
-  Badge,
   Button,
   Card,
-  Center,
   Group,
-  Loader,
+  Menu,
+  MultiSelect,
   SimpleGrid,
   Stack,
-  Table,
   Text,
   TextInput,
-  Title,
   Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconGitBranch, IconRefresh, IconSearch } from '@tabler/icons-react';
-import { useSession } from 'next-auth/react';
+import { DataTable } from 'mantine-datatable';
+import { IconChevronDown, IconRefresh, IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
 
-function statusColor(status) {
-  const value = String(status || '').toLowerCase();
-  if (['synced', 'healthy', 'succeeded'].includes(value)) return 'teal';
-  if (['outofsync', 'progressing', 'running'].includes(value)) return 'orange';
-  if (['degraded', 'failed', 'error', 'missing'].includes(value)) return 'red';
-  return 'gray';
-}
+import {
+  ArgoAvailabilityGate,
+  useArgoMode,
+} from '@/components/ArgoCD/ArgoAvailabilityGate';
+import { PageHeader, QueryState, StatusBadge } from '@/components/ui';
+import { useArgoApplications, useArgoInvalidate } from '@/hooks/useArgoCD';
+import { useAccessToken } from '@/hooks/useK8s';
+import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
+import { syncApplication, syncViaCRDFallback } from '@/lib/argocd';
 
-function timeAgo(ts) {
-  if (!ts) return '-';
-  const diff = Date.now() - new Date(ts).getTime();
+function timeAgo(timestamp) {
+  if (!timestamp) return '-';
+  const diff = Date.now() - new Date(timestamp).getTime();
+  if (Number.isNaN(diff)) return '-';
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
-  if (days > 0) return `${days}d ${hours % 24}h ago`;
-  if (hours > 0) return `${hours}h ${minutes % 60}m ago`;
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
   return `${Math.max(minutes, 0)}m ago`;
 }
 
-function appSearchText(app) {
-  return [
-    app.metadata?.name,
-    app.metadata?.namespace,
-    app.spec?.project,
-    app.spec?.source?.repoURL,
-    app.spec?.source?.path,
-    app.spec?.source?.chart,
-    app.spec?.destination?.namespace,
-    app.status?.sync?.status,
-    app.status?.health?.status,
-  ].filter(Boolean).join(' ').toLowerCase();
+function primarySource(spec) {
+  if (spec?.source) return spec.source;
+  return spec?.sources?.[0] || {};
 }
 
-export default function ArgoCDApplications() {
-  const { activeCluster, activeGlobalEnv } = useGlobalState();
-  const [envCluster] = activeGlobalEnv ? activeGlobalEnv.split('/') : [];
-  const clusterName = activeCluster || envCluster;
-  const { data: sessionData } = useSession();
-  const accessToken = sessionData?.accessToken;
+function KpiCard({ label, value }) {
+  return (
+    <Card>
+      <Text size="xs" c="dimmed">{label}</Text>
+      <Text size="xl" fw={700}>{value}</Text>
+    </Card>
+  );
+}
 
-  const [apps, setApps] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(null);
-  const [error, setError] = useState(null);
+export default function ArgoCDApplicationsPage() {
+  // These routes do not name a cluster, so fall back to stored state or the
+  // single connected agent rather than dead-ending a shared link.
+  const { cluster, resolving } = useResolvedClusterWithFallback();
+
+  return (
+    <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
+      <ApplicationsList cluster={cluster} />
+    </ArgoAvailabilityGate>
+  );
+}
+
+function ApplicationsList({ cluster }) {
+  const mode = useArgoMode();
+  const token = useAccessToken();
+  const invalidate = useArgoInvalidate();
+
   const [query, setQuery] = useState('');
+  const [syncFilter, setSyncFilter] = useState([]);
+  const [healthFilter, setHealthFilter] = useState([]);
+  const [projectFilter, setProjectFilter] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [sort, setSort] = useState({ columnAccessor: 'name', direction: 'asc' });
 
-  const fetchApps = async () => {
-    if (!clusterName || !accessToken) return;
+  const apps = useArgoApplications(cluster, { degraded: mode.degraded });
+  const items = apps.data?.items ?? [];
 
-    setLoading(true);
-    setError(null);
+  const projects = useMemo(
+    () => Array.from(new Set(items.map((app) => app.spec?.project).filter(Boolean))).sort(),
+    [items]
+  );
 
-    try {
-      let response = null;
-
-      try {
-        response = await callK8sApi(
-          '/apis/argoproj.io/v1alpha1/applications',
-          'GET',
-          null,
-          null,
-          clusterName,
-          accessToken
-        );
-      } catch (clusterWideError) {
-        console.warn('Cluster-wide ArgoCD application list failed, falling back to argocd namespace:', clusterWideError);
-      }
-
-      if (!response?.items) {
-        response = await callK8sApi(
-          '/apis/argoproj.io/v1alpha1/namespaces/argocd/applications',
-          'GET',
-          null,
-          null,
-          clusterName,
-          accessToken
-        );
-      }
-
-      setApps(response?.items || []);
-    } catch (err) {
-      setError(err.message || 'Failed to load ArgoCD applications');
-      setApps([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchApps();
-  }, [clusterName, accessToken]);
-
-  const filteredApps = useMemo(() => {
+  const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return apps;
-    return apps.filter((app) => appSearchText(app).includes(needle));
-  }, [apps, query]);
 
-  const counts = useMemo(() => {
-    return apps.reduce((acc, app) => {
-      const sync = app.status?.sync?.status || 'Unknown';
-      const health = app.status?.health?.status || 'Unknown';
-      acc.total += 1;
-      acc[sync] = (acc[sync] || 0) + 1;
-      acc[health] = (acc[health] || 0) + 1;
-      return acc;
-    }, { total: 0 });
-  }, [apps]);
+    let result = items.map((app) => {
+      const source = primarySource(app.spec);
+      return {
+        id: `${app.metadata?.namespace || 'argocd'}/${app.metadata?.name}`,
+        name: app.metadata?.name,
+        namespace: app.metadata?.namespace || 'argocd',
+        project: app.spec?.project || 'default',
+        sync: app.status?.sync?.status || 'Unknown',
+        health: app.status?.health?.status || 'Unknown',
+        phase: app.status?.operationState?.phase,
+        destination: app.spec?.destination?.namespace || '-',
+        repoURL: source.repoURL || '',
+        sourceLabel: source.chart || source.path || '-',
+        targetRevision: source.targetRevision || '-',
+        lastSync: app.status?.operationState?.finishedAt || app.status?.reconciledAt,
+        raw: app,
+      };
+    });
 
-  const triggerSync = async (app) => {
-    const name = app.metadata?.name;
-    const namespace = app.metadata?.namespace || 'argocd';
-    if (!name || !clusterName) return;
+    if (needle) {
+      result = result.filter((row) =>
+        [row.name, row.namespace, row.project, row.repoURL, row.sourceLabel, row.destination, row.sync, row.health]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(needle)
+      );
+    }
+    if (syncFilter.length) result = result.filter((row) => syncFilter.includes(row.sync));
+    if (healthFilter.length) result = result.filter((row) => healthFilter.includes(row.health));
+    if (projectFilter.length) result = result.filter((row) => projectFilter.includes(row.project));
 
-    setSyncing(name);
-    try {
-      await syncArgoCD({ cluster: clusterName, appName: name, namespace, accessToken });
+    const { columnAccessor, direction } = sort;
+    result.sort((a, b) => {
+      const left = String(a[columnAccessor] ?? '');
+      const right = String(b[columnAccessor] ?? '');
+      return direction === 'asc' ? left.localeCompare(right) : right.localeCompare(left);
+    });
+
+    return result;
+  }, [items, query, syncFilter, healthFilter, projectFilter, sort]);
+
+  const counts = useMemo(
+    () => ({
+      total: items.length,
+      synced: items.filter((a) => a.status?.sync?.status === 'Synced').length,
+      outOfSync: items.filter((a) => a.status?.sync?.status === 'OutOfSync').length,
+      unhealthy: items.filter(
+        (a) => a.status?.health?.status && !['Healthy', 'Progressing'].includes(a.status.health.status)
+      ).length,
+    }),
+    [items]
+  );
+
+  const runSync = async (targets, flags = {}) => {
+    setSyncing(true);
+    let failures = 0;
+
+    // Sequential on purpose: firing dozens of concurrent syncs at one ArgoCD
+    // instance is a good way to overwhelm the repo-server.
+    for (const row of targets) {
+      try {
+        if (mode.degraded) {
+          await syncViaCRDFallback(cluster, row.name, row.namespace, flags, token);
+        } else {
+          await syncApplication(cluster, row.name, flags, row.namespace, token);
+        }
+      } catch (error) {
+        failures += 1;
+        notifications.show({
+          title: `Sync failed: ${row.name}`,
+          message: error?.message || String(error),
+          color: 'red',
+        });
+      }
+    }
+
+    const succeeded = targets.length - failures;
+    if (succeeded > 0) {
       notifications.show({
-        title: 'ArgoCD sync started',
-        message: `${name} is syncing.`,
+        title: 'Sync started',
+        message: `${succeeded} of ${targets.length} ${targets.length === 1 ? 'application' : 'applications'}`,
         color: 'blue',
       });
-      fetchApps();
-    } catch (err) {
-      notifications.show({
-        title: 'ArgoCD sync failed',
-        message: err.message || `Failed to sync ${name}.`,
-        color: 'red',
-      });
-    } finally {
-      setSyncing(null);
     }
+    setSelected([]);
+    setSyncing(false);
+    invalidate(cluster);
   };
-
-  if (!clusterName) {
-    return (
-      <Center py="xl">
-        <Text c="dimmed">Select a cluster to view ArgoCD applications.</Text>
-      </Center>
-    );
-  }
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <Stack gap={4}>
-          <Group gap="sm">
-            <IconGitBranch size={28} />
-            <Title order={2}>ArgoCD Applications</Title>
-          </Group>
-          <Text c="dimmed" size="sm">
-            Native GitOps view for applications running in {clusterName}.
-          </Text>
-        </Stack>
-        <Button leftSection={<IconRefresh size={16} />} onClick={fetchApps} loading={loading}>
-          Refresh
-        </Button>
-      </Group>
+      <PageHeader
+        title="ArgoCD Applications"
+        subtitle={
+          <>
+            GitOps applications on {cluster}
+            {mode.version ? ` · ArgoCD ${mode.version}` : ''}
+          </>
+        }
+        actions={
+          <>
+            {selected.length > 0 && (
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <Button
+                    variant="light"
+                    rightSection={<IconChevronDown size={14} />}
+                    loading={syncing}
+                  >
+                    Sync {selected.length} selected
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item onClick={() => runSync(selected)}>Sync</Menu.Item>
+                  <Menu.Item onClick={() => runSync(selected, { prune: true })} color="red">
+                    Sync with prune
+                    <Text size="xs" c="dimmed">Deletes resources removed from Git</Text>
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            )}
+            <Button
+              variant="default"
+              leftSection={<IconRefresh size={16} />}
+              onClick={() => apps.refresh()}
+              loading={apps.isValidating}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-        <Card withBorder radius="md" p="md">
-          <Text size="xs" c="dimmed">Applications</Text>
-          <Text size="xl" fw={700}>{counts.total}</Text>
-        </Card>
-        <Card withBorder radius="md" p="md">
-          <Text size="xs" c="dimmed">Synced</Text>
-          <Text size="xl" fw={700}>{counts.Synced || 0}</Text>
-        </Card>
-        <Card withBorder radius="md" p="md">
-          <Text size="xs" c="dimmed">Out of sync</Text>
-          <Text size="xl" fw={700}>{counts.OutOfSync || 0}</Text>
-        </Card>
-        <Card withBorder radius="md" p="md">
-          <Text size="xs" c="dimmed">Healthy</Text>
-          <Text size="xl" fw={700}>{counts.Healthy || 0}</Text>
-        </Card>
+        <KpiCard label="Applications" value={counts.total} />
+        <KpiCard label="Synced" value={counts.synced} />
+        <KpiCard label="Out of sync" value={counts.outOfSync} />
+        <KpiCard label="Unhealthy" value={counts.unhealthy} />
       </SimpleGrid>
 
-      <Card withBorder radius="md" p="md">
-        <Group justify="space-between" mb="md">
-          <TextInput
-            leftSection={<IconSearch size={16} />}
-            placeholder="Search applications, project, repo, namespace, status..."
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            style={{ flex: 1, maxWidth: 520 }}
+      <Group gap="sm" align="flex-end" wrap="wrap">
+        <TextInput
+          leftSection={<IconSearch size={16} />}
+          placeholder="Search name, project, repo, namespace..."
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          style={{ flex: 1, minWidth: 260 }}
+        />
+        <MultiSelect
+          placeholder="Sync status"
+          data={['Synced', 'OutOfSync', 'Unknown']}
+          value={syncFilter}
+          onChange={setSyncFilter}
+          clearable
+          w={180}
+        />
+        <MultiSelect
+          placeholder="Health"
+          data={['Healthy', 'Progressing', 'Degraded', 'Suspended', 'Missing', 'Unknown']}
+          value={healthFilter}
+          onChange={setHealthFilter}
+          clearable
+          w={180}
+        />
+        {projects.length > 1 && (
+          <MultiSelect
+            placeholder="Project"
+            data={projects}
+            value={projectFilter}
+            onChange={setProjectFilter}
+            clearable
+            w={180}
           />
-          {error && <Text c="red" size="sm">{error}</Text>}
-        </Group>
-
-        {loading ? (
-          <Center py="xl"><Loader /></Center>
-        ) : (
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Project</Table.Th>
-                <Table.Th>Sync</Table.Th>
-                <Table.Th>Health</Table.Th>
-                <Table.Th>Destination</Table.Th>
-                <Table.Th>Source</Table.Th>
-                <Table.Th>Last sync</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {filteredApps.map((app) => {
-                const name = app.metadata?.name;
-                const namespace = app.metadata?.namespace || 'argocd';
-                const syncStatus = app.status?.sync?.status || 'Unknown';
-                const healthStatus = app.status?.health?.status || 'Unknown';
-                const repo = app.spec?.source?.repoURL || app.spec?.sources?.[0]?.repoURL || '-';
-                const sourceLabel = app.spec?.source?.chart || app.spec?.source?.path || app.spec?.sources?.[0]?.path || '-';
-                const lastSync = app.status?.operationState?.finishedAt || app.status?.reconciledAt;
-
-                return (
-                  <Table.Tr key={`${namespace}-${name}`}>
-                    <Table.Td>
-                      <Anchor component={Link} href={`/argocd/applications/${namespace}/${name}`}>
-                        <Text fw={600}>{name}</Text>
-                      </Anchor>
-                      <Text size="xs" c="dimmed">{namespace}</Text>
-                    </Table.Td>
-                    <Table.Td>{app.spec?.project || '-'}</Table.Td>
-                    <Table.Td>
-                      <Badge color={statusColor(syncStatus)} variant="light">{syncStatus}</Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge color={statusColor(healthStatus)} variant="light">{healthStatus}</Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{app.spec?.destination?.namespace || '-'}</Text>
-                      <Text size="xs" c="dimmed">{app.spec?.destination?.name || app.spec?.destination?.server || '-'}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Tooltip label={repo} disabled={repo === '-'}>
-                        <Text size="sm" truncate maw={260}>{sourceLabel}</Text>
-                      </Tooltip>
-                      <Text size="xs" c="dimmed">{app.spec?.source?.targetRevision || app.spec?.sources?.[0]?.targetRevision || '-'}</Text>
-                    </Table.Td>
-                    <Table.Td>{timeAgo(lastSync)}</Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        color="blue"
-                        loading={syncing === name}
-                        onClick={() => triggerSync(app)}
-                      >
-                        Sync
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
         )}
+      </Group>
 
-        {!loading && filteredApps.length === 0 && (
-          <Center py="xl">
-            <Text c="dimmed">No ArgoCD applications found.</Text>
-          </Center>
+      <QueryState
+        loading={apps.isLoading}
+        error={apps.error}
+        data={items}
+        onRetry={apps.refresh}
+        loadingLabel="Loading applications..."
+        skeleton="table"
+        emptyTitle="No ArgoCD applications"
+        emptyDescription="Nothing is deployed through ArgoCD on this cluster yet."
+      >
+        {() => (
+          <DataTable
+            withTableBorder
+            borderRadius="md"
+            striped
+            highlightOnHover
+            minHeight={160}
+            records={rows}
+            selectedRecords={selected}
+            onSelectedRecordsChange={setSelected}
+            sortStatus={sort}
+            onSortStatusChange={setSort}
+            noRecordsText={query || syncFilter.length || healthFilter.length ? 'No applications match the filters' : 'No applications'}
+            columns={[
+              {
+                accessor: 'name',
+                title: 'Name',
+                sortable: true,
+                render: (row) => (
+                  <Stack gap={0}>
+                    <Anchor component={Link} href={`/argocd/applications/${row.namespace}/${row.name}`} fw={600}>
+                      {row.name}
+                    </Anchor>
+                    <Text size="xs" c="dimmed">{row.namespace}</Text>
+                  </Stack>
+                ),
+              },
+              { accessor: 'project', title: 'Project', sortable: true },
+              {
+                accessor: 'sync',
+                title: 'Sync',
+                sortable: true,
+                render: (row) => <StatusBadge domain="argoSync" value={row.sync} size="sm" />,
+              },
+              {
+                accessor: 'health',
+                title: 'Health',
+                sortable: true,
+                render: (row) => <StatusBadge domain="argoHealth" value={row.health} size="sm" />,
+              },
+              {
+                accessor: 'destination',
+                title: 'Destination',
+                sortable: true,
+              },
+              {
+                accessor: 'sourceLabel',
+                title: 'Source',
+                render: (row) => (
+                  <Tooltip label={row.repoURL} disabled={!row.repoURL} multiline w={320}>
+                    <Stack gap={0}>
+                      <Text size="sm" truncate maw={220}>{row.sourceLabel}</Text>
+                      <Text size="xs" c="dimmed">{row.targetRevision}</Text>
+                    </Stack>
+                  </Tooltip>
+                ),
+              },
+              {
+                accessor: 'lastSync',
+                title: 'Last sync',
+                sortable: true,
+                render: (row) => <Text size="sm">{timeAgo(row.lastSync)}</Text>,
+              },
+              {
+                accessor: 'actions',
+                title: '',
+                textAlign: 'right',
+                render: (row) => (
+                  <Button size="xs" variant="light" onClick={() => runSync([row])} loading={syncing}>
+                    Sync
+                  </Button>
+                ),
+              },
+            ]}
+          />
         )}
-      </Card>
+      </QueryState>
     </Stack>
   );
 }

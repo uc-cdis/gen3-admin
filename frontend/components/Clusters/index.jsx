@@ -190,7 +190,7 @@ function Clusters() {
   const createCluster = async (data) => {
     try {
       const eks = data.eks === 'true'; // coerce to boolean for the API
-      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName, rolearn: data.roleARN, eks, assumemethod: data.assumeMethod, accesskey: data.accessKey, secretaccesskey: data.secretAccessKey }, null, sessionData.accessToken, 'text');
+      const responseData = await callGoApi('/agents', 'POST', { name: data.clusterName, rolearn: data.roleARN, eks, assumemethod: data.assumeMethod, accesskey: data.accessKey, secretaccesskey: data.secretAccessKey, serveraddress: data.serverAddress?.trim() }, null, sessionData.accessToken, 'text');
       setSubmitResponse(responseData);
       fetchClusters();
     } catch (error) {
@@ -208,6 +208,16 @@ function Clusters() {
       assumeMethod: '',
       accessKey: '',
       secretAccessKey: '',
+      serverAddress: '',
+    },
+    validate: {
+      clusterName: (value) => (value?.trim() ? null : 'Cluster name is required'),
+      serverAddress: (value) => {
+        const v = value?.trim();
+        if (!v) return 'Server address is required so the agent can reach the CSOC server';
+        if (!/^[^\s/]+:\d+$/.test(v)) return 'Use host:port, e.g. 163.7.10.20:32678';
+        return null;
+      },
     },
   });
   const showEksFollowup = form.values.eks === 'true'
@@ -233,6 +243,13 @@ function Clusters() {
                 placeholder="Enter cluster name"
                 {...form.getInputProps('clusterName')}
               />
+              <TextInput
+                label="CSOC gRPC Server Address"
+                description="Address (host:port) this cluster will use to reach the CSOC gRPC server. Must be reachable from inside the remote cluster."
+                placeholder="163.7.10.20:32678"
+                withAsterisk
+                {...form.getInputProps('serverAddress')}
+              />
           <Radio.Group
             label="EKS?"
             {...form.getInputProps('eks')}
@@ -244,7 +261,7 @@ function Clusters() {
             </Group>
           </Radio.Group>
         {/* Show the next question only when EKS === true */}
-        <Collapse in={showEksFollowup}>
+        <Collapse expanded={showEksFollowup}>
           <Radio.Group
             label="How should the cluster assume AWS permissions?"
             description="Would you like to use a Role or Access Keys to allow the agent to authenticate?"
@@ -258,7 +275,7 @@ function Clusters() {
           </Radio.Group>
         </Collapse>
             {/* Show the next question only when assumeMethod === role */}
-            <Collapse in={showRoleFollowup && showEksFollowup}>
+            <Collapse expanded={showRoleFollowup && showEksFollowup}>
               <TextInput
                 label="AWS RoleARN"
                 placeholder="arn:aws:iam::<account_id>:role/<role_name>"
@@ -266,7 +283,7 @@ function Clusters() {
               />
             </Collapse>
               {/* Show the next question only when assumeMethod === user */}
-            <Collapse in={showUserFollowup && showEksFollowup}>
+            <Collapse expanded={showUserFollowup && showEksFollowup}>
               <TextInput
                 label="AWS Access Key"
                 {...form.getInputProps('accessKey')}
@@ -291,6 +308,11 @@ function Clusters() {
               ) : (
                 <Box mt="xl">
                   <Title order={3}>Configuration:</Title>
+                  <Text size="sm" c="dimmed" mt="xs" mb="sm">
+                    Copy the manifest below and apply it against the target cluster. It creates the{' '}
+                    <Code>csoc</Code> namespace and deploys all resources into it:
+                  </Text>
+                  <Code block mb="sm">{`kubectl apply -f - <<'EOF'\n# paste the configuration below\nEOF`}</Code>
                   <Code block>
                     {submitResponse}
                   </Code>
@@ -352,9 +374,9 @@ function Clusters() {
       </Text>
 
       <Box sx={{ backgroundColor: '#1A1B1E', color: 'white', padding: '20px' }}>
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Group>
-            <Text size="xl" weight={700}>Clusters</Text>
+            <Text size="xl" fw={700}>Clusters</Text>
             <Badge size="lg" variant="filled" color="blue">{clusters.length}</Badge>
           </Group>
           <Group>
@@ -393,7 +415,7 @@ function Clusters() {
           </Group>
         </Group>
 
-        {error && <Text color="red">Error fetching clusters</Text>}
+        {error && <Text c="red">Error fetching clusters</Text>}
 
 
 
@@ -414,7 +436,7 @@ function Clusters() {
             {
               accessor: 'name',
               title: 'Agent Name',
-              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor color="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
+              render: ({ name, connected }) => connected ? (<Link passHref href="/clusters/[name]" as={`/clusters/${name}`}><Anchor c="dodgerblue">{name}</Anchor></Link>) : (<Text c="">{name}</Text>)
             },
             {
               accessor: 'provider',
@@ -422,7 +444,7 @@ function Clusters() {
               render: ({ provider, distro }) => (
                 <>
                   <Text>{provider}</Text>
-                  <Text size="xs" color="dimmed">{distro}</Text>
+                  <Text size="xs" c="dimmed">{distro}</Text>
                 </>
               )
             },

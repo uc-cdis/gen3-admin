@@ -28,7 +28,7 @@ const  JobDetails = ({name}) => {
   ));
   return (
     <>
-        <Text size="lg" weight={500} style={{ marginBottom: 10 }}>
+        <Text size="lg" fw={500} style={{ marginBottom: 10 }}>
           {details?.parent}
         </Text>
         <Badge color={details?.status === 'Succeeded' ? 'green' : 'red'} size="lg">
@@ -51,7 +51,7 @@ const  JobDetails = ({name}) => {
         <Timeline active={-1} bulletSize={24} lineWidth={2} style={{ marginTop: 20 }}>
           {details?.events?.map((event, index) => (
             <Timeline.Item key={index} title={event.type}>
-              <Text color="dimmed" size="sm">
+              <Text c="dimmed" size="sm">
                 {event.status} - {event.reason || 'No reason'}
               </Text>
               <Text size="xs">{new Date(event.time).toLocaleString()}</Text>

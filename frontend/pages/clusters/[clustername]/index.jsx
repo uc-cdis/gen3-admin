@@ -144,11 +144,11 @@ export default function ClusterDashboard() {
 
             <SimpleGrid cols={2} spacing="lg" mb="xl">
                 <Paper shadow="xs" p="md">
-                    <Group position="apart">
+                    <Group justify="space-between">
                         <Group>
                             <IconServer size={24} color="blue" />
                             <div>
-                                <Text size="xl" weight={700} color="blue">{nodes.length}</Text>
+                                <Text size="xl" fw={700} c="blue">{nodes.length}</Text>
                                 <Text>Nodes</Text>
                             </div>
                         </Group>
@@ -156,11 +156,11 @@ export default function ClusterDashboard() {
                     </Group>
                 </Paper>
                 <Paper shadow="xs" p="md">
-                    <Group position="apart">
+                    <Group justify="space-between">
                         <Group>
                             <IconRocket size={24} color="blue" />
                             <div>
-                                <Text size="xl" weight={700} color="blue">{deployments.length}</Text>
+                                <Text size="xl" fw={700} c="blue">{deployments.length}</Text>
                                 <Text>Deployments</Text>
                             </div>
                         </Group>
@@ -172,45 +172,45 @@ export default function ClusterDashboard() {
             <Title order={2} mb="md">Capacity</Title>
             <SimpleGrid cols={3} spacing="lg" mb="xl">
                 <Paper shadow="xs" p="md">
-                    <Text weight={500} mb="xs">Cluster CPU Usage</Text>
+                    <Text fw={500} mb="xs">Cluster CPU Usage</Text>
                     <RingProgress
                         sections={[{ value: parseFloat(formatPercentage(usedCapacity.cpu, capacity.cpu)), color: 'blue' }]}
                         label={
-                            <Text color="blue" weight={700} align="center" size="xl">
+                            <Text c="blue" fw={700} ta="center" size="xl">
                                 {formatPercentage(usedCapacity.cpu, capacity.cpu)}%
                             </Text>
                         }
                     />
-                    <Text align="center" mt="sm">{usedCapacity.cpu.toFixed(2)} / {capacity.cpu.toFixed(2)} cores</Text>
+                    <Text ta="center" mt="sm">{usedCapacity.cpu.toFixed(2)} / {capacity.cpu.toFixed(2)} cores</Text>
                 </Paper>
                 <Paper shadow="xs" p="md">
-                    <Text weight={500} mb="xs">Cluster Memory Usage</Text>
+                    <Text fw={500} mb="xs">Cluster Memory Usage</Text>
                     <RingProgress
                         sections={[{ value: parseFloat(formatPercentage(usedCapacity.memory, capacity.memory)), color: 'blue' }]}
                         label={
-                            <Text color="blue" weight={700} align="center" size="xl">
+                            <Text c="blue" fw={700} ta="center" size="xl">
                                 {formatPercentage(usedCapacity.memory, capacity.memory)}%
                             </Text>
                         }
                     />
-                    <Text align="center" mt="sm">{usedCapacity.memory.toFixed(1)} / {capacity.memory.toFixed(1)} GB</Text>
+                    <Text ta="center" mt="sm">{usedCapacity.memory.toFixed(1)} / {capacity.memory.toFixed(1)} GB</Text>
                 </Paper>
                 <Paper shadow="xs" p="md">
-                    <Text weight={500} mb="xs">Pods</Text>
+                    <Text fw={500} mb="xs">Pods</Text>
                     <RingProgress
                         sections={[{ value: parseFloat(formatPercentage(usedCapacity.pods, capacity.pods)), color: 'blue' }]}
                         label={
-                            <Text color="blue" weight={700} align="center" size="xl">
+                            <Text c="blue" fw={700} ta="center" size="xl">
                                 {formatPercentage(usedCapacity.pods, capacity.pods)}%
                             </Text>
                         }
                     />
-                    <Text align="center" mt="sm">{usedCapacity.pods} / {capacity.pods} Pods</Text>
+                    <Text ta="center" mt="sm">{usedCapacity.pods} / {capacity.pods} Pods</Text>
                 </Paper>
             </SimpleGrid>
 
             <Title order={2} mb="md">Events Table</Title>
-            <Group position="apart" mb="md">
+            <Group justify="space-between" mb="md">
                 <TextInput
                     placeholder="Search events..."
                     icon={<IconSearch size={14} />}

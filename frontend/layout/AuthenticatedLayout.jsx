@@ -1,10 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { Center } from "@mantine/core";
 import { useSession, signOut, signIn } from "next-auth/react";
 import { useRouter } from "next/router";
+
+import { LoadingState } from "@/components/ui";
 
 export function AuthenticatedLayout({ children }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  // Guards the redirect below so a transient session-fetch failure cannot queue
+  // multiple sign-in navigations.
+  const redirecting = useRef(false);
 
   useEffect(() => {
     // 1. Handle explicit session errors (e.g. RefreshAccessTokenError)
@@ -16,14 +22,34 @@ export function AuthenticatedLayout({ children }) {
     }
 
     // 2. Handle Unauthenticated state
-    // If loading is done and user is not logged in, redirect them.
-    if (status === "unauthenticated") {
-      console.log('User is unauthenticated, redirecting...');
-      // Option A: Redirect to the configured sign-in page and return here after
-      signIn(undefined, { callbackUrl: router.asPath });
-      
-      // Option B: If you specifically want to force them to the homepage instead:
-      // router.replace('/');
+    //
+    // Guarded against a redirect loop. next-auth reports `unauthenticated` when
+    // its /api/auth/session fetch *fails* as well as when there is genuinely no
+    // session -- and in development that fetch fails transiently while the dev
+    // server recompiles (CLIENT_FETCH_ERROR "Failed to fetch"). Redirecting on
+    // that lands on the sign-in page, which bounces straight back here, and the
+    // browser gives up with ERR_TOO_MANY_REDIRECTS.
+    //
+    // Confirming the session endpoint is genuinely unauthenticated before
+    // redirecting costs one request and breaks the cycle.
+    if (status === "unauthenticated" && !redirecting.current) {
+      redirecting.current = true;
+      fetch("/api/auth/session", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.user) {
+            // The session is fine; next-auth just failed to read it. Let its own
+            // refetch settle rather than bouncing through sign-in.
+            redirecting.current = false;
+            return;
+          }
+          signIn(undefined, { callbackUrl: router.asPath });
+        })
+        .catch(() => {
+          // Endpoint unreachable: retry on the next status change instead of
+          // redirecting into a loop we cannot complete.
+          redirecting.current = false;
+        });
     }
   }, [status, session, router]);
 
@@ -32,33 +58,11 @@ export function AuthenticatedLayout({ children }) {
   // This prevents the "Hello World" or protected content from flashing.
   if (status === "loading" || status === "unauthenticated") {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        width: '100vw',
-      }}>
-        <div className="spinner"></div>
-        <style>
-          {`
-            .spinner {
-              width: 40px;
-              height: 40px;
-              border: 4px solid rgba(0, 0, 0, 0.1);
-              border-radius: 50%;
-              border-left-color: #09f;
-              animation: spin 1s linear infinite;
-              margin: 20px auto;
-            }
-
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}
-        </style>
-      </div>
+      <Center h="100vh" w="100vw">
+        <LoadingState
+          label={status === "loading" ? "Checking your session..." : "Redirecting to sign in..."}
+        />
+      </Center>
     );
   }
 

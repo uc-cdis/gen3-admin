@@ -106,7 +106,7 @@ const ProxyDashboard = () => {
             <Title order={2} mb="lg">Squid Proxy Management Dashboard (Read Only) </Title>
 
             <Card withBorder shadow="sm" p="md" mb="lg">
-                <Group position="apart" mb="md">
+                <Group justify="space-between" mb="md">
                     <Text fw={500} size="lg">Environment Selection</Text>
                     <Select
                         placeholder="Select environment"
@@ -126,9 +126,9 @@ const ProxyDashboard = () => {
                 </Group>
 
                 {envsLoading && (
-                    <Group position="center" p="md">
+                    <Group justify="center" p="md">
                         <Loader size="sm" />
-                        <Text color="dimmed">Loading environments...</Text>
+                        <Text c="dimmed">Loading environments...</Text>
                     </Group>
                 )}
 
@@ -143,9 +143,9 @@ const ProxyDashboard = () => {
                 <>
                     {proxiesLoading ? (
                         <Card withBorder shadow="sm" p="xl">
-                            <Group position="center">
+                            <Group justify="center">
                                 <Loader />
-                                <Text color="dimmed">Loading proxy data...</Text>
+                                <Text c="dimmed">Loading proxy data...</Text>
                             </Group>
                         </Card>
                     ) : proxiesError ? (
@@ -153,9 +153,9 @@ const ProxyDashboard = () => {
                             Failed to load proxy data for {selectedEnv}. Please try again later.
                         </Alert>
                     ) : proxies ? (
-                        <Stack spacing="md">
+                        <Stack gap="md">
                             <Card withBorder shadow="sm" p="md">
-                                <Group position="apart" mb="xs">
+                                <Group justify="space-between" mb="xs">
                                     <Title order={3}>Proxy Overview: {selectedEnv}</Title>
                                     <Badge size="lg" color="blue">
                                         Active Instance: {proxies.current_active_id || "None"}
@@ -166,7 +166,7 @@ const ProxyDashboard = () => {
                                         <IconRefresh />
                                     </Button>
                                 </Group>
-                                <Text color="dimmed" mb="md">
+                                <Text c="dimmed" mb="md">
                                     Cloud Proxy DNS: {proxies.cloud_proxy_dns !== "NONE" ?
                                         proxies.cloud_proxy_dns : "Not configured"}
                                 </Text>
@@ -189,7 +189,7 @@ const ProxyDashboard = () => {
                                     {proxies.instances && Object.entries(proxies.instances).map(([id, instance]) => (
                                         <tr key={id}>
                                             <td>
-                                                <Group spacing="xs">
+                                                <Group gap="xs">
                                                     <IconServer size={16} />
                                                     <Anchor component={Link} href={"squid/"+instance.instance_id}>{instance.instance_id}</Anchor>
                                                 </Group>
@@ -219,7 +219,7 @@ const ProxyDashboard = () => {
                                 <Title order={4} mb="md">Instance Tags</Title>
                                 {proxies.instances && Object.entries(proxies.instances).map(([id, instance]) => (
                                     <div key={`tags-${id}`}>
-                                        <Group position="apart" mb="xs">
+                                        <Group justify="space-between" mb="xs">
                                             <Text fw={500}>{instance.instance_id}</Text>
                                             <Badge color={instance.active ? "green" : "gray"}>
                                                 {instance.active ? "Active" : "Standby"}

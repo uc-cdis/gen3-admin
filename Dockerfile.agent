@@ -1,36 +1,42 @@
 # syntax=docker/dockerfile:1.7
 
-FROM quay.io/cdis/golang-build-base:master AS go-builder
+FROM quay.io/cdis/golang-build-base:go1.26.0 AS go-builder
+
+# The build base runs as uid 1000 (gen3) with GOPATH=/go, so the BuildKit cache
+# mounts have to be owned by that uid or `go mod download` cannot write to them.
+USER root
+RUN mkdir -p /app && chown 1000:1000 /app
+USER 1000:1000
 
 WORKDIR /app
 
-COPY api/go.mod api/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
+COPY --chown=1000:1000 api/go.mod api/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod,uid=1000,gid=1000 \
     go mod download
 
-COPY api/ /app
+COPY --chown=1000:1000 api/ /app
 
 WORKDIR /app/gen3-agent
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod,uid=1000,gid=1000 \
+    --mount=type=cache,target=/home/gen3/.cache/go-build,uid=1000,gid=1000 \
     go build -o agent
 
 RUN chmod +x agent
 
 
-FROM quay.io/cdis/golang-build-base:master AS final
+FROM quay.io/cdis/golang-build-base:go1.26.0 AS final
 
-COPY --from=go-builder /app/gen3-agent /app/gen3-agent
+# Install tar and then Helm (for RHEL/CentOS)
+USER root
+RUN yum install -y tar && \
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+USER 1000:1000
+
+COPY --from=go-builder --chown=1000:1000 /app/gen3-agent /app/gen3-agent
 
 ENV PATH=/app/gen3-agent:$PATH
 
 WORKDIR /app/gen3-agent
-
-# Install tar and then Helm (for RHEL/CentOS)
-RUN yum install -y tar && \
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-
 
 CMD ["agent"]

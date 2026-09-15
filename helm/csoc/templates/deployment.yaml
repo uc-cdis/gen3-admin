@@ -72,6 +72,30 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- /*
+              NextAuth secrets are sourced from a Secret rather than values.yaml so
+              they are never committed as plaintext defaults. Fails the render when
+              unset so a deployment cannot silently fall back to a shared value.
+            */}}
+            {{- if .Values.frontend.existingSecret }}
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.existingSecret }}
+                  key: {{ .Values.frontend.existingSecretKeys.nextauthSecret | default "NEXTAUTH_SECRET" }}
+            - name: NEXTAUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.existingSecret }}
+                  key: {{ .Values.frontend.existingSecretKeys.nextauthJwtSecret | default "NEXTAUTH_JWT_SECRET" }}
+            {{- else if not .Values.frontend.allowInsecureDevSecrets }}
+            {{- fail "frontend.existingSecret must be set to a Secret containing NEXTAUTH_SECRET and NEXTAUTH_JWT_SECRET. For throwaway local clusters only, set frontend.allowInsecureDevSecrets=true to generate random per-release values instead." }}
+            {{- else }}
+            - name: NEXTAUTH_SECRET
+              value: {{ randAlphaNum 32 | quote }}
+            - name: NEXTAUTH_JWT_SECRET
+              value: {{ randAlphaNum 32 | quote }}
+            {{- end }}
 
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}

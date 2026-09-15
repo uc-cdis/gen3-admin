@@ -4,7 +4,7 @@ const DatabaseStep = ({ form }) => {
   const isLocal = Boolean(form.values.values?.global?.dev);
   return (
     <Paper p="md" radius="md" withBorder>
-      <Stack spacing="lg">
+      <Stack gap="lg">
         <Divider variant="dashed" label="Database Configuration" labelPosition="center" />
         <Switch
         checked={Boolean(form.values.values.global.postgres.dbCreate)}
@@ -25,7 +25,7 @@ const DatabaseStep = ({ form }) => {
             <Radio value="local" label="Local" />
         </Group>
         </Radio.Group>
-        <Collapse in={isLocal}>
+        <Collapse expanded={isLocal}>
             <Divider variant="dashed" label="Local Postgres Configuration" labelPosition="center" />
             <Switch
             checked={Boolean(form.values.values.global.pdb)}
@@ -40,7 +40,7 @@ const DatabaseStep = ({ form }) => {
             onChange={(e) => form.setFieldValue('values.postgresql.primary.persistence.enabled', e.currentTarget.checked)}
             />
         </Collapse>
-        <Collapse in={!isLocal}>
+        <Collapse expanded={!isLocal}>
             <Divider variant="dashed" label="External Postgres Configuration" labelPosition="center" />
             <Group grow>
                 <TextInput

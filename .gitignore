@@ -1,4 +1,6 @@
 .env
+.env.local
+.env.*.local
 .next
 .DS_Store
 __pycache__/
@@ -11,3 +13,11 @@ TARGETS
 wip-frontend/
 deployments/
 .vscode/
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Local dev stack logs and generated kubeconfig
+.dev-logs/
+
+# Local minikube dev port-forward PIDs
+.minikube-setup/

@@ -1,6 +1,6 @@
 import { AreaChart, BarChart } from "@mantine/charts";
 import { useGlobalState } from '@/contexts/global';
-import { syncArgoCD, waitForArgoSync } from '@/lib/argocd';
+import { getApplication, isOurOperation, isTerminalPhase, syncApplication } from '@/lib/argocd';
 import { notifications } from '@mantine/notifications';
 import { useRef } from "react";
 
@@ -57,6 +57,38 @@ import LogViewer from '@/components/LokiLogViewer'
 
 import CoreServicesOverview from '@/components/CoreServicesOverview'
 import { active } from "d3";
+
+
+/**
+ * Poll until the sync we submitted reaches a terminal phase.
+ *
+ * Correlating on operationState.startedAt is the fix for the old false-success
+ * bug: a previous run's Succeeded phase is still present when a new operation has
+ * not been recorded yet, so checking the phase alone reported success instantly.
+ */
+async function waitForOurSync(cluster, appName, accessToken, submittedAt, onProgress) {
+  const intervalMs = 4000;
+  const timeoutMs = 300000;
+  let waited = 0;
+
+  while (waited < timeoutMs) {
+    const app = await getApplication(cluster, appName, undefined, accessToken);
+    const state = app?.status?.operationState;
+    const sync = app?.status?.sync?.status ?? 'Unknown';
+    const health = app?.status?.health?.status ?? 'Unknown';
+
+    onProgress?.(`${sync} / ${health} (${state?.phase || 'pending'})`);
+
+    if (isOurOperation(state, submittedAt) && isTerminalPhase(state?.phase)) {
+      return { phase: state.phase, sync, health, message: state.message };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    waited += intervalMs;
+  }
+
+  throw new Error('Timed out waiting for the ArgoCD sync to finish');
+}
 
 export default function EnvironmentDashboardComp({
   env,
@@ -777,11 +809,11 @@ export default function EnvironmentDashboardComp({
                   setArgoStatus('Starting sync...');
 
                   try {
-                    await syncArgoCD({
-                      cluster: env,
-                      appName: activeEnvAppName,
-                      accessToken,
-                    });
+                    // Capture the submit time so completion can be attributed to
+                    // *this* sync. The previous helper resolved on any Succeeded
+                    // phase, including a leftover one from an earlier run.
+                    const submittedAt = new Date().toISOString();
+                    await syncApplication(env, activeEnvAppName, {}, undefined, accessToken);
 
                     notifications.show({
                       title: 'Sync started',
@@ -789,21 +821,18 @@ export default function EnvironmentDashboardComp({
                       color: 'blue',
                     });
 
-                    const finalStatus = await waitForArgoSync({
-                      cluster: env,
-                      appName: activeEnvAppName,
+                    const finalStatus = await waitForOurSync(
+                      env,
+                      activeEnvAppName,
                       accessToken,
-                      onUpdate: (status) => {
-                        setArgoStatus(
-                          `${status.sync.status} / ${status.health.status} (${status.operationState?.phase || 'Running'})`
-                        );
-                      },
-                    });
+                      submittedAt,
+                      setArgoStatus
+                    );
 
                     notifications.show({
-                      title: 'Sync complete',
-                      message: `Status: ${finalStatus.sync.status}, Health: ${finalStatus.health.status}`,
-                      color: 'green',
+                      title: `Sync ${String(finalStatus.phase).toLowerCase()}`,
+                      message: `Sync: ${finalStatus.sync}, Health: ${finalStatus.health}`,
+                      color: finalStatus.phase === 'Succeeded' ? 'green' : 'red',
                     });
                   } catch (err) {
                     notifications.show({

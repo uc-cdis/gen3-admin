@@ -102,8 +102,8 @@ function CardNode({ data }) {
       </Center>
 
       {/* Title & Subtitle */}
-      <Stack spacing={10}>
-        <Group position="center" spacing={8}>
+      <Stack gap={10}>
+        <Group justify="center" gap={8}>
           <Text fw={700} size={large ? "xl" : "lg"}>
             {title}
           </Text>
@@ -119,7 +119,7 @@ function CardNode({ data }) {
         </Group>
 
         {Array.isArray(subtitle) ? (
-          <Stack spacing={6}>
+          <Stack gap={6}>
             {subtitle.map((line, i) => (
               <Text key={i} size="sm" c="dimmed" lh={1.5} fw={500}>
                 {line}
@@ -141,7 +141,7 @@ function CardNode({ data }) {
 
       {/* Expandable Details */}
       {details.length > 0 && (
-        <Collapse in={expanded}>
+        <Collapse expanded={expanded}>
           <Box
             mt="md"
             pt="md"
@@ -149,9 +149,9 @@ function CardNode({ data }) {
               borderTop: "1px solid #dee2e6",
             }}
           >
-            <Stack spacing={10} align="flex-start">
+            <Stack gap={10} align="flex-start">
               {details.map((detail, i) => (
-                <Group key={i} spacing={8} style={{ width: "100%" }}>
+                <Group key={i} gap={8} style={{ width: "100%" }}>
                   <Text size="sm" c="dimmed" style={{ flex: 1 }} fw={500} lh={1.4}>
                     • {detail}
                   </Text>

@@ -8,8 +8,8 @@ import (
 	"io"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -42,6 +42,14 @@ type AgentConnection struct {
 	mutex           sync.Mutex
 	agent           Agent
 	terminalStreams map[string]*websocket.Conn
+	// tunnelConns maps a tunnel stream ID to the local TCP connection whose bytes
+	// are being forwarded to a pod (see tunnel_handlers.go).
+	tunnelConns map[string]net.Conn
+	// tunnelOpened receives the agent's ack for a pending TunnelOpen, so the
+	// handler can fail fast instead of writing into a tunnel that never opened.
+	tunnelOpened map[string]chan *pb.TunnelOpened
+	// sqlResponses correlates SQL query results with their waiting HTTP handler.
+	sqlResponses map[string]chan *pb.SqlQueryResponse
 }
 
 func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
@@ -50,15 +58,63 @@ func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
 	return a.stream.Send(msg)
 }
 
+// recoveryUnaryInterceptor converts a panic in a unary handler into an Internal
+// error so one bad request cannot bring down the server.
+func recoveryUnaryInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (resp interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Str("method", info.FullMethod).
+				Bytes("stack", debug.Stack()).
+				Msg("recovered from panic in gRPC unary handler")
+			err = status.Errorf(codes.Internal, "internal server error")
+		}
+	}()
+
+	return handler(ctx, req)
+}
+
+// recoveryStreamInterceptor does the same for streaming handlers, which is where
+// the long-lived agent tunnels live.
+func recoveryStreamInterceptor(
+	srv interface{},
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Str("method", info.FullMethod).
+				Bytes("stack", debug.Stack()).
+				Msg("recovered from panic in gRPC stream handler")
+			err = status.Errorf(codes.Internal, "internal server error")
+		}
+	}()
+
+	return handler(srv, ss)
+}
+
 func SetupGRCPServer() {
 	creds, err := ca.SetupCerts()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error setting up certificates")
 	}
 
-	// Create and start gRPC server with TLS credentials
+	// Create and start gRPC server with TLS credentials.
+	// gin.Recovery() only covers HTTP handlers, so without these interceptors a
+	// panic in any agent RPC would terminate the whole process.
 	s := grpc.NewServer(
 		grpc.Creds(*creds),
+		grpc.UnaryInterceptor(recoveryUnaryInterceptor),
+		grpc.StreamInterceptor(recoveryStreamInterceptor),
 	)
 
 	pb.RegisterTunnelServiceServer(s, &AgentServer{
@@ -136,8 +192,15 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "invalid agent name")
 	}
 
-	// Read agent cert file
-	certFile, err := os.ReadFile(filepath.Join("certs", path.Clean(agentName+".crt")))
+	// Read agent cert file.
+	//
+	// agentName is already constrained to ^[a-zA-Z0-9_-]+$ above, so it cannot
+	// contain a separator. filepath.Base is applied anyway: it makes the
+	// confinement local to this statement rather than depending on a check
+	// twenty lines up, and it is what static analysis recognises as the
+	// sanitizer for a path built from a parameter.
+	certName := filepath.Base(agentName + ".crt")
+	certFile, err := os.ReadFile(filepath.Join(certsDir, certName))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error reading agent cert file")
 		return err
@@ -203,6 +266,10 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 
 		delete(AgentConnections, agentName)
 
+		// Drop the cached ArgoCD client: a reconnecting agent may be pointed at a
+		// different cluster, so its session token must not be reused.
+		InvalidateArgoCDClient(agentName)
+
 		for _, cancel := range existingAgent.cancelFuncs {
 			cancel()
 		}
@@ -214,6 +281,9 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		contexts:        preservedContexts,
 		cancelFuncs:     preservedCancelFuncs,
 		terminalStreams: make(map[string]*websocket.Conn),
+		tunnelConns:     make(map[string]net.Conn),
+		tunnelOpened:    make(map[string]chan *pb.TunnelOpened),
+		sqlResponses:    make(map[string]chan *pb.SqlQueryResponse),
 		agent: Agent{
 			Id:              cert.Subject.SerialNumber,
 			Name:            agentName,
@@ -318,6 +388,57 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 				s.mu.Unlock()
 			}
 			agent.mutex.Unlock()
+		// ── SQL explorer (see sql_handlers.go) ──
+		case *pb.AgentMessage_SqlQueryResponse:
+			sqlResp := msg.SqlQueryResponse
+			agent.mutex.Lock()
+			ch, exists := agent.sqlResponses[sqlResp.StreamId]
+			agent.mutex.Unlock()
+			if exists {
+				// Buffered by the handler, so this never blocks the receive loop.
+				select {
+				case ch <- sqlResp:
+				default:
+				}
+			} else {
+				log.Debug().Msgf("No waiter for SQL response: %s", sqlResp.StreamId)
+			}
+
+		// ── TCP tunnel (see tunnel_handlers.go) ──
+		case *pb.AgentMessage_TunnelOpened:
+			opened := msg.TunnelOpened
+			agent.mutex.Lock()
+			ack, exists := agent.tunnelOpened[opened.StreamId]
+			agent.mutex.Unlock()
+			if exists {
+				// Buffered by the handler, so this never blocks the receive loop.
+				select {
+				case ack <- opened:
+				default:
+				}
+			}
+
+		case *pb.AgentMessage_TunnelData:
+			data := msg.TunnelData
+			agent.mutex.Lock()
+			conn, exists := agent.tunnelConns[data.StreamId]
+			agent.mutex.Unlock()
+			if !exists {
+				log.Debug().Msgf("No tunnel connection for stream ID: %s", data.StreamId)
+				continue
+			}
+			if _, err := conn.Write(data.Data); err != nil {
+				log.Warn().Err(err).Msgf("Failed writing tunnel data for stream ID: %s", data.StreamId)
+				agent.closeTunnel(data.StreamId)
+			}
+
+		case *pb.AgentMessage_TunnelClose:
+			closeMsg := msg.TunnelClose
+			if closeMsg.Error != "" {
+				log.Warn().Msgf("Tunnel %s closed by agent: %s", closeMsg.StreamId, closeMsg.Error)
+			}
+			agent.closeTunnel(closeMsg.StreamId)
+
 		case *pb.AgentMessage_TerminalStream:
 			termResp := msg.TerminalStream
 			log.Debug().Msgf("Received terminal stream from server %s: %v", agentName, termResp.Data)

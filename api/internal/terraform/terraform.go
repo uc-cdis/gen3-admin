@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -270,7 +271,7 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 		// Add any init-specific flags
 	case OpPlan:
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 		args = append(args, "-out=/workspace/gen3-terraform/tfplan")
 	case OpApply:
@@ -278,14 +279,14 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 	case OpDestroy:
 		if req.AutoApprove {
 			args = append(args, "-auto-approve")
 		}
 		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+varFile)
+			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
 		}
 	case OpOutput:
 		args = append(args, "-json")
@@ -435,6 +436,68 @@ func parseDockerLabels(labelStr string) map[string]string {
 	return labels
 }
 
+// terraformRoot is the only directory tree the terraform runner will read or
+// write. Overridable so a deployment can point it at a real volume.
+func terraformRoot() string {
+	if root := os.Getenv("TERRAFORM_WORK_ROOT"); root != "" {
+		return root
+	}
+	return "/tmp/gen3-terraform"
+}
+
+// validWorkDirName matches a single path segment: no separators, no dots, so
+// neither traversal nor shell metacharacters can survive it.
+var validWorkDirName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// resolveWorkDir maps a requested working directory onto a single directory
+// inside terraformRoot().
+//
+// The raw value used to be taken verbatim: it is passed to os.MkdirAll and
+// os.WriteFile, and interpolated into the `sh -c` docker script, so an absolute
+// path or a `..` segment meant arbitrary filesystem writes and a caller could
+// break out of the script with shell metacharacters. Accepting only a bare name
+// closes both.
+func resolveWorkDir(requested string) (string, error) {
+	root := terraformRoot()
+
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return root, nil
+	}
+
+	// Tolerate a caller echoing the root back, which the UI does today.
+	if requested == root {
+		return root, nil
+	}
+	if trimmed := strings.TrimPrefix(requested, root+"/"); trimmed != requested {
+		requested = trimmed
+	}
+
+	if !validWorkDirName.MatchString(requested) {
+		return "", fmt.Errorf("work_dir must be a single name matching [A-Za-z0-9_-]{1,64}")
+	}
+	return filepath.Join(root, requested), nil
+}
+
+// safeTFVarsName validates the tfvars filename. It is joined onto the work dir
+// and also passed to terraform as -var-file, so it must stay a single segment:
+// filepath.Join cleans a path but does not confine it, and "../../etc/x" would
+// otherwise escape.
+func safeTFVarsName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "terraform.tfvars", nil
+	}
+	if name != filepath.Base(name) || name == "." || name == ".." ||
+		strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("tfvars_file_name must be a bare filename")
+	}
+	if !strings.HasSuffix(name, ".tfvars") && !strings.HasSuffix(name, ".tfvars.json") {
+		return "", fmt.Errorf("tfvars_file_name must end in .tfvars or .tfvars.json")
+	}
+	return name, nil
+}
+
 func HandleTerraformExecute() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req TerraformRequest
@@ -443,9 +506,16 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			return
 		}
 
-		if strings.TrimSpace(req.WorkDir) == "" {
-			req.WorkDir = "/tmp/gen3-terraform"
+		// WorkDir comes from the request body and is both written to and
+		// interpolated into the docker shell script, so it is confined to a
+		// single directory under the runtime root rather than taken as given.
+		workDir, err := resolveWorkDir(req.WorkDir)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
 		}
+		req.WorkDir = workDir
+
 		if err := os.MkdirAll(req.WorkDir, 0o755); err != nil {
 			c.JSON(500, gin.H{"error": "failed to create work dir"})
 			return
@@ -457,11 +527,15 @@ func HandleTerraformExecute() gin.HandlerFunc {
 
 		// write tfvars if sent from frontend
 		if strings.TrimSpace(req.DockerTFVars) != "" {
-			name := req.DockerTFVarsFileName
-			if name == "" {
-				name = "terraform.tfvars"
+			name, err := safeTFVarsName(req.DockerTFVarsFileName)
+			if err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
 			}
-			tfvarsPath := filepath.Join(req.WorkDir+"-vars", name)
+			// safeTFVarsName already rejects anything but a bare filename;
+			// filepath.Base makes that confinement local to this statement and
+			// is what static analysis recognises as the sanitizer.
+			tfvarsPath := filepath.Join(req.WorkDir+"-vars", filepath.Base(name))
 			if err := os.WriteFile(tfvarsPath, []byte(req.DockerTFVars), 0o640); err != nil {
 				log.Error().
 					Err(err).

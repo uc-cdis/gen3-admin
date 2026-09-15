@@ -46,32 +46,19 @@ export default function DockerRunner() {
         setStatus(null);
         setLoading(true);
 
-        const container = selectedOption.container;
-
-        const envs = {
-            "DESTROY": destroy,
-            "DEPLOY": deploy,
-            "CLOUD": cloud,
-            "PLAN": plan,
-        };
-
-        // Create environment variable arguments for Docker
-        const envArgs = Object.entries(envs)
-            .map(([key, value]) => `-e ${key}=${value}`)
-            .join(' ');
-
-        const args = [
-            "-c",
-            `docker volume create ${container} && docker run ${envArgs} -v ${container}:/workspace/.terraform -v /Users/qureshi/.aws:/root/.aws ${container}`
-        ];
-
+        // The API takes provisioning parameters, not a command line -- it builds
+        // and runs the container itself. Host credential mounting is configured
+        // server-side via RUNNER_CLOUD_CREDENTIALS_DIR.
         try {
             const response = await fetch("/api/runner/execute", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    cmd: "sh",
-                    args: args,
+                    container: selectedOption.container,
+                    cloud,
+                    plan,
+                    deploy,
+                    destroy,
                 })
             });
 
@@ -179,7 +166,7 @@ export default function DockerRunner() {
             <h1 className="text-xl font-bold">IAC plugin demo</h1>
             <div className="mt-4">
                 <Card shadow="sm" padding="lg" radius="md" withBorder>
-                    <Group spacing="xs" align="center">
+                    <Group gap="xs" align="center">
                         <Select
                             style={{ flex: 1 }}
                             placeholder="Select previous execution"
@@ -199,7 +186,7 @@ export default function DockerRunner() {
             </div>
 
             <Card shadow="sm" padding="lg" mt={20} radius="md" withBorder>
-                <Group align="center" spacing="md">
+                <Group align="center" gap="md">
                     <Checkbox
                         label="Destroy"
                         checked={destroy}

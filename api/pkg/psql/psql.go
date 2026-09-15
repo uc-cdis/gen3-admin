@@ -2,7 +2,7 @@ package psql
 
 import (
 	"context"
-	"log"
+	"fmt"
 
 	"github.com/uc-cdis/gen3-admin/pkg/config"
 
@@ -18,19 +18,19 @@ type psql struct {
 
 // Get secrets from k8s that are named *-dbcreds and present that as possible psqls to connect to.
 
-func GetDBSecrets() []psql {
+func GetDBSecrets() ([]psql, error) {
 	// get secrets from k8s
 
 	// get clientset
 	client, namespace, err := config.K8sClient()
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
 	// list secrets
 	secrets, err := client.CoreV1().Secrets(*namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to list secrets in namespace %s: %w", *namespace, err)
 	}
 
 	retSecret := []psql{}
@@ -57,5 +57,5 @@ func GetDBSecrets() []psql {
 	}
 	// for each secret, if it has a name that ends with -dbcreds, add it to the list
 	// return the list
-	return retSecret
+	return retSecret, nil
 }

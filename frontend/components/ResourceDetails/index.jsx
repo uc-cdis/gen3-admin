@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button, Center, Group, Loader, Tabs, useMantineColorScheme, Modal, Text, Card, Badge, Stack, Title, Paper, Divider } from '@mantine/core';
 
 import callK8sApi from '@/lib/k8s';
@@ -15,14 +15,12 @@ import { IconRefresh, IconTrash, IconCode, IconEye, IconActivityHeartbeat } from
 import { notifications } from '@mantine/notifications';
 
 import { useSession } from 'next-auth/react';
+import { resolveStatus } from '@/lib/status';
+import { useK8sResource } from '@/hooks/useK8s';
 
 export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions, columnConfig }) {
     const { height } = useViewportSize();
     const [activeTab, setActiveTab] = useState('overview');
-    const [resourceData, setResourceData] = useState(null);
-
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
     const { data: sessionData } = useSession();
@@ -31,22 +29,26 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
     const { colorScheme } = useMantineColorScheme();
     const isDarkMode = colorScheme === 'dark';
 
-    const fetchResource = async () => {
-        setIsLoading(true);
-        setError(null);
+    // Fetching runs through the shared SWR layer, reaching the ~26 pages that
+    // render through this component. The immediate win is deduplication: a detail
+    // page and the components inside it frequently request the same object, and
+    // the result now survives navigating between resources.
+    const query = useK8sResource(resource && type && url ? url : null, { cluster });
 
-        try {
-            const response = await callK8sApi(url, 'GET', null, null, cluster, accessToken);
-            setResourceData(response);
-            return response;
-        } catch (error) {
-            console.error('Failed to fetch resource:', error);
-            setError(error.message || 'Failed to fetch resource');
-            return null;
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const resourceData = query.data ?? null;
+    // Only a genuine first load blocks the page; a background revalidation keeps
+    // the current content on screen.
+    const isLoading = query.isLoading && query.data === undefined;
+
+    // A 404 is an ordinary outcome here, not a fault: completed Job pods and other
+    // short-lived resources get garbage-collected, so links to them go stale.
+    const error = query.error
+        ? query.error.isNotFound
+            ? `This ${String(type || 'resource').toLowerCase()} no longer exists. It may have been deleted or garbage-collected.`
+            : query.error.message || 'Failed to fetch resource'
+        : null;
+
+    const fetchResource = query.refresh;
 
     const deleteResource = async () => {
         try {
@@ -56,6 +58,11 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 message: `${type} ${resource} was successfully deleted.`,
                 color: 'green'
             });
+            // Previously the deleted resource stayed on screen as though nothing
+            // had happened. Revalidating surfaces the 404 as the "no longer
+            // exists" state, which is the honest result of a successful delete.
+            setDeleteModalOpen(false);
+            query.refresh();
         } catch (error) {
             notifications.show({
                 title: 'Deletion Failed',
@@ -90,14 +97,21 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 accessToken
             );
 
-            setResourceData((current) => ({
-                ...(updated || current),
-                data: {
-                    ...(current?.data || {}),
-                    ...(updated?.data || {}),
-                    [key]: encodedValue,
-                },
-            }));
+            // Write the confirmed value straight into the cache so the editor
+            // reflects it immediately. revalidate: false because the PATCH
+            // response is already authoritative -- refetching would only risk
+            // showing a stale read.
+            query.mutate(
+                (current) => ({
+                    ...(updated || current),
+                    data: {
+                        ...(current?.data || {}),
+                        ...(updated?.data || {}),
+                        [key]: encodedValue,
+                    },
+                }),
+                { revalidate: false }
+            );
 
             notifications.show({
                 title: 'Secret updated',
@@ -114,28 +128,25 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
         }
     };
 
-    useEffect(() => {
-        if (!resource || !cluster || !type || !url) return;
-        fetchResource().then((data) => {
-            if (data) setResourceData(data);
-        });
-    }, [type, resource, namespace, cluster]);
 
     // Determine status for the header badge
+    // Pick the right status domain for this resource kind; the colours and
+    // labels themselves come from lib/status.ts so they match every other view.
     const getStatusInfo = () => {
         if (type === 'Node') {
             const ready = resourceData?.status?.conditions?.find(c => c.type === 'Ready');
-            return ready?.status === 'True' ? { label: 'Ready', color: 'green' } : { label: 'NotReady', color: 'red' };
+            if (!ready) return null;
+            return resolveStatus('node', ready.status);
         }
         if (type === 'Pod') {
-            const phase = resourceData?.status?.phase;
-            const colors = { Running: 'green', Pending: 'orange', Succeeded: 'blue', Failed: 'red' };
-            return { label: phase || 'Unknown', color: colors[phase] || 'gray' };
+            const containers = resourceData?.status?.containerStatuses;
+            return resolveStatus('pod', resourceData?.status?.phase, {
+                reason: containers?.[0]?.state?.waiting?.reason,
+                ready: containers?.every(c => c.ready),
+            });
         }
         if (resourceData?.status?.phase) {
-            const phase = resourceData.status.phase;
-            const colors = { Bound: 'green', Pending: 'orange', Available: 'blue', Failed: 'red' };
-            return { label: phase, color: colors[phase] || 'gray' };
+            return resolveStatus('pvc', resourceData.status.phase);
         }
         return null;
     };

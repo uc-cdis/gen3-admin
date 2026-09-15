@@ -44,6 +44,10 @@ api:
       mountPath: /go/src/api/certs
 
 frontend:
+  # Local/test cluster: generate NextAuth secrets at render time instead of
+  # requiring a pre-created Secret. Not for persistent environments -- these
+  # regenerate on every upgrade and invalidate existing sessions.
+  allowInsecureDevSecrets: true
   ports:
     http: 3000
   hostAliases:
@@ -60,8 +64,6 @@ frontend:
     failureThreshold: 3
   env:
     NEXTAUTH_URL: "http://csoc.cloud"
-    NEXTAUTH_SECRET: "test-secret-change-in-production" #  pragma: allowlist secret
-    NEXTAUTH_JWT_SECRET: "test-jwt-secret-change-in-production" # pragma: allowlist secret
     MOCK_AUTH: "false"
     ENABLE_MOCK_AUTH: "false"
     KEYCLOAK_CLIENT_SECRET: ""

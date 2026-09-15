@@ -72,7 +72,7 @@ const K8sDashboard = () => {
         accessor: 'metadata.labels',
         title: 'Labels',
         render: (item) => (
-          <Group spacing="xs">
+          <Group gap="xs">
             {Object.entries(item.metadata.labels || {}).map(([key, value]) => (
               <Badge key={key} size="sm">{`${key}: ${value}`}</Badge>
             ))}
@@ -114,8 +114,8 @@ const K8sDashboard = () => {
 
   return (
     <Card shadow="sm" padding="lg">
-      <Group position="apart" mb="md">
-        <Text size="xl" weight={500}>Kubernetes Dashboard</Text>
+      <Group justify="space-between" mb="md">
+        <Text size="xl" fw={500}>Kubernetes Dashboard</Text>
         <MultiSelect
           data={resourceTypes}
           value={selectedResources}

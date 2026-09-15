@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -77,6 +78,98 @@ func sendAgentProxyRequest(agentID string, msg *pb.ServerMessage, parentCtx cont
 	case <-ctx.Done():
 		cleanupAgentStream(agent, streamID)
 		return nil, fmt.Errorf("agent connection closed or request cancelled")
+	}
+}
+
+// maxProxyResponseBytes caps an accumulated proxy response. Rendered ArgoCD
+// manifests can be large; this guards against a pathological upstream exhausting
+// the server's memory.
+const maxProxyResponseBytes = 32 << 20 // 32 MiB
+
+// AgentProxyResult is a complete HTTP response reassembled from the agent's
+// HEADERS/DATA/END message sequence.
+type AgentProxyResult struct {
+	StatusCode int
+	Headers    map[string]string
+	Body       []byte
+}
+
+// collectAgentProxyResponse sends a proxy request and accumulates the full
+// response.
+//
+// sendAgentProxyRequest returns only the *first* message off the channel, which
+// for the HTTP proxy path is HEADERS with an empty body -- the payload arrives in
+// subsequent DATA frames. Anything that needs the body must use this instead.
+func collectAgentProxyResponse(agentID string, msg *pb.ServerMessage, parentCtx context.Context) (*AgentProxyResult, error) {
+	agentsMutex.RLock()
+	agent, exists := AgentConnections[agentID]
+	agentsMutex.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	responseChan := make(chan *pb.ProxyResponse, 10000)
+	streamID := uuid.New().String()
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	setStreamIDOnMessage(msg, streamID)
+
+	agent.mutex.Lock()
+	// An entry can exist in AgentConnections before the gRPC stream is fully
+	// established, in which case these maps are still nil. Assigning into one
+	// would panic, so report it as an unavailable agent instead.
+	if agent.requestChannels == nil || agent.cancelFuncs == nil || agent.contexts == nil {
+		agent.mutex.Unlock()
+		return nil, fmt.Errorf("agent %s is registered but not connected", agentID)
+	}
+	agent.requestChannels[streamID] = responseChan
+	agent.cancelFuncs[streamID] = cancel
+	agent.contexts[streamID] = ctx
+	agent.mutex.Unlock()
+
+	defer cleanupAgentStream(agent, streamID)
+
+	if err := agent.sendMessage(msg); err != nil {
+		return nil, fmt.Errorf("failed to send request to agent: %w", err)
+	}
+
+	result := &AgentProxyResult{Headers: map[string]string{}}
+	var body bytes.Buffer
+
+	for {
+		select {
+		case resp := <-responseChan:
+			switch resp.Status {
+			case pb.ProxyResponseType_HEADERS:
+				result.StatusCode = int(resp.StatusCode)
+				for k, v := range resp.Headers {
+					result.Headers[k] = v
+				}
+			case pb.ProxyResponseType_DATA:
+				if body.Len()+len(resp.Body) > maxProxyResponseBytes {
+					return nil, fmt.Errorf("response exceeded %d bytes", maxProxyResponseBytes)
+				}
+				body.Write(resp.Body)
+			case pb.ProxyResponseType_END:
+				result.Body = body.Bytes()
+				return result, nil
+			case pb.ProxyResponseType_ERROR:
+				// Preserve the upstream status so callers can react to it (e.g.
+				// refresh a token on 401) rather than seeing an opaque failure.
+				status := int(resp.StatusCode)
+				if status == 0 {
+					status = http.StatusInternalServerError
+				}
+				return &AgentProxyResult{
+					StatusCode: status,
+					Headers:    result.Headers,
+					Body:       resp.Body,
+				}, fmt.Errorf("agent proxy error (status %d): %s", status, string(resp.Body))
+			}
+		case <-ctx.Done():
+			return nil, fmt.Errorf("agent connection closed or request cancelled")
+		}
 	}
 }
 
@@ -349,6 +442,11 @@ func HandleNamespaceDeploymentStatus(c *gin.Context) {
 				Path:     fmt.Sprintf("/apis/apps/v1/namespaces/%s/deployments", namespace),
 				Headers:  map[string]string{"Accept": "application/json"},
 				Body:     body,
+				// Without this the agent dispatches to the generic HTTP handler,
+				// which cannot resolve a relative Kubernetes path -- so this
+				// endpoint silently reported no deployments and the deploy
+				// wizard's rollout tracker never progressed.
+				ProxyType: "k8s",
 			},
 		},
 	}

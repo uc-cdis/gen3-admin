@@ -32,6 +32,370 @@ import YamlEditor from '../YamlEditor/YamlEditor';
 import ConfigStep from './steps/ConfigStep';
 import GlobalSettingsStep from './steps/GlobalSettingsStep';
 
+// Baseline copy of the chart defaults the wizard renders in its UI.
+// IMPORTANT: this object is NOT sent to Helm wholesale. At deploy time we diff the
+// form state against it (see diffValues) and send only the keys the user actually
+// changed, so the upstream gen3-helm chart owns every default we did not touch.
+// Anything hardcoded here that drifts from upstream would otherwise silently
+// override the chart (this is what pinned a non-existent postgres image before).
+const DEFAULT_VALUES = {
+    // ── global (aligned with gen3-helm/helm/gen3/values.yaml lines 6-147) ──
+    global: {
+      environment: "default",
+      clusterName: "default",
+      hostname: "localhost",
+      dev: true,
+
+      // Cloud provider selection (UI-only helper, not sent to helm)
+      _cloudProvider: "none",
+
+      // GCP
+      gcp: {
+        enabled: false,
+        projectID: "",
+        secretStoreServiceAccount: "",
+      },
+
+      // AWS
+      aws: {
+        region: "us-east-1",
+        enabled: false,
+        awsAccessKeyId: "",
+        awsSecretAccessKey: "",
+        externalSecrets: {
+          enabled: false,
+          externalSecretAwsCreds: "",
+          pushSecret: false,
+        },
+        secretStoreServiceAccount: {
+          enabled: false,
+          name: "secret-store-sa",
+          roleArn: "",
+        },
+        useLocalSecret: {
+          enabled: false,
+          localSecretName: "",
+        },
+        _credStrategy: "keys", // UI-only: keys | irsa | localSecret | externalSecrets
+      },
+
+      // Crossplane
+      crossplane: {
+        enabled: false,
+        providerConfigName: "provider-aws",
+        oidcProviderUrl: "",
+        accountId: "",
+        s3: {
+          kmsKeyId: "",
+          versioningEnabled: false,
+        },
+      },
+
+      // Postgres
+      postgres: {
+        dbCreate: true,
+        externalSecret: "",
+        master: {
+          username: "postgres",
+          password: "",
+          host: "",
+          port: "5432",
+        },
+      },
+
+      // Core identity
+      revproxyArn: "",
+      dictionaryUrl: "https://s3.amazonaws.com/dictionary-artifacts/datadictionary/develop/schema.json",
+      portalApp: "gitops",
+
+      // Access control
+      publicDataSets: true,
+      tierAccessLevel: "private",
+      tierAccessLimit: "1000",
+      logoutInactiveUsers: true,
+      workspaceTimeoutInMinutes: 480,
+      maintenanceMode: "off",
+      dataUploadBucket: "",
+
+      // Networking
+      netPolicy: {
+        enabled: false,
+        dbSubnets: [],
+      },
+      pdb: false,
+      dispatcherJobNum: "10",
+
+      // Frontend
+      frontendRoot: "gen3ff",
+
+      // Observability
+      metricsEnabled: true,
+      createSlackWebhookSecret: false,
+      slackWebhook: "",
+
+      // External Secrets (global)
+      externalSecrets: {
+        deploy: false,
+        createLocalK8sSecret: false,
+        clusterSecretStoreRef: "",
+        createSlackWebhookSecret: false,
+        slackWebhookSecretName: "",
+      },
+
+      // Topology Spread
+      topologySpread: {
+        enabled: false,
+        topologyKey: "topology.kubernetes.io/zone",
+        maxSkew: 1,
+      },
+
+      manifestGlobalExtraValues: {},
+    },
+
+    // ── Infrastructure charts ──
+    // No image repository/tag defaults here on purpose: the chart already ships a
+    // pgvector-capable postgres (quay.io/cdis/docker-bitnami-pgvector), which the
+    // dbcreate job needs for `CREATE EXTENSION vector`. Pinning an image here would
+    // override it. Empty strings mean "untouched" and are dropped by diffValues.
+    postgresql: {
+      image: {
+        repository: "",
+        tag: "",
+      },
+      primary: {
+        persistence: { enabled: false },
+      },
+    },
+    elasticsearch: {
+      image: "",
+      imageTag: "",
+      clusterName: "gen3-elasticsearch",
+      maxUnavailable: 0,
+      singleNode: true,
+      replicas: 1,
+      clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s",
+      resources: { requests: { cpu: "500m" } },
+    },
+
+    // ── Service toggles (aligned with Chart.yaml conditions) ──
+    // Core services — enabled by default
+    ambassador: { enabled: false },
+    arborist: { enabled: true },
+    audit: { enabled: true },
+    fence: {
+      enabled: true,
+      usersync: {
+        usersync: false,
+        schedule: "*/30 * * * *",
+        custom_image: null,
+        syncFromDbgap: false,
+        addDbgap: false,
+        onlyDbgap: false,
+        userYamlS3Path: "s3://cdis-gen3-users/helm-test/user.yaml",
+        slack_webhook: "None",
+        slack_send_dbgap: false,
+        env: null,
+      },
+      FENCE_CONFIG: {
+        OPENID_CONNECT: {
+          generic_oidc_idp: {
+            enabled: false,
+            name: '',
+            client_id: '',
+            client_secret: '',
+            redirect_url: '',
+            discovery_url: '',
+            discovery: {
+              authorization_endpoint: '',
+              token_endpoint: '',
+              jwks_uri: '',
+            },
+            user_id_field: '',
+            email_field: '',
+            scope: '',
+          },
+          google: {
+            enabled: false,
+            discovery_url: 'https://accounts.google.com/.well-known/openid-configuration',
+            client_id: '',
+            client_secret: '',
+            redirect_url: '{{BASE_URL}}/login/google/login/',
+            scope: 'openid email',
+            mock: '',
+            mock_default_user: 'test@example.com',
+          },
+        },
+      },
+    },
+    "frontend-framework": { enabled: true, image: { repository: "quay.io/cdis/commons-frontend-app", tag: "main" } },
+    hatchery: {
+      enabled: false,
+      hatchery: {
+        sidecarContainer: {
+          "cpu-limit": "0.1",
+          "memory-limit": "256Mi",
+          image: "quay.io/cdis/ecs-ws-sidecar:master",
+          env: {
+            NAMESPACE: "{{ .Release.Namespace }}",
+            HOSTNAME: "{{ .Values.global.hostname }}"
+          },
+          args: [],
+          command: ["/bin/bash", "./sidecar.sh"],
+          "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"],
+        },
+        containers: [
+          {
+            "target-port": 8888,
+            "cpu-limit": "2",
+            "memory-limit": "3Gi",
+            name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
+            image: "quay.io/cdis/jupyter-superslim:2.1.0",
+            env: { FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}" },
+            args: ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.default_url=/lab"],
+            command: ["start-notebook.sh"],
+            "path-rewrite": "/lw-workspace/proxy/",
+            "use-tls": "false",
+            "ready-probe": "/lw-workspace/proxy/",
+            "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd; true"],
+            "user-uid": 1010,
+            "fs-gid": 100,
+            "user-volume-location": "/home/jovyan/pd",
+            "gen3-volume-location": "/home/jovyan/.gen3",
+          },
+        ],
+        reaper: {
+          enabled: true,
+          suspendCronjob: false,
+          schedule: "*/15 * * * *",
+          idleTimeoutSeconds: 3600,
+        },
+      },
+    },
+    indexd: { enabled: true, defaultPrefix: "PREFIX/" },
+    manifestservice: { enabled: false },
+    metadata: { enabled: true },
+    peregrine: { enabled: true },
+    portal: { enabled: false },
+    revproxy: {
+      enabled: true,
+      ingress: {
+        enabled: false,
+        annotations: {},
+        hosts: [],
+        tls: [],
+      },
+    },
+    sheepdog: { enabled: true },
+    wts: { enabled: true },
+    etl: { enabled: true },
+
+    // Data Explorer — disabled by default
+    // configIndex/authFilterField default to "" so the chart's own values win unless
+    // the operator fills them in (see diffValues). indices is edited as YAML in ConfigStep.
+    guppy: { enabled: false, esEndpoint: "", configIndex: "", authFilterField: "" },
+
+    // Workspace & Workflow — disabled by default
+    "argo-wrapper": { enabled: false },
+    "gen3-workflow": { enabled: false },
+
+    // Medical Imaging — disabled by default
+    "dicom-server": { enabled: false },
+    orthanc: { enabled: false },
+    "ohif-viewer": { enabled: false },
+
+    // Observability & Security — disabled by default
+    "aws-es-proxy": { enabled: false, esEndpoint: "", secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" } },
+    "aws-sigv4-proxy": { enabled: false },
+
+    // OHDSI — disabled by default
+    "ohdsi-atlas": { enabled: false },
+    "ohdsi-webapi": { enabled: false },
+
+    // Other Services — disabled by default
+    "cohort-middleware": { enabled: false },
+    dashboard: { enabled: false, dashboardConfig: { bucket: "generic-dashboard-bucket", prefix: "hostname.com" } },
+    "embedding-management-service": { enabled: false },
+    "gen3-analysis": { enabled: false },
+    "gen3-user-data-library": { enabled: false },
+    requestor: { enabled: false },
+    sower: { enabled: false },
+    "ssjdispatcher": { enabled: false },
+
+    // Misc top-level values
+    mutatingWebhook: { enabled: false, image: "quay.io/cdis/node-affinity-daemonset:feat_pods" },
+    secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" },
+    tests: {
+      TEST_LABEL: "",
+      SERVICE_TO_TEST: "",
+      resources: { requests: { memory: "6G" }, limits: { memory: "10G" } },
+      image: { tag: "master" },
+    },
+    auroraRdsCopyJob: {
+      enabled: false,
+      auroraMasterSecret: "",
+      sourceNamespace: "",
+      targetNamespace: "",
+      writeToK8sSecret: false,
+      writeToAwsSecret: false,
+      services: [],
+    },
+};
+
+// Keys the wizard uses to drive its own UI. They are not chart values and must
+// never be sent to Helm.
+const UI_ONLY_KEYS = new Set(['_cloudProvider', '_credStrategy']);
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Return only the parts of `current` that differ from `baseline`.
+ *
+ * Everything omitted falls through to the upstream gen3-helm chart's own default,
+ * which is what we want: the wizard should express the user's intent, not re-assert
+ * a stale copy of the chart's values.yaml.
+ *
+ * - Plain objects recurse; a branch that ends up empty is dropped entirely.
+ * - Arrays are compared whole (Helm replaces arrays, it never merges them).
+ * - Empty strings are treated as "not set" when the baseline had no value either,
+ *   so untouched optional text inputs don't clobber chart defaults.
+ */
+const diffValues = (current, baseline) => {
+  if (!isPlainObject(current)) return current;
+  const out = {};
+  for (const [key, value] of Object.entries(current)) {
+    if (UI_ONLY_KEYS.has(key)) continue;
+    const base = isPlainObject(baseline) ? baseline[key] : undefined;
+
+    if (isPlainObject(value)) {
+      const nested = diffValues(value, base);
+      // Keep an empty object only if the baseline had no such key at all
+      // (i.e. the user genuinely introduced it).
+      if (nested !== undefined && (Object.keys(nested).length > 0 || base === undefined)) {
+        out[key] = nested;
+      }
+      continue;
+    }
+
+    // Untouched empty optional field -> let the chart decide.
+    if (value === '' && (base === '' || base === undefined)) continue;
+
+    if (JSON.stringify(value) !== JSON.stringify(base)) {
+      out[key] = value;
+    }
+  }
+  return out;
+};
+
+/** Deep merge `source` over `target` (source wins). Arrays are replaced, not merged. */
+const deepMerge = (target, source) => {
+  if (!isPlainObject(source)) return source;
+  const out = isPlainObject(target) ? { ...target } : {};
+  for (const [key, value] of Object.entries(source)) {
+    out[key] = isPlainObject(value) ? deepMerge(out[key], value) : value;
+  }
+  return out;
+};
+
 const STEP_CONFIG = [
   { label: 'Destination', description: 'Cluster & namespace', icon: IconCloud, color: 'blue' },
   { label: 'Globals',     description: 'Core settings',      icon: IconSettings, color: 'violet' },
@@ -66,6 +430,10 @@ const StepperForm = () => {
   const [deployComplete, setDeployComplete] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [deployedHostname, setDeployedHostname] = useState('');
+  // Baseline the outgoing values are diffed against. Defaults to the chart-aligned
+  // defaults; in edit mode it becomes the live release's values so an update sends
+  // only what the user actually changed this session.
+  const [valuesBaseline, setValuesBaseline] = useState(() => structuredClone(DEFAULT_VALUES));
 
   const form = useForm({
     initialValues: {
@@ -78,302 +446,7 @@ const StepperForm = () => {
         chartName: 'gen3',
         chartVersion: '',
       },
-      values: {
-        // ── global (aligned with gen3-helm/helm/gen3/values.yaml lines 6-147) ──
-        global: {
-          environment: "default",
-          clusterName: "default",
-          hostname: "localhost",
-          dev: true,
-
-          // Cloud provider selection (UI-only helper, not sent to helm)
-          _cloudProvider: "none",
-
-          // GCP
-          gcp: {
-            enabled: false,
-            projectID: "",
-            secretStoreServiceAccount: "",
-          },
-
-          // AWS
-          aws: {
-            region: "us-east-1",
-            enabled: false,
-            awsAccessKeyId: "",
-            awsSecretAccessKey: "",
-            externalSecrets: {
-              enabled: false,
-              externalSecretAwsCreds: "",
-              pushSecret: false,
-            },
-            secretStoreServiceAccount: {
-              enabled: false,
-              name: "secret-store-sa",
-              roleArn: "",
-            },
-            useLocalSecret: {
-              enabled: false,
-              localSecretName: "",
-            },
-            _credStrategy: "keys", // UI-only: keys | irsa | localSecret | externalSecrets
-          },
-
-          // Crossplane
-          crossplane: {
-            enabled: false,
-            providerConfigName: "provider-aws",
-            oidcProviderUrl: "",
-            accountId: "",
-            s3: {
-              kmsKeyId: "",
-              versioningEnabled: false,
-            },
-          },
-
-          // Postgres
-          postgres: {
-            dbCreate: true,
-            externalSecret: "",
-            master: {
-              username: "postgres",
-              password: "",
-              host: "",
-              port: "5432",
-            },
-          },
-
-          // Core identity
-          revproxyArn: "",
-          dictionaryUrl: "https://s3.amazonaws.com/dictionary-artifacts/datadictionary/develop/schema.json",
-          portalApp: "gitops",
-
-          // Access control
-          publicDataSets: true,
-          tierAccessLevel: "private",
-          tierAccessLimit: "1000",
-          logoutInactiveUsers: true,
-          workspaceTimeoutInMinutes: 480,
-          maintenanceMode: "off",
-          dataUploadBucket: "",
-
-          // Networking
-          netPolicy: {
-            enabled: false,
-            dbSubnets: [],
-          },
-          pdb: false,
-          dispatcherJobNum: "10",
-
-          // Frontend
-          frontendRoot: "gen3ff",
-
-          // Observability
-          metricsEnabled: true,
-          createSlackWebhookSecret: false,
-          slackWebhook: "",
-
-          // External Secrets (global)
-          externalSecrets: {
-            deploy: false,
-            createLocalK8sSecret: false,
-            clusterSecretStoreRef: "",
-            createSlackWebhookSecret: false,
-            slackWebhookSecretName: "",
-          },
-
-          // Topology Spread
-          topologySpread: {
-            enabled: false,
-            topologyKey: "topology.kubernetes.io/zone",
-            maxSkew: 1,
-          },
-
-          manifestGlobalExtraValues: {},
-        },
-
-        // ── Infrastructure charts ──
-        postgresql: {
-          image: {
-            repository: "bitnamilegacy/postgresql",
-            tag: "16.6.0-debian-12-r2",
-          },
-          primary: {
-            persistence: { enabled: false },
-          },
-        },
-        elasticsearch: {
-          image: "quay.io/cdis/elasticsearch",
-          imageTag: "7.10.2",
-          clusterName: "gen3-elasticsearch",
-          maxUnavailable: 0,
-          singleNode: true,
-          replicas: 1,
-          clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s",
-          resources: { requests: { cpu: "500m" } },
-        },
-
-        // ── Service toggles (aligned with Chart.yaml conditions) ──
-        // Core services — enabled by default
-        ambassador: { enabled: false },
-        arborist: { enabled: true },
-        audit: { enabled: true },
-        fence: {
-          enabled: true,
-          usersync: {
-            usersync: false,
-            schedule: "*/30 * * * *",
-            custom_image: null,
-            syncFromDbgap: false,
-            addDbgap: false,
-            onlyDbgap: false,
-            userYamlS3Path: "s3://cdis-gen3-users/helm-test/user.yaml",
-            slack_webhook: "None",
-            slack_send_dbgap: false,
-            env: null,
-          },
-          FENCE_CONFIG: {
-            OPENID_CONNECT: {
-              generic_oidc_idp: {
-                enabled: false,
-                name: '',
-                client_id: '',
-                client_secret: '',
-                redirect_url: '',
-                discovery_url: '',
-                discovery: {
-                  authorization_endpoint: '',
-                  token_endpoint: '',
-                  jwks_uri: '',
-                },
-                user_id_field: '',
-                email_field: '',
-                scope: '',
-              },
-              google: {
-                enabled: false,
-                discovery_url: 'https://accounts.google.com/.well-known/openid-configuration',
-                client_id: '',
-                client_secret: '',
-                redirect_url: '{{BASE_URL}}/login/google/login/',
-                scope: 'openid email',
-                mock: '',
-                mock_default_user: 'test@example.com',
-              },
-            },
-          },
-        },
-        "frontend-framework": { enabled: true, image: { repository: "quay.io/cdis/commons-frontend-app", tag: "main" } },
-        hatchery: {
-          enabled: false,
-          hatchery: {
-            sidecarContainer: {
-              "cpu-limit": "0.1",
-              "memory-limit": "256Mi",
-              image: "quay.io/cdis/ecs-ws-sidecar:master",
-              env: {
-                NAMESPACE: "{{ .Release.Namespace }}",
-                HOSTNAME: "{{ .Values.global.hostname }}"
-              },
-              args: [],
-              command: ["/bin/bash", "./sidecar.sh"],
-              "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"],
-            },
-            containers: [
-              {
-                "target-port": 8888,
-                "cpu-limit": "2",
-                "memory-limit": "3Gi",
-                name: "(Tutorials) Example Analysis Jupyter Lab Notebooks",
-                image: "quay.io/cdis/jupyter-superslim:2.1.0",
-                env: { FRAME_ANCESTORS: "https://{{ .Values.global.hostname }}" },
-                args: ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.default_url=/lab"],
-                command: ["start-notebook.sh"],
-                "path-rewrite": "/lw-workspace/proxy/",
-                "use-tls": "false",
-                "ready-probe": "/lw-workspace/proxy/",
-                "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=$(whoami); rm -rf /home/$IAM/pd/dockerHome; rm -rf /home/$IAM/pd/lost+found; ln -s /data /home/$IAM/pd; true"],
-                "user-uid": 1010,
-                "fs-gid": 100,
-                "user-volume-location": "/home/jovyan/pd",
-                "gen3-volume-location": "/home/jovyan/.gen3",
-              },
-            ],
-            reaper: {
-              enabled: true,
-              suspendCronjob: false,
-              schedule: "*/15 * * * *",
-              idleTimeoutSeconds: 3600,
-            },
-          },
-        },
-        indexd: { enabled: true, defaultPrefix: "PREFIX/" },
-        manifestservice: { enabled: false },
-        metadata: { enabled: true },
-        peregrine: { enabled: true },
-        portal: { enabled: false },
-        revproxy: {
-          enabled: true,
-          ingress: {
-            enabled: false,
-            annotations: {},
-            hosts: [],
-            tls: [],
-          },
-        },
-        sheepdog: { enabled: true },
-        wts: { enabled: true },
-        etl: { enabled: true },
-
-        // Data Explorer — disabled by default
-        guppy: { enabled: false, esEndpoint: "" },
-
-        // Workspace & Workflow — disabled by default
-        "argo-wrapper": { enabled: false },
-        "gen3-workflow": { enabled: false },
-
-        // Medical Imaging — disabled by default
-        "dicom-server": { enabled: false },
-        orthanc: { enabled: false },
-        "ohif-viewer": { enabled: false },
-
-        // Observability & Security — disabled by default
-        "aws-es-proxy": { enabled: false, esEndpoint: "", secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" } },
-        "aws-sigv4-proxy": { enabled: false },
-
-        // OHDSI — disabled by default
-        "ohdsi-atlas": { enabled: false },
-        "ohdsi-webapi": { enabled: false },
-
-        // Other Services — disabled by default
-        "cohort-middleware": { enabled: false },
-        dashboard: { enabled: false, dashboardConfig: { bucket: "generic-dashboard-bucket", prefix: "hostname.com" } },
-        "embedding-management-service": { enabled: false },
-        "gen3-analysis": { enabled: false },
-        "gen3-user-data-library": { enabled: false },
-        requestor: { enabled: false },
-        sower: { enabled: false },
-        "ssjdispatcher": { enabled: false },
-
-        // Misc top-level values
-        mutatingWebhook: { enabled: false, image: "quay.io/cdis/node-affinity-daemonset:feat_pods" },
-        secrets: { awsAccessKeyId: "", awsSecretAccessKey: "" },
-        tests: {
-          TEST_LABEL: "",
-          SERVICE_TO_TEST: "",
-          resources: { requests: { memory: "6G" }, limits: { memory: "10G" } },
-          image: { tag: "master" },
-        },
-        auroraRdsCopyJob: {
-          enabled: false,
-          auroraMasterSecret: "",
-          sourceNamespace: "",
-          targetNamespace: "",
-          writeToK8sSecret: false,
-          writeToAwsSecret: false,
-          services: [],
-        },
-      },
+      values: structuredClone(DEFAULT_VALUES),
     },
   });
 
@@ -488,7 +561,8 @@ const StepperForm = () => {
       version: dest.chartVersion || undefined,
       release: dest.releaseName,
       namespace: dest.namespace === '' ? dest.releaseName : dest.namespace,
-      values: form.values.values,
+      // Only user-touched keys; everything else falls through to the chart defaults.
+      values: diffValues(form.values.values, valuesBaseline),
     };
     try {
       const res = await callGoApi(`/agent/${dest.cluster}/helm/install`, 'POST', body, null, accessToken);
@@ -529,8 +603,13 @@ const StepperForm = () => {
             form.setFieldValue('destination.cluster', clusterParam);
             form.setFieldValue('destination.releaseName', releaseParam);
             form.setFieldValue('destination.namespace', namespaceParam);
-            // Deep merge existing values into form (preserve defaults for missing keys)
-            form.setFieldValue('values', { ...form.values.values, ...existingValues });
+            // Deep merge existing values over the defaults so nested keys the release
+            // does set (e.g. global.postgres.master) don't wipe out sibling defaults.
+            const merged = deepMerge(structuredClone(DEFAULT_VALUES), existingValues);
+            form.setFieldValue('values', merged);
+            // Diff future edits against what is actually deployed, so an update neither
+            // re-sends the whole release nor resurrects keys the operator removed.
+            setValuesBaseline(merged);
           }
         } catch (err) {
           console.error('Error loading existing deployment values:', err);
@@ -633,7 +712,7 @@ const StepperForm = () => {
             </Group>
             <Editor
               className='border rounded-lg'
-              value={YAML.stringify(form.values.values, null, 2)}
+              value={YAML.stringify(diffValues(form.values.values, valuesBaseline), null, 2)}
               defaultLanguage='yaml'
               height={"400px"}
               readOnly={true}

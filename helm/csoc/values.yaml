@@ -62,9 +62,20 @@ frontend:
     periodSeconds: 3
   env:
     NEXTAUTH_URL: "https://csoc.planx-pla.net"
-    NEXTAUTH_SECRET: "secret" #pragma: allowlist secret
-    NEXTAUTH_JWT_SECRET: "secret" #pragma: allowlist secret
     LOKI_BASE_URL: "https://loki.planx-pla.net"
+  # Name of a pre-existing Secret holding NEXTAUTH_SECRET and NEXTAUTH_JWT_SECRET.
+  # Required unless allowInsecureDevSecrets is true. Create it with:
+  #   kubectl create secret generic csoc-nextauth \
+  #     --from-literal=NEXTAUTH_SECRET="$(openssl rand -base64 32)" \
+  #     --from-literal=NEXTAUTH_JWT_SECRET="$(openssl rand -base64 32)"
+  existingSecret: ""
+  existingSecretKeys:
+    nextauthSecret: NEXTAUTH_SECRET
+    nextauthJwtSecret: NEXTAUTH_JWT_SECRET
+  # Local/throwaway clusters only: generate random secrets at render time instead
+  # of requiring a Secret. Regenerates on every `helm upgrade`, invalidating all
+  # existing sessions, so it is unsuitable for anything persistent.
+  allowInsecureDevSecrets: false
   resources:
     limits:
       memory: "512Mi"

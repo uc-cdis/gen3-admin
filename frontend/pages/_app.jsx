@@ -4,21 +4,34 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-// import { NavBar } from '../components/NavBar/NavBar';
-// import { NavBar } from '@/components/DoubleNavbar/DoubleNavbar.jsx';
+import { datadogRum } from '@datadog/browser-rum';
+import { nextjsPlugin } from '@datadog/browser-rum-nextjs';
 
-// import { KeycloakProvider } from '@/contexts/KeycloakContext';
-   import { datadogRum } from "@datadog/browser-rum";
+datadogRum.init({
+  applicationId: 'aec8849d-4032-46ad-8492-a0a91148df3a',
+  clientToken: 'pub1ae338dfcf906e3b187c40ea3391986c',
+  site: 'ddog-gov.com',
+  service: 'csoc',
+  env: process.env.NEXT_PUBLIC_ENV ?? 'production',
+  version: '1.0.0',
+  sessionSampleRate: 100,
+  sessionReplaySampleRate: 20,
+  trackResources: true,
+  trackUserInteractions: true,
+  trackLongTasks: true,
+  plugins: [nextjsPlugin()],
+});
 
+export { onRouterTransitionStart } from '@datadog/browser-rum-nextjs';
 
 import SpotLight from '@/components/Spotlight/Spotlight';
 
 import { NavBar } from '@/components/NewNavbar/Navbar';
-// import { NavBar } from '@/components/NewNavbar/Navbar2';
 
 import { Header } from '../components/Header/Header';
 import { theme } from '../theme';
 import { Notifications } from '@mantine/notifications';
+import { SWRConfig } from 'swr';
 
 import { useRouter } from 'next/router'
 
@@ -65,35 +78,22 @@ function BootstrapAuthGate({ children }) {
   useEffect(() => {
     if (!bootstrapEnabled) return;
 
-    // Status Loading
-    if (status === "loading") {
-      console.log("[bootstrap] status=loading (checking cookies)");
-      return;
-    }
+    if (status === "loading") return;
 
     // Already authenticated
-    if (status === "authenticated" && session) {
-      console.log("[bootstrap] session detected! Authenticated user:", session.user);
-      return;
-    }
+    if (status === "authenticated" && session) return;
 
     // status "unauthenticated" → trigger auto-login
     if (!loginTriggeredRef.current) {
-      console.log("[bootstrap] User unauthenticated in bootstrap mode. Triggering auto sign-in!");
       loginTriggeredRef.current = true;
       (async () => {
         const result = await signIn("mock-provider", {
           redirect: false
         });
-        console.log("[bootstrap] signIn() result:", result);
         if (!(result?.ok || result?.status === 200)) {
-          console.error("[bootstrap] Auto mock sign-in FAILED!", result);
-        } else {
-          console.log("[bootstrap] Auto mock sign-in SUCCEEDED (waiting for session update)");
+          console.error("[bootstrap] auto mock sign-in failed:", result?.error ?? result?.status);
         }
       })();
-    } else {
-      console.log("[bootstrap] Auto sign-in already triggered, waiting for session update …");
     }
   }, [session, status, router]);
 
@@ -195,6 +195,16 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 }
 
 
+// Shared SWR behaviour. Deduping alone removes real duplicate work: a resource
+// detail page and the components inside it often request the same object.
+const swrConfig = {
+  revalidateOnFocus: true,
+  errorRetryCount: 2,
+  dedupingInterval: 2000,
+  // Only retry transient server-side failures; a 403/404 will not fix itself.
+  shouldRetryOnError: (error) => Boolean(error?.isServerError),
+};
+
 export default function App({
   Component,
   pageProps: { session, ...pageProps },
@@ -205,13 +215,15 @@ export default function App({
     <GlobalStateProvider>
       <SessionProvider
         session={session}
+        // NextAuth expresses this in SECONDS, not milliseconds: 150s = 2.5 min.
         refetchInterval={150}
         // Refetch session when window regains focus
         refetchOnWindowFocus={true}
       >
         {/* <KeycloakProvider> */}
         <BootstrapAuthGate>
-          <MantineProvider theme={theme}>
+          <SWRConfig value={swrConfig}>
+          <MantineProvider theme={theme} defaultColorScheme="auto">
             <AuthenticatedLayout>
               <Head>
                 <title>Gen3 - Admin</title>
@@ -227,6 +239,7 @@ export default function App({
               {/* <Component {...pageProps} /> */}
             </AuthenticatedLayout>
           </MantineProvider>
+          </SWRConfig>
         </BootstrapAuthGate>
         {/* </KeycloakProvider> */}
       </SessionProvider>

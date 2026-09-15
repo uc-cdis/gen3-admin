@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -37,6 +38,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport"
+
+	"github.com/uc-cdis/gen3-admin/internal/tlsconfig"
 )
 
 var (
@@ -65,6 +68,8 @@ type Agent struct {
 	statusUpdateInterval time.Duration
 	proxyCancelMu        sync.Mutex
 	proxyCancelFuncs     map[string]context.CancelFunc
+	// tunnels tracks open TCP port-forwards (see tunnel.go).
+	tunnels *tunnelRegistry
 }
 
 func (a *Agent) sendMessage(msg *pb.AgentMessage) error {
@@ -133,6 +138,7 @@ func NewAgent(name, version, serverAddress string, statusInterval time.Duration)
 		client:               client,
 		statusUpdateInterval: statusInterval,
 		proxyCancelFuncs:     make(map[string]context.CancelFunc),
+		tunnels:              newTunnelRegistry(),
 	}, nil
 }
 
@@ -228,64 +234,240 @@ func (a *Agent) sendStatusUpdates(ctx context.Context) {
 	}
 }
 
+// defaultProxyTimeout bounds a generic HTTP proxy request. Without it a hung
+// upstream would leak a goroutine and a stream registration for the lifetime of
+// the agent.
+const defaultProxyTimeout = 60 * time.Second
+
+// hopByHopHeaders are connection-scoped and must not be forwarded to the
+// upstream (RFC 7230 6.1).
+var hopByHopHeaders = map[string]bool{
+	"connection":          true,
+	"keep-alive":          true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+	"te":                  true,
+	"trailer":             true,
+	"transfer-encoding":   true,
+	"upgrade":             true,
+}
+
+// handleProxyRequest proxies a generic HTTP request to a cluster-internal
+// service. This is the path used to reach in-cluster APIs such as ArgoCD, as
+// opposed to handleK8sProxyRequest which talks to the Kubernetes API server.
 func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
-	log.Debug().Msgf("Handling proxy request: %v", req)
+	streamID := req.StreamId
+
+	log.Info().
+		Str("stream_id", streamID).
+		Str("method", req.Method).
+		Str("path", req.Path).
+		Int("body_len", len(req.Body)).
+		Msg("[http-proxy] Received proxy request")
+
 	if req.Method == "CANCEL" {
-		log.Info().Msgf("Received cancellation for stream ID: %s", req.StreamId)
-		// Implement cancellation logic here
+		log.Info().
+			Str("stream_id", streamID).
+			Msg("[http-proxy] Received CANCEL - stopping in-flight request")
+
+		a.proxyCancelMu.Lock()
+		if cancelFn, exists := a.proxyCancelFuncs[streamID]; exists {
+			cancelFn()
+			delete(a.proxyCancelFuncs, streamID)
+		}
+		a.proxyCancelMu.Unlock()
 		return
 	}
 
-	// Create HTTP request
-	httpReq, err := http.NewRequest(req.Method, req.Path, nil)
+	// An out-of-cluster agent cannot resolve `<svc>.<ns>.svc`, so transparently
+	// route those through an on-demand port-forward (see svc_fallback.go). This is
+	// a no-op for an in-cluster agent, which is the production path.
+	rewritten := a.rewriteForLocalAgent(req.Path)
+
+	target, err := validateProxyTarget(rewritten)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create request")
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to create request: %v", err))
+		log.Warn().
+			Err(err).
+			Str("stream_id", streamID).
+			Str("path", req.Path).
+			Msg("[http-proxy] Rejected proxy target")
+		a.sendErrorResponseWithStatus(streamID, http.StatusForbidden, err)
 		return
 	}
 
-	// Set headers
+	timeout := defaultProxyTimeout
+	if raw, ok := req.Headers["X-Proxy-Timeout"]; ok {
+		if parsed, perr := time.ParseDuration(raw); perr == nil && parsed > 0 {
+			timeout = parsed
+		}
+	}
+
+	proxyCtx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	a.proxyCancelMu.Lock()
+	a.proxyCancelFuncs[streamID] = cancel
+	a.proxyCancelMu.Unlock()
+
+	defer func() {
+		cancel()
+		a.proxyCancelMu.Lock()
+		delete(a.proxyCancelFuncs, streamID)
+		a.proxyCancelMu.Unlock()
+		log.Debug().
+			Str("stream_id", streamID).
+			Msg("[http-proxy] Cleaned up request state")
+	}()
+
+	// Forward the body. Omitting it (as this handler previously did) silently
+	// broke every write: an ArgoCD POST /api/v1/session arrived with no
+	// credentials and was rejected.
+	var bodyReader io.Reader
+	if len(req.Body) > 0 {
+		bodyReader = bytes.NewReader(req.Body)
+	}
+
+	httpReq, err := http.NewRequestWithContext(proxyCtx, req.Method, target.String(), bodyReader)
+	if err != nil {
+		log.Error().Err(err).Str("stream_id", streamID).Msg("[http-proxy] Failed to create request")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to create request: %v", err))
+		return
+	}
+
 	for k, v := range req.Headers {
-		log.Warn().Str("key", k).Str("value", v).Msg("Setting request header")
+		lower := strings.ToLower(k)
+		if hopByHopHeaders[lower] {
+			continue
+		}
+		// The inbound Authorization header carries the caller's Keycloak token.
+		// Forwarding it would leak a cluster-admin credential to an arbitrary
+		// in-cluster service; upstream credentials are injected server-side.
+		if lower == "authorization" || lower == "cookie" {
+			continue
+		}
+		// Set by net/http from the actual body length.
+		if lower == "content-length" || lower == "host" {
+			continue
+		}
 		httpReq.Header.Set(k, v)
 	}
 
-	// Print headers
+	// Upstream credential, kept separate from the caller's own Authorization
+	// header so the two can never be confused.
+	if upstreamAuth, ok := req.Headers["X-Proxy-Authorization"]; ok {
+		httpReq.Header.Set("Authorization", upstreamAuth)
+		httpReq.Header.Del("X-Proxy-Authorization")
+	}
 
-	// Execute request
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			// In-cluster services (ArgoCD among them) serve certificates from
+			// the cluster CA under a name that often will not match the address
+			// dialled. Verify the chain, skip the name -- see tlsconfig.
+			TLSClientConfig: tlsconfig.IntraCluster(),
+		},
+	}
+
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		log.Error().Err(err).Msgf("Failed to execute request: %v", err)
-		a.sendErrorResponse(req.StreamId, fmt.Errorf("failed to execute request: %v", err))
+		log.Error().Err(err).Str("stream_id", streamID).Msg("[http-proxy] Failed to execute request")
+		a.sendErrorResponse(streamID, fmt.Errorf("failed to execute request: %v", err))
 		return
 	}
 	defer resp.Body.Close()
 
-	// Send headers
-	// a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, 0, httpReq.Header, nil)
+	log.Info().
+		Str("stream_id", streamID).
+		Int("status_code", resp.StatusCode).
+		Msg("[http-proxy] Received response from upstream")
 
-	// Send status code and headers
-	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
+	a.sendProxyResponse(streamID, pb.ProxyResponseType_HEADERS, int32(resp.StatusCode), resp.Header, nil)
 
-	// Send body in chunks
-	buffer := make([]byte, 4096)
+	buffer := make([]byte, 16*1024)
+	totalBytes := 0
 	for {
-		n, err := resp.Body.Read(buffer)
-		if n > 0 {
-			a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
+		select {
+		case <-proxyCtx.Done():
+			log.Warn().
+				Str("stream_id", streamID).
+				Msg("[http-proxy] Context cancelled while streaming response")
+			return
+		default:
 		}
-		if err == io.EOF {
+
+		n, readErr := resp.Body.Read(buffer)
+		if n > 0 {
+			totalBytes += n
+			a.sendProxyResponse(streamID, pb.ProxyResponseType_DATA, 0, nil, buffer[:n])
+		}
+		if readErr == io.EOF {
 			break
 		}
-		if err != nil {
-			log.Error().Err(err).Msg("Error reading response body")
+		if readErr != nil {
+			log.Error().Err(readErr).Str("stream_id", streamID).Msg("[http-proxy] Error reading response body")
 			break
 		}
 	}
 
-	// Send end of response
-	a.sendProxyResponse(req.StreamId, pb.ProxyResponseType_END, 0, nil, nil)
+	log.Info().
+		Str("stream_id", streamID).
+		Int("total_bytes", totalBytes).
+		Msg("[http-proxy] Request completed")
+
+	a.sendProxyResponse(streamID, pb.ProxyResponseType_END, 0, nil, nil)
+}
+
+// validateProxyTarget restricts the generic proxy to cluster-internal hosts.
+//
+// The target URL is caller-supplied, and the agent runs inside the cluster with
+// broad credentials, so an unrestricted proxy is an SSRF primitive reaching
+// internal services and cloud instance-metadata endpoints. Set
+// GEN3_PROXY_ALLOW_EXTERNAL=true to disable, or GEN3_PROXY_ALLOWLIST to add
+// comma-separated hosts.
+func validateProxyTarget(raw string) (*url.URL, error) {
+	target, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target URL: %w", err)
+	}
+	if target.Scheme != "http" && target.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported scheme %q", target.Scheme)
+	}
+	if target.Host == "" {
+		return nil, fmt.Errorf("target URL must include a host")
+	}
+
+	if os.Getenv("GEN3_PROXY_ALLOW_EXTERNAL") == "true" {
+		return target, nil
+	}
+
+	host := target.Hostname()
+
+	for _, extra := range strings.Split(os.Getenv("GEN3_PROXY_ALLOWLIST"), ",") {
+		if trimmed := strings.TrimSpace(extra); trimmed != "" && trimmed == host {
+			return target, nil
+		}
+	}
+
+	// Kubernetes service DNS, plus loopback for port-forwarded development.
+	if host == "localhost" ||
+		host == "127.0.0.1" ||
+		host == "::1" ||
+		strings.HasSuffix(host, ".svc") ||
+		strings.HasSuffix(host, ".svc.cluster.local") ||
+		strings.HasSuffix(host, ".cluster.local") {
+		return target, nil
+	}
+
+	// A bare single-label name resolves to a service in the agent's own
+	// namespace, e.g. "argocd-server".
+	if !strings.Contains(host, ".") {
+		return target, nil
+	}
+
+	return nil, fmt.Errorf(
+		"target host %q is not cluster-internal; set GEN3_PROXY_ALLOWLIST or GEN3_PROXY_ALLOW_EXTERNAL=true to permit it",
+		host,
+	)
 }
 
 func (a *Agent) sendProxyResponse(streamID string, status pb.ProxyResponseType, statusCode int32, headers http.Header, body []byte) error {
@@ -315,14 +497,21 @@ func (a *Agent) sendProxyResponse(streamID string, status pb.ProxyResponseType, 
 }
 
 func (a *Agent) sendErrorResponse(streamID string, err error) error {
+	return a.sendErrorResponseWithStatus(streamID, http.StatusInternalServerError, err)
+}
+
+// sendErrorResponseWithStatus reports a failure while preserving the HTTP status.
+// Collapsing everything to 500 hides the distinction callers need: a client that
+// refreshes its token on 401 never sees the 401.
+func (a *Agent) sendErrorResponseWithStatus(streamID string, statusCode int, err error) error {
 	resp := &pb.ProxyResponse{
 		StreamId:   streamID,
 		Status:     pb.ProxyResponseType_ERROR,
-		StatusCode: http.StatusInternalServerError,
+		StatusCode: int32(statusCode),
 		Headers:    map[string]string{"Content-Type": "text/plain"},
 		Body:       []byte(err.Error()),
 	}
-	log.Debug().Msgf("Sending error response: %v", resp)
+	log.Debug().Int("status_code", statusCode).Msg("Sending error response")
 	sendErr := a.sendMessage(&pb.AgentMessage{
 		Message: &pb.AgentMessage_Proxy{
 			Proxy: resp,
@@ -1362,6 +1551,19 @@ func (a *Agent) Run(ctx context.Context) error {
 		case *pb.ServerMessage_TerminalStream:
 			log.Info().Msgf("Received terminal request from server.")
 			go a.HandleTerminal(content.TerminalStream)
+		// TCP tunnel (see tunnel.go). Open runs in its own goroutine because it
+		// dials the API server; data and close are cheap map operations and must
+		// stay ordered relative to each other, so they run inline.
+		case *pb.ServerMessage_TunnelOpen:
+			go a.handleTunnelOpen(content.TunnelOpen)
+		case *pb.ServerMessage_TunnelData:
+			a.handleTunnelData(content.TunnelData)
+		case *pb.ServerMessage_TunnelClose:
+			a.handleTunnelClose(content.TunnelClose)
+		// SQL explorer (see sql.go). Runs on its own goroutine so a slow query
+		// cannot stall the receive loop.
+		case *pb.ServerMessage_SqlQueryRequest:
+			go a.handleSqlQuery(content.SqlQueryRequest)
 		default:
 			log.Warn().Msgf("Unknown message type: %T", content)
 		}

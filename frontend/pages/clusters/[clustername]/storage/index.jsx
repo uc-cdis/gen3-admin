@@ -1,7 +1,7 @@
 import { useParams } from 'next/navigation';
 
 import { SimpleGrid, Card, Text, Group, ThemeIcon, Badge } from '@mantine/core';
-import { IconDatabase, IconHardDrive, IconCloudUpload, IconServer } from '@tabler/icons-react';
+import { IconDatabase, IconServer2, IconCloudUpload, IconServer } from '@tabler/icons-react';
 
 import Link from 'next/link';
 
@@ -10,7 +10,7 @@ export default function Storage() {
     const activeCluster = useParams()?.clustername;
 
     const resources = [
-        { label: 'Persistent Volumes', description: 'Cluster-wide storage resources backed by physical storage', link: `/clusters/${activeCluster}/storage/persistentvolumes`, icon: IconHardDrive, color: 'blue' },
+        { label: 'Persistent Volumes', description: 'Cluster-wide storage resources backed by physical storage', link: `/clusters/${activeCluster}/storage/persistentvolumes`, icon: IconServer2, color: 'blue' },
         { label: 'Persistent Volume Claims', description: 'Requests for storage resources by a user or workload', link: `/clusters/${activeCluster}/storage/persistentvolumeclaims`, icon: IconCloudUpload, color: 'green' },
         { label: 'Storage Classes', description: 'Describe classes of storage offered by the cluster', link: `/clusters/${activeCluster}/storage/storageclasses`, icon: IconServer, color: 'orange' },
     ];

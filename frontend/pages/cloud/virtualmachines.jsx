@@ -183,7 +183,7 @@ function InstancesTable() {
                 >
                     {isOpen ? `Hide ${accessor}` : `Show ${accessor}`}
                 </Text>
-                <Collapse in={isOpen}>{content}</Collapse>
+                <Collapse expanded={isOpen}>{content}</Collapse>
             </Box>
         );
     };

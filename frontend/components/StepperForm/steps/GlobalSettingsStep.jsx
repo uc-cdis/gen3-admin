@@ -12,7 +12,7 @@ const GlobalSettingsStep = ({ form }) => {
 
   return (
     <Paper p="md" radius="md" withBorder>
-      <Stack spacing="lg">
+      <Stack gap="lg">
 
         {/* A. Environment Basics */}
         <div>

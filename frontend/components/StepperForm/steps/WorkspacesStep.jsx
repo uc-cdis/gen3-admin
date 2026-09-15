@@ -5,8 +5,8 @@ import { IconHelp, IconWorld, IconId, IconKey, IconLink, IconInfoCircle } from '
 const WorkspacesStep = ({ form }) => {
     return (
         <Paper p="md" radius="md" withBorder>
-            <Stack spacing="lg">
-                <Group position="apart">
+            <Stack gap="lg">
+                <Group justify="space-between">
                     <Text>Configure Workspaces</Text>
                     <Switch
                         label="Use Default Settings"
@@ -15,7 +15,7 @@ const WorkspacesStep = ({ form }) => {
                     />
                 </Group>
 
-                <Collapse in={!form.values.workspaces.useDefaults}>
+                <Collapse expanded={!form.values.workspaces.useDefaults}>
                     <Stack>
                         {(form.values.workspaces.flavors || []).map((flavor, idx) => (
                             <Group key={idx} grow>

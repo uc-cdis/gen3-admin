@@ -63,7 +63,7 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
 
   return (
     <Paper p="md" radius="md" withBorder>
-      <Stack spacing="lg">
+      <Stack gap="lg">
         {/* SSL Certificate section */}
         <Divider variant="dashed" label="SSL Certificate" labelPosition="center" />
 

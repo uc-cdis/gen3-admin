@@ -1,11 +1,169 @@
 import { useState } from 'react';
-import { Stack, Paper, TextInput, Text, Divider, Group, Card, Title, Switch, Button, NumberInput, Collapse, Accordion, Textarea, Select, PasswordInput } from '@mantine/core';
-import { IconArrowBackUp, IconPlus, IconTrash } from '@tabler/icons-react';
+import { Stack, Paper, TextInput, Text, Divider, Group, Card, Title, Switch, Button, NumberInput, Collapse, Accordion, Textarea, Select, PasswordInput, Alert, Code, useComputedColorScheme } from '@mantine/core';
+import { IconArrowBackUp, IconPlus, IconTrash, IconAlertCircle } from '@tabler/icons-react';
+import Editor from '@monaco-editor/react';
+import YAML from 'yaml';
 
 import { notifications } from '@mantine/notifications';
 
+// Starter etlMapping, matching the shape the upstream etl chart writes into the
+// `etl-mapping` ConfigMap (helm/etl/values.yaml -> .Values.etlMapping).
+const ETL_MAPPING_EXAMPLE = `mappings:
+  - name: ${'${environment}'}_case
+    doc_type: case
+    type: aggregator
+    root: case
+    props:
+      - name: submitter_id
+      - name: project_id
+`;
+
+// Prop blocks Tube understands. Anything else ending in `_props` is a typo that
+// would fail at ETL time, so we surface it here instead.
+const VALID_PROP_KEYS = new Set([
+  'props', 'flatten_props', 'parent_props', 'nested_props',
+  'joining_props', 'aggregated_props', 'injecting_props', 'special_props',
+]);
+
+// Non-prop keys a mapping may legitimately carry.
+const KNOWN_MAPPING_KEYS = new Set([
+  'name', 'doc_type', 'type', 'root', 'category', 'target_nodes', 'filter',
+]);
+
+/**
+ * Structural check for an etlMapping document.
+ *
+ * There is no published JSON Schema for this format upstream; these rules mirror
+ * what uc-cdis/tube's parsers require at runtime (name / doc_type / type / root)
+ * plus the prop-key whitelist that gen3utils enforces. Dictionary-aware checks
+ * (does this path resolve to a real backref?) need the commons' schema.json and
+ * are deliberately out of scope here.
+ *
+ * @returns {string|null} an error message, or null when the document looks valid.
+ */
+const validateEtlMapping = (parsed) => {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return 'Expected a mapping document with a top-level "mappings:" list.';
+  }
+  if (!Array.isArray(parsed.mappings)) {
+    return 'Expected a top-level "mappings:" list.';
+  }
+  if (parsed.mappings.length === 0) {
+    return '"mappings" is empty — add at least one index mapping.';
+  }
+
+  const seenNames = new Set();
+  for (let i = 0; i < parsed.mappings.length; i += 1) {
+    const m = parsed.mappings[i];
+    const where = `mappings[${i}]`;
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      return `${where} must be a mapping object.`;
+    }
+    for (const key of ['name', 'doc_type', 'type', 'root']) {
+      if (!m[key]) return `${where} is missing required key "${key}".`;
+    }
+    if (!['aggregator', 'collector'].includes(m.type)) {
+      return `${where}.type must be "aggregator" or "collector" (got "${m.type}").`;
+    }
+    if (seenNames.has(m.name)) {
+      return `Duplicate index name "${m.name}" — each mapping needs a unique "name".`;
+    }
+    seenNames.add(m.name);
+
+    if (m.type === 'collector' && !Array.isArray(m.props)) {
+      return `${where} is a collector, so it needs a "props" list.`;
+    }
+    // Catch near-misses like `flatten_propz` / `parent_prop` too, not just keys
+    // that happen to end in exactly "props".
+    const badKey = Object.keys(m).find(
+      (k) => !VALID_PROP_KEYS.has(k) && !KNOWN_MAPPING_KEYS.has(k) && /prop/i.test(k)
+    );
+    if (badKey) {
+      return `${where} has unknown property block "${badKey}".`;
+    }
+  }
+  return null;
+};
+
 const ConfigStep = ({ form }) => {
   const [lastDeletedContainer, setLastDeletedContainer] = useState(null);
+  const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
+  const editorTheme = colorScheme === 'dark' ? 'vs-dark' : 'light';
+
+  // Raw editor buffers. We keep the text the user is typing separate from parsed
+  // form state so a transient syntax error doesn't destroy their input.
+  const [etlMappingText, setEtlMappingText] = useState(() => {
+    const existing = form.values.values?.etlMapping;
+    return existing ? YAML.stringify(existing, null, 2) : '';
+  });
+  const [etlMappingError, setEtlMappingError] = useState(null);
+
+  const [guppyIndicesText, setGuppyIndicesText] = useState(() => {
+    const existing = form.values.values?.guppy?.indices;
+    return existing?.length ? YAML.stringify(existing, null, 2) : '';
+  });
+  const [guppyIndicesError, setGuppyIndicesError] = useState(null);
+
+  const handleEtlMappingChange = (text) => {
+    setEtlMappingText(text ?? '');
+    const trimmed = (text ?? '').trim();
+    if (!trimmed) {
+      setEtlMappingError(null);
+      form.setFieldValue('values.etlMapping', undefined);
+      return;
+    }
+    try {
+      const parsed = YAML.parse(trimmed);
+      const problem = validateEtlMapping(parsed);
+      if (problem) {
+        setEtlMappingError(problem);
+        return;
+      }
+      setEtlMappingError(null);
+      form.setFieldValue('values.etlMapping', parsed);
+    } catch (err) {
+      setEtlMappingError(err.message);
+    }
+  };
+
+  const handleGuppyIndicesChange = (text) => {
+    setGuppyIndicesText(text ?? '');
+    const trimmed = (text ?? '').trim();
+    if (!trimmed) {
+      setGuppyIndicesError(null);
+      form.setFieldValue('values.guppy.indices', undefined);
+      return;
+    }
+    try {
+      const parsed = YAML.parse(trimmed);
+      if (!Array.isArray(parsed)) {
+        setGuppyIndicesError('Expected a list of { index, type } entries.');
+        return;
+      }
+      const bad = parsed.find((e) => !e || typeof e !== 'object' || !e.index || !e.type);
+      if (bad) {
+        setGuppyIndicesError('Every entry needs both an "index" and a "type".');
+        return;
+      }
+      // Guppy resolves documents by matching index/type against what the ETL wrote.
+      // A mismatch here yields an empty data explorer at runtime, so warn early.
+      const mappings = form.values.values?.etlMapping?.mappings;
+      if (Array.isArray(mappings) && mappings.length) {
+        const known = new Set(mappings.map((m) => `${m?.name} ${m?.doc_type}`));
+        const mismatch = parsed.find((e) => !known.has(`${e.index} ${e.type}`));
+        if (mismatch) {
+          setGuppyIndicesError(
+            `"${mismatch.index}" / "${mismatch.type}" does not match any ETL mapping (expected an entry whose name is the index and doc_type is the type).`
+          );
+          return;
+        }
+      }
+      setGuppyIndicesError(null);
+      form.setFieldValue('values.guppy.indices', parsed);
+    } catch (err) {
+      setGuppyIndicesError(err.message);
+    }
+  };
 
   const addContainer = () => {
     const last = form.values.values.hatchery?.hatchery?.containers?.at(-1);
@@ -52,7 +210,7 @@ const ConfigStep = ({ form }) => {
   const v = form.values.values; // shorthand
 
   return (
-    <Stack spacing="lg">
+    <Stack gap="lg">
 
       {/* ── Hatchery / Workspace Configuration ── */}
       {(v?.hatchery?.enabled || v?.hatchery === true) && (
@@ -62,7 +220,7 @@ const ConfigStep = ({ form }) => {
               <Text fw={600}>Hatchery (Workspaces)</Text>
             </Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="lg">
+              <Stack gap="lg">
                 {/* Reaper Configuration */}
                 <Paper p="md" radius="md" withBorder>
                   <Text fw={500} mb="sm">Workspace Reaper</Text>
@@ -157,7 +315,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="portal">
             <Accordion.Control><Text fw={600}>Portal</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Textarea
                   label="Portal gitops.json"
                   description='Navigation, explorer, and feature flag configuration'
@@ -182,7 +340,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="revproxy">
             <Accordion.Control><Text fw={600}>Revproxy (Ingress)</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Switch
                   label="Custom Ingress"
                   checked={Boolean(v.revproxy?.ingress?.enabled)}
@@ -242,7 +400,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="aws-es-proxy">
             <Accordion.Control><Text fw={600}>AWS ES Proxy</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <TextInput label="Elasticsearch Endpoint" placeholder="test.us-east-1.es.amazonaws.com" {...form.getInputProps('values.aws-es-proxy.esEndpoint')} />
                 <Group grow>
                   <TextInput label="AWS Access Key ID" {...form.getInputProps('values.aws-es-proxy.secrets.awsAccessKeyId')} />
@@ -260,7 +418,7 @@ const ConfigStep = ({ form }) => {
           <Accordion.Item value="neuvector">
             <Accordion.Control><Text fw={600}>NeuVector Security</Text></Accordion.Control>
             <Accordion.Panel>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <Switch
                   label="Include Predefined Policies"
                   checked={Boolean(v.neuvector?.policies?.include)}
@@ -281,6 +439,101 @@ const ConfigStep = ({ form }) => {
                   <TextInput label="Controller Service" {...form.getInputProps('values.neuvector.ingress.controller')} />
                   <TextInput label="Namespace" {...form.getInputProps('values.neuvector.ingress.namespace')} />
                   <TextInput label="Class" {...form.getInputProps('values.neuvector.ingress.class')} />
+                </Group>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
+
+      {/* ── ETL Mapping ── */}
+      {v?.etl?.enabled && (
+        <Accordion variant="separated">
+          <Accordion.Item value="etl-mapping">
+            <Accordion.Control><Text fw={600}>ETL Mapping</Text></Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap="sm">
+                <Text size="sm" c="dimmed">
+                  Written to the <Code>etl-mapping</Code> ConfigMap as <Code>etlMapping.yaml</Code> and
+                  consumed by Tube. Leave empty to use the chart default.
+                </Text>
+                {etlMappingError && (
+                  <Alert color="red" icon={<IconAlertCircle size={16} />} title="Invalid ETL mapping">
+                    {etlMappingError}
+                  </Alert>
+                )}
+                <Editor
+                  className="border rounded-lg"
+                  value={etlMappingText}
+                  defaultLanguage="yaml"
+                  height="300px"
+                  theme={editorTheme}
+                  onChange={handleEtlMappingChange}
+                  options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 12 }}
+                />
+                <Group>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    onClick={() => handleEtlMappingChange(ETL_MAPPING_EXAMPLE)}
+                    disabled={Boolean(etlMappingText.trim())}
+                  >
+                    Insert example
+                  </Button>
+                </Group>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
+
+      {/* ── Guppy Configuration ── */}
+      {v?.guppy?.enabled && (
+        <Accordion variant="separated">
+          <Accordion.Item value="guppy-config">
+            <Accordion.Control><Text fw={600}>Guppy Configuration</Text></Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap="sm">
+                <Text size="sm" c="dimmed">
+                  Written to the <Code>manifest-guppy</Code> ConfigMap. Index names must match the
+                  ETL mapping above. Leave empty to use the chart defaults.
+                </Text>
+                <TextInput
+                  label="Config Index"
+                  description="Elasticsearch index holding the array-config document"
+                  placeholder="dev_array-config"
+                  {...form.getInputProps('values.guppy.configIndex')}
+                />
+                <TextInput
+                  label="Auth Filter Field"
+                  description="Field used for access control / authorization filters"
+                  placeholder="auth_resource_path"
+                  {...form.getInputProps('values.guppy.authFilterField')}
+                />
+                <Text size="sm" fw={500} mt="xs">Indices</Text>
+                {guppyIndicesError && (
+                  <Alert color="red" icon={<IconAlertCircle size={16} />} title="Invalid indices">
+                    {guppyIndicesError}
+                  </Alert>
+                )}
+                <Editor
+                  className="border rounded-lg"
+                  value={guppyIndicesText}
+                  defaultLanguage="yaml"
+                  height="200px"
+                  theme={editorTheme}
+                  onChange={handleGuppyIndicesChange}
+                  options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 12 }}
+                />
+                <Group>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    onClick={() => handleGuppyIndicesChange('- index: dev_case\n  type: case\n- index: dev_file\n  type: file\n')}
+                    disabled={Boolean(guppyIndicesText.trim())}
+                  >
+                    Insert example
+                  </Button>
                 </Group>
               </Stack>
             </Accordion.Panel>

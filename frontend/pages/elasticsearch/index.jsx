@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from '@mantine/form';
 import { IconRefresh, IconPencil, IconSend, IconCopy, IconCheck, IconHistory, IconTrendingUp, IconDatabase, IconChevronRight, IconExternalLink, IconMaximize, IconMinimize } from '@tabler/icons-react';
 import {
@@ -125,7 +125,10 @@ export default function Elasticsearch() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [proxyMode, setProxyMode] = useState("auto");
-  // "auto" | "k8s" | "agent"
+  // Cache of open tunnels keyed by cluster/namespace. Each POST to the tunnel
+  // endpoint binds a new listener, so reuse one per target rather than per request.
+  const tunnelIdRef = useRef({});
+  // "auto" | "k8s" | "agent" | "tunnel"
 
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
@@ -170,12 +173,26 @@ export default function Elasticsearch() {
       callGoApi(proxyPath, method, body, null, accessToken, "text");
 
     if (proxyMode === "auto") {
+      // Tier 1: the Kubernetes API Service proxy. Needs the API server to reach
+      // the pod network, which an isolating CNI may block.
       try {
         return await doCall(buildK8sProxyPath(esPath));
-      } catch (err) {
-        console.warn("K8s proxy failed — falling back to agent proxy", err);
-        return await doCall(buildAgentProxyPath(esPath));
+      } catch (k8sErr) {
+        console.warn("K8s proxy failed — falling back to agent proxy", k8sErr);
       }
+      // Tier 2: the agent dials the service directly. Fails when the agent runs
+      // outside the cluster, where `.svc` names do not resolve.
+      try {
+        return await doCall(buildAgentProxyPath(esPath));
+      } catch (agentErr) {
+        console.warn("Agent proxy failed — falling back to TCP tunnel", agentErr);
+      }
+      // Tier 3: port-forward through the agent (API server -> kubelet -> pod).
+      return await callViaTunnel(doCall, esPath);
+    }
+
+    if (proxyMode === "tunnel") {
+      return await callViaTunnel(doCall, esPath);
     }
 
     const proxyPath =
@@ -350,6 +367,53 @@ export default function Elasticsearch() {
     return `/agents/${cluster}/http?url=${encodeURIComponent(target)}`;
   };
 
+  /**
+   * Open (or reuse) a TCP tunnel and return an agent-proxy path pointed at its
+   * loopback port.
+   *
+   * The tunnel is cached per cluster/namespace: each call to the tunnel endpoint
+   * binds a new listener, so building one per request would leak ports.
+   */
+  const openTunnel = async () => {
+    const res = await callGoApi(
+      `/agents/${cluster}/tunnel`,
+      "POST",
+      { namespace, service: "gen3-elasticsearch-master", port: 9200 },
+      null,
+      accessToken
+    );
+    const id = typeof res === "string" ? JSON.parse(res).id : res.id;
+    tunnelIdRef.current[`${cluster}/${namespace}`] = id;
+    return id;
+  };
+
+  const buildTunnelPath = async (url) => {
+    const key = `${cluster}/${namespace}`;
+    const tunnelId = tunnelIdRef.current[key] || (await openTunnel());
+    // The listener lives on the CSOC server, so this is served there rather than
+    // through the agent HTTP proxy.
+    return `/agents/${cluster}/tunnel/${tunnelId}/http?path=${encodeURIComponent(url)}`;
+  };
+
+  /**
+   * Call through the tunnel, re-opening once if the cached tunnel is gone.
+   *
+   * Tunnel listeners live in the CSOC server's memory, so they disappear on a
+   * backend restart (and are reaped when idle) while this ref still holds the old
+   * id. Rather than surfacing a confusing "tunnel not found", drop the cache and
+   * open a fresh one.
+   */
+  const callViaTunnel = async (doCall, esPath) => {
+    try {
+      return await doCall(await buildTunnelPath(esPath));
+    } catch (err) {
+      const stale = String(err?.message || "").includes("tunnel not found");
+      if (!stale) throw err;
+      delete tunnelIdRef.current[`${cluster}/${namespace}`];
+      return await doCall(await buildTunnelPath(esPath));
+    }
+  };
+
   const parseResponseForLinks = (responseData) => {
     try {
       const parsed = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
@@ -377,15 +441,15 @@ export default function Elasticsearch() {
 
   return (
     <div>
-      <Group position="apart" mb="xl">
+      <Group justify="space-between" mb="xl">
         <div>
-          <Group spacing="xs" mb={4}>
-            <Text size="xl" weight={700}>Elasticsearch Dashboard</Text>
+          <Group gap="xs" mb={4}>
+            <Text size="xl" fw={700}>Elasticsearch Dashboard</Text>
             <Badge size="lg" variant="dot" color={clusterHealth ? getStatusColor(clusterHealth.status) : 'gray'}>
               {clusterHealth?.status || 'Unknown'}
             </Badge>
           </Group>
-          <Group spacing={8}>
+          <Group gap={8}>
             <Text size="sm" c="dimmed">{cluster}</Text>
             <IconChevronRight size={14} color="gray" />
             <Text size="sm" c="dimmed">{namespace}</Text>
@@ -408,12 +472,12 @@ export default function Elasticsearch() {
       {clusterHealth && (
         <SimpleGrid cols={4} mb="xl" breakpoints={[{ maxWidth: 'md', cols: 2 }]}>
           <Card withBorder padding="lg">
-            <Group position="apart">
+            <Group justify="space-between">
               <div>
-                <Text size="xs" color="dimmed" weight={500} transform="uppercase">
+                <Text size="xs" c="dimmed" fw={500} transform="uppercase">
                   Cluster Status
                 </Text>
-                <Text size="xl" weight={700} mt={4}>
+                <Text size="xl" fw={700} mt={4}>
                   {clusterHealth.status}
                 </Text>
               </div>
@@ -431,15 +495,15 @@ export default function Elasticsearch() {
           </Card>
 
           <Card withBorder padding="lg">
-            <Group position="apart">
+            <Group justify="space-between">
               <div>
-                <Text size="xs" color="dimmed" weight={500} transform="uppercase">
+                <Text size="xs" c="dimmed" fw={500} transform="uppercase">
                   Nodes
                 </Text>
-                <Text size="xl" weight={700} mt={4}>
+                <Text size="xl" fw={700} mt={4}>
                   {clusterHealth.number_of_nodes}
                 </Text>
-                <Text size="xs" color="dimmed" mt={2}>
+                <Text size="xs" c="dimmed" mt={2}>
                   {clusterHealth.number_of_data_nodes} data nodes
                 </Text>
               </div>
@@ -450,15 +514,15 @@ export default function Elasticsearch() {
           </Card>
 
           <Card withBorder padding="lg">
-            <Group position="apart">
+            <Group justify="space-between">
               <div>
-                <Text size="xs" color="dimmed" weight={500} transform="uppercase">
+                <Text size="xs" c="dimmed" fw={500} transform="uppercase">
                   Active Shards
                 </Text>
-                <Text size="xl" weight={700} mt={4}>
+                <Text size="xl" fw={700} mt={4}>
                   {clusterHealth.active_shards}
                 </Text>
-                <Text size="xs" color="dimmed" mt={2}>
+                <Text size="xs" c="dimmed" mt={2}>
                   {clusterHealth.active_primary_shards} primary
                 </Text>
               </div>
@@ -474,20 +538,20 @@ export default function Elasticsearch() {
             style={{ cursor: clusterHealth.unassigned_shards > 0 ? 'pointer' : 'default' }}
             onClick={clusterHealth.unassigned_shards > 0 ? handleViewUnassignedShards : undefined}
           >
-            <Group position="apart">
+            <Group justify="space-between">
               <div>
-                <Text size="xs" color="dimmed" weight={500} transform="uppercase">
+                <Text size="xs" c="dimmed" fw={500} transform="uppercase">
                   Unassigned
                 </Text>
-                <Text size="xl" weight={700} mt={4} color={clusterHealth.unassigned_shards > 0 ? 'orange' : 'green'}>
+                <Text size="xl" fw={700} mt={4} c={clusterHealth.unassigned_shards > 0 ? 'orange' : 'green'}>
                   {clusterHealth.unassigned_shards}
                 </Text>
-                <Text size="xs" color="dimmed" mt={2}>
+                <Text size="xs" c="dimmed" mt={2}>
                   {clusterHealth.unassigned_shards > 0 ? 'Click to view' : 'shards'}
                 </Text>
               </div>
               <ThemeIcon size={50} radius="md" variant="light" color={clusterHealth.unassigned_shards > 0 ? 'orange' : 'green'}>
-                <Text size="xl" weight={700}>{clusterHealth.unassigned_shards}</Text>
+                <Text size="xl" fw={700}>{clusterHealth.unassigned_shards}</Text>
               </ThemeIcon>
             </Group>
           </Card>
@@ -498,12 +562,12 @@ export default function Elasticsearch() {
       {/* Main Interface */}
       <Paper p="md" radius="md" withBorder>
         <Container fluid>
-          <Grid gutter="xl">
+          <Grid gap="xl">
             <Grid.Col span={5}>
-              <Stack spacing="lg">
-                <Group position="apart">
-                  <Text weight={600} size="lg">Request Builder</Text>
-                  <Group spacing="xs">
+              <Stack gap="lg">
+                <Group justify="space-between">
+                  <Text fw={600} size="lg">Request Builder</Text>
+                  <Group gap="xs">
                     <Kbd size="xs">Ctrl</Kbd>
                     <Text size="xs" c="dimmed">+</Text>
                     <Kbd size="xs">Enter</Kbd>
@@ -515,17 +579,18 @@ export default function Elasticsearch() {
                     data={[
                       { value: "auto", label: "Auto (fallback)" },
                       { value: "k8s", label: "Kubernetes API Proxy" },
-                      { value: "agent", label: "Agent HTTP Proxy" }
+                      { value: "agent", label: "Agent HTTP Proxy" },
+                      { value: "tunnel", label: "Agent TCP Tunnel" }
                     ]}
                   />
                 </Group>
 
                 <form onSubmit={form.onSubmit(executeElasticsearchRequest)}>
-                  <Stack spacing="md">
+                  <Stack gap="md">
                     {/* Index Selector */}
-                    <Stack spacing="sm">
-                      <Group position="apart">
-                        <Text size="sm" weight={600}>Index Operations</Text>
+                    <Stack gap="sm">
+                      <Group justify="space-between">
+                        <Text size="sm" fw={600}>Index Operations</Text>
                         <ActionIcon
                           size="sm"
                           variant="light"
@@ -549,7 +614,7 @@ export default function Elasticsearch() {
                       />
 
                       {selectedIndex && (
-                        <Group spacing="xs">
+                        <Group gap="xs">
                           <Button
                             size="xs"
                             variant="default"
@@ -639,8 +704,8 @@ export default function Elasticsearch() {
 
                     {['POST', 'PUT', 'PATCH'].includes(form.values.method) && (
                       <>
-                        <Group position="apart">
-                          <Text size="sm" weight={500}>Request Body</Text>
+                        <Group justify="space-between">
+                          <Text size="sm" fw={500}>Request Body</Text>
                           <Button
                             size="xs"
                             variant="subtle"
@@ -676,13 +741,13 @@ export default function Elasticsearch() {
 
                 {/* Request History */}
                 <Paper p="md" withBorder mt="md">
-                  <Group position="apart" mb="xs">
-                    <Text size="sm" weight={600}>Recent Requests</Text>
+                  <Group justify="space-between" mb="xs">
+                    <Text size="sm" fw={600}>Recent Requests</Text>
                     <IconHistory size={18} />
                   </Group>
                   <ScrollArea h={250}>
                     {requestHistory.length === 0 ? (
-                      <Text size="sm" c="dimmed" align="center" py="xl">
+                      <Text size="sm" c="dimmed" ta="center" py="xl">
                         No request history yet
                       </Text>
                     ) : (
@@ -700,7 +765,7 @@ export default function Elasticsearch() {
                               </Badge>
                             }
                           >
-                            <Group position="apart">
+                            <Group justify="space-between">
                               <div style={{ flex: 1 }}>
                                 <Anchor
                                   size="sm"
@@ -709,7 +774,7 @@ export default function Elasticsearch() {
                                 >
                                   {item.url}
                                 </Anchor>
-                                <Group spacing={4} mt={2}>
+                                <Group gap={4} mt={2}>
                                   <Text size="xs" c="dimmed">{item.timestamp}</Text>
                                   {item.responseTime && (
                                     <>
@@ -744,10 +809,10 @@ export default function Elasticsearch() {
                   transition: 'all 0.3s ease-in-out',
                 }}
               >
-                <Stack spacing="md">
-                  <Group position="apart">
-                    <Text weight={600} size="lg">Response</Text>
-                    <Group spacing="xs">
+                <Stack gap="md">
+                  <Group justify="space-between">
+                    <Text fw={600} size="lg">Response</Text>
+                    <Group gap="xs">
                       {responseTime && (
                         <Badge color="gray" variant="light" size="lg">
                           ⚡ {responseTime}ms
@@ -791,7 +856,7 @@ export default function Elasticsearch() {
 
                   {loading && (
                     <Card withBorder p="xl">
-                      <Group position="center" direction="column" spacing="md">
+                      <Group justify="center" direction="column" gap="md">
                         <Loader size="lg" variant="dots" />
                         <Text size="sm" c="dimmed">Executing request...</Text>
                       </Group>
@@ -844,18 +909,18 @@ export default function Elasticsearch() {
                       {links.length > 0 && (
                         <Tabs.Panel value="links" pt="md">
                           <Paper withBorder p="md">
-                            <Text size="sm" weight={500} mb="md">
+                            <Text size="sm" fw={500} mb="md">
                               Detected Resources
                             </Text>
-                            <Stack spacing="xs">
+                            <Stack gap="xs">
                               {links.map((link, idx) => (
                                 <Card key={idx} withBorder p="xs">
-                                  <Group position="apart">
-                                    <Group spacing="xs">
+                                  <Group justify="space-between">
+                                    <Group gap="xs">
                                       <Badge size="sm">{link.type}</Badge>
                                       <Code>{link.value}</Code>
                                     </Group>
-                                    <Group spacing="xs">
+                                    <Group gap="xs">
                                       <Button
                                         size="xs"
                                         variant="subtle"
@@ -909,10 +974,10 @@ export default function Elasticsearch() {
                         <ThemeIcon size={80} radius="xl" variant="light">
                           <IconSend size={40} />
                         </ThemeIcon>
-                        <Text size="lg" weight={500} align="center">
+                        <Text size="lg" fw={500} ta="center">
                           Ready to execute
                         </Text>
-                        <Text size="sm" c="dimmed" align="center" maw={400}>
+                        <Text size="sm" c="dimmed" ta="center" maw={400}>
                           Configure your request on the left and click "Execute Request" to see the response here
                         </Text>
                       </Stack>
@@ -932,12 +997,12 @@ export default function Elasticsearch() {
         title="Request Body Templates"
         size="lg"
       >
-        <Stack spacing="md">
+        <Stack gap="md">
           {Object.entries(requestTemplates).map(([key, template]) => (
             <Card key={key} withBorder p="md" style={{ cursor: 'pointer' }} onClick={() => applyTemplate(template)}>
-              <Group position="apart">
+              <Group justify="space-between">
                 <div>
-                  <Text weight={500}>{template.name}</Text>
+                  <Text fw={500}>{template.name}</Text>
                   <Code block mt="xs" style={{ fontSize: 11 }}>
                     {template.body.split('\n').slice(0, 3).join('\n')}...
                   </Code>

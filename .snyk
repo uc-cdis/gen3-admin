@@ -1,0 +1,7 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.1
+# All previously-ignored Snyk Code findings are now fixed in code rather than
+# suppressed, so there is nothing to ignore here. Kept as a placeholder so the
+# policy file stays under version control.
+ignore: {}
+patch: {}

@@ -188,7 +188,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
           {log.user_id || '/'}
         </Text>
 
-        <Text size="xs" color="dimmed" style={{ minWidth: '45px', textAlign: 'right' }}>
+        <Text size="xs" c="dimmed" style={{ minWidth: '45px', textAlign: 'right' }}>
           {log.http_verb || 'GET'}
         </Text>
 
@@ -205,7 +205,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
         </Text>
       </Flex>
 
-      <Collapse in={expanded}>
+      <Collapse expanded={expanded}>
         <Box mt="xs" pl={38}>
           <Divider my="xs" />
           <Text size="xs"><b>Time:</b> {new Date(log.timestamp).toLocaleString()}</Text>
@@ -229,7 +229,7 @@ const LogEntry = ({ log, expanded, toggleExpand }) => {
                   .filter(item => item.timestamp !== log.timestamp)
                   .sort((a, b) => b.timestamp - a.timestamp)
                   .map((item, idx) => (
-                    <Text key={idx} size="xs" mb={2} color="dimmed">
+                    <Text key={idx} size="xs" mb={2} c="dimmed">
                       {new Date(item.timestamp).toLocaleTimeString()} - {item.http_verb} {item.http_request}
                       ({item.response_secs !== null ? `${(item.response_secs * 1000).toFixed(0)}ms` : 'N/A'})
                     </Text>
@@ -287,11 +287,11 @@ const LogList = ({ logs, filter }) => {
   }, [groupedLogs, filter]);
 
   if (filteredLogs.length === 0 && groupedLogs.length > 0) {
-    return <Text align="center" mt="xl" color="dimmed">No logs match your filter.</Text>;
+    return <Text ta="center" mt="xl" c="dimmed">No logs match your filter.</Text>;
   }
 
   if (filteredLogs.length === 0) {
-    return <Text align="center" mt="xl" color="dimmed">No logs found for the selected time range.</Text>;
+    return <Text ta="center" mt="xl" c="dimmed">No logs found for the selected time range.</Text>;
   }
 
   return (
@@ -346,7 +346,7 @@ const TimeNavigation = ({ onChange, value, setStartDate, setEndDate, currentStar
   };
 
   return (
-    <Group spacing="xs">
+    <Group gap="xs">
       <Menu shadow="md" width={220} position="bottom-end" closeOnItemClick={false}>
         <Menu.Target>
           <Button
@@ -444,8 +444,8 @@ const LogSummary = ({ logs }) => {
   return (
     <Flex gap="md" mb="md" wrap="wrap">
       <Card withBorder p="xs" shadow="xs">
-        <Text size="xs" color="dimmed">Total Requests</Text>
-        <Text size="lg" weight={700}>{totalRequests}</Text>
+        <Text size="xs" c="dimmed">Total Requests</Text>
+        <Text size="lg" fw={700}>{totalRequests}</Text>
       </Card>
 
       {[2, 3, 4, 5, 'na', 'other'].map(statusKey => {
@@ -467,15 +467,15 @@ const LogSummary = ({ logs }) => {
             shadow="xs"
             style={{ borderLeft: `3px solid var(--mantine-color-${color}-6)` }}
           >
-            <Text size="xs" color="dimmed">{label}</Text>
-            <Text size="lg" weight={700}>{count}</Text>
+            <Text size="xs" c="dimmed">{label}</Text>
+            <Text size="lg" fw={700}>{count}</Text>
           </Card>
         );
       })}
 
       <Card withBorder p="xs" shadow="xs">
-        <Text size="xs" color="dimmed">Avg Response</Text>
-        <Text size="lg" weight={700} color={getResponseTimeColor(avgResponseTime)}>
+        <Text size="xs" c="dimmed">Avg Response</Text>
+        <Text size="lg" fw={700} c={getResponseTimeColor(avgResponseTime)}>
           {validResponseCount > 0 ? `${(avgResponseTime * 1000).toFixed(1)}ms` : 'N/A'}
         </Text>
       </Card>
@@ -674,11 +674,11 @@ const LogViewer = ({
             />
           )}
           {!showHostnameSelector && selectedHostname && (
-            <Text size="lg" weight={500}>Logs for: {selectedHostname}</Text>
+            <Text size="lg" fw={500}>Logs for: {selectedHostname}</Text>
           )}
         </Group>
 
-        <Group spacing="sm">
+        <Group gap="sm">
           <TimeNavigation
             value={timeRange}
             onChange={handleTimeRangeChange}
@@ -751,7 +751,7 @@ const LogViewer = ({
             <LogList logs={logs} filter={filterValue} />
           ) : (
             !loading && logs.length === 0 && !error && (
-              <Text align="center" mt="xl" color="dimmed">
+              <Text ta="center" mt="xl" c="dimmed">
                 No logs found for the selected hostname and time range.
               </Text>
             )
@@ -759,14 +759,14 @@ const LogViewer = ({
         </>
       ) : (
         !loadingHostnames && (!showHostnameSelector || hostnames.length > 0) && (
-          <Text align="center" mt="xl" color="dimmed">
+          <Text ta="center" mt="xl" c="dimmed">
             {showHostnameSelector ? 'Please select a hostname to view logs.' : 'No hostname provided.'}
           </Text>
         )
       )}
 
       {!loadingHostnames && showHostnameSelector && hostnames.length === 0 && !error && (
-        <Text align="center" mt="xl" color="dimmed">
+        <Text ta="center" mt="xl" c="dimmed">
           No hostnames available or failed to load hostnames.
         </Text>
       )}

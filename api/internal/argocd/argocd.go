@@ -108,29 +108,29 @@ func extractApplicationInfo(item *unstructured.Unstructured) (ArgoCDApplication,
 	}
 
 	app.Project, _, _ = unstructured.NestedString(spec, "project")
-	app.RepoURL, _, _ = unstructured.NestedString(spec, "source", "repoURL")
 
-	sources, found, err := unstructured.NestedSlice(spec, "sources")
-	var firstSource map[string]interface{}
-
-	if err != nil || !found || len(sources) == 0 {
-		log.Warn().Interface("sources", sources).Msg("Sources not found or empty")
-		// Default to an empty map if needed, or return if this is critical
-		firstSource = map[string]interface{}{}
-	} else {
-		firstSourceRaw := sources[0]
-		var ok bool
-		firstSource, ok = firstSourceRaw.(map[string]interface{})
-		if !ok {
-			log.Warn().Interface("firstSourceRaw", firstSourceRaw).Msg("First source is not a map")
-			firstSource = map[string]interface{}{}
+	// An Application uses either `spec.source` (single) or `spec.sources`
+	// (multi), never both. Previously repoURL was read from `source` while
+	// targetRevision/chart/path came from `sources[0]`, so a single-source app --
+	// the common case -- lost all three and logged a spurious warning.
+	primarySource := map[string]interface{}{}
+	if single, found, _ := unstructured.NestedMap(spec, "source"); found {
+		primarySource = single
+	} else if sources, found, _ := unstructured.NestedSlice(spec, "sources"); found && len(sources) > 0 {
+		if asMap, ok := sources[0].(map[string]interface{}); ok {
+			primarySource = asMap
+		} else {
+			log.Warn().Interface("source", sources[0]).Msg("First ArgoCD source is not a map")
 		}
 	}
 
-	app.TargetRevision, _, _ = unstructured.NestedString(firstSource, "targetRevision")
-	app.Chart, found, _ = unstructured.NestedString(firstSource, "chart")
-	if !found {
-		app.Chart, _, _ = unstructured.NestedString(firstSource, "path")
+	app.RepoURL, _, _ = unstructured.NestedString(primarySource, "repoURL")
+	app.TargetRevision, _, _ = unstructured.NestedString(primarySource, "targetRevision")
+
+	var chartFound bool
+	app.Chart, chartFound, _ = unstructured.NestedString(primarySource, "chart")
+	if !chartFound {
+		app.Chart, _, _ = unstructured.NestedString(primarySource, "path")
 	}
 
 	status, found, err := unstructured.NestedMap(item.Object, "status")
