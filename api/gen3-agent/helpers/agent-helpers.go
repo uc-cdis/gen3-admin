@@ -361,9 +361,10 @@ func (a *Agent) handleProxyRequest(req *pb.ProxyRequest) {
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			// In-cluster services (ArgoCD among them) serve certificates from
-			// the cluster CA under a name that often will not match the address
-			// dialled. Verify the chain, skip the name -- see tlsconfig.
+			// In-cluster targets (ArgoCD among them) self-sign and are reached
+			// by Service DNS, so out of the box neither the chain nor the name
+			// is verifiable. Permissive by default; see tlsconfig for what this
+			// accepts and how a deployment can tighten it.
 			TLSClientConfig: tlsconfig.IntraCluster(),
 		},
 	}

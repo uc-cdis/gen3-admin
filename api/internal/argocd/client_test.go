@@ -274,47 +274,96 @@ func TestApplicationOwnershipHelpers(t *testing.T) {
 	}
 }
 
-func TestServiceBaseURLPrefersHTTPS(t *testing.T) {
-	// A default ArgoCD install (server.insecure=false) exposes both ports
-	// against the same container port, but plaintext only answers 307 to the
-	// https URL -- it does not serve the API. Picking http breaks authenticated
-	// calls, because Go drops the body and Authorization header when it follows
-	// the cross-scheme redirect.
+func TestServiceBaseURLPicksPortByServerMode(t *testing.T) {
+	// Both real clusters expose the same two ports against the same plaintext
+	// container port; only the server's own mode says which one works.
 	both := []byte(`{"spec":{"ports":[{"name":"https","port":443},{"name":"http","port":80}]}}`)
-	if got := serviceBaseURL(both, "argocd"); got != "https://argocd-server.argocd.svc" {
-		t.Errorf("got %q, want the https URL", got)
+
+	// TLS mode (csoc): port 80 only answers 307, so https is required.
+	if got := serviceBaseURL(both, "argocd", false); got != "https://argocd-server.argocd.svc" {
+		t.Errorf("secure mode: got %q, want the https URL", got)
 	}
 
-	// Order in the Service definition must not matter.
+	// --insecure (devplanetv2): 443 resets because nothing terminates TLS.
+	if got := serviceBaseURL(both, "argocd", true); got != "http://argocd-server.argocd.svc" {
+		t.Errorf("insecure mode: got %q, want the http URL", got)
+	}
+
+	// Port order in the Service must not matter either way.
 	reversed := []byte(`{"spec":{"ports":[{"name":"http","port":80},{"name":"https","port":443}]}}`)
-	if got := serviceBaseURL(reversed, "argocd"); got != "https://argocd-server.argocd.svc" {
-		t.Errorf("got %q, want the https URL regardless of port order", got)
+	if got := serviceBaseURL(reversed, "argocd", false); got != "https://argocd-server.argocd.svc" {
+		t.Errorf("secure mode, reversed: got %q, want https", got)
 	}
+	if got := serviceBaseURL(reversed, "argocd", true); got != "http://argocd-server.argocd.svc" {
+		t.Errorf("insecure mode, reversed: got %q, want http", got)
+	}
+}
 
+func TestServiceBaseURLFallsBackWhenPreferredPortAbsent(t *testing.T) {
+	// An insecure-mode server on a Service exposing only https still has to
+	// produce something rather than an empty string.
 	httpsOnly := []byte(`{"spec":{"ports":[{"name":"https","port":443}]}}`)
-	if got := serviceBaseURL(httpsOnly, "argocd"); got != "https://argocd-server.argocd.svc" {
-		t.Errorf("got %q, want the https URL", got)
+	if got := serviceBaseURL(httpsOnly, "argocd", true); got != "https://argocd-server.argocd.svc" {
+		t.Errorf("got %q, want the https URL as the only option", got)
 	}
 
-	// An insecure-mode install exposes http alone; that is the one case where
-	// plaintext is correct.
 	httpOnly := []byte(`{"spec":{"ports":[{"name":"http","port":80}]}}`)
-	if got := serviceBaseURL(httpOnly, "argocd"); got != "http://argocd-server.argocd.svc" {
-		t.Errorf("got %q, want the http URL for an http-only service", got)
+	if got := serviceBaseURL(httpOnly, "argocd", false); got != "http://argocd-server.argocd.svc" {
+		t.Errorf("got %q, want the http URL as the only option", got)
 	}
+}
 
+func TestServiceBaseURLNonStandardPorts(t *testing.T) {
 	nonStandardHTTPS := []byte(`{"spec":{"ports":[{"name":"https","port":8443}]}}`)
-	if got := serviceBaseURL(nonStandardHTTPS, "argocd"); got != "https://argocd-server.argocd.svc:8443" {
+	if got := serviceBaseURL(nonStandardHTTPS, "argocd", false); got != "https://argocd-server.argocd.svc:8443" {
 		t.Errorf("got %q, want an explicit port", got)
 	}
 
 	nonStandardHTTP := []byte(`{"spec":{"ports":[{"name":"http","port":8080}]}}`)
-	if got := serviceBaseURL(nonStandardHTTP, "argocd"); got != "http://argocd-server.argocd.svc:8080" {
+	if got := serviceBaseURL(nonStandardHTTP, "argocd", true); got != "http://argocd-server.argocd.svc:8080" {
 		t.Errorf("got %q, want an explicit port", got)
 	}
 
-	if got := serviceBaseURL([]byte(`{"spec":{"ports":[]}}`), "argocd"); got != "" {
+	if got := serviceBaseURL([]byte(`{"spec":{"ports":[]}}`), "argocd", false); got != "" {
 		t.Errorf("got %q, want empty for a service with no ports", got)
+	}
+}
+
+func TestServerRunsInsecureReadsDeploymentArgs(t *testing.T) {
+	// devplanetv2's shape: --insecure in args.
+	insecureDep := `{"spec":{"template":{"spec":{"containers":[
+		{"name":"argocd-server","command":["/usr/local/bin/argocd-server","--port=8080","--insecure"]}]}}}}`
+	if !serverRunsInsecure(context.Background(), "argocd", stubReader{body: insecureDep}) {
+		t.Error("did not detect --insecure in the server command")
+	}
+
+	// csoc's shape: no --insecure.
+	secureDep := `{"spec":{"template":{"spec":{"containers":[
+		{"name":"argocd-server","command":["/usr/local/bin/argocd-server","--port=8080"]}]}}}}`
+	if serverRunsInsecure(context.Background(), "argocd", stubReader{body: secureDep}) {
+		t.Error("reported insecure for a server started without the flag")
+	}
+
+	// Flag in args rather than command.
+	argsForm := `{"spec":{"template":{"spec":{"containers":[
+		{"name":"server","args":["--insecure=true"]}]}}}}`
+	if !serverRunsInsecure(context.Background(), "argocd", stubReader{body: argsForm}) {
+		t.Error("did not detect --insecure=true in args")
+	}
+
+	// A flag on some other container must not count.
+	otherContainer := `{"spec":{"template":{"spec":{"containers":[
+		{"name":"sidecar","args":["--insecure"]}]}}}}`
+	if serverRunsInsecure(context.Background(), "argocd", stubReader{body: otherContainer}) {
+		t.Error("counted --insecure from a non-server container")
+	}
+
+	// Unreachable or unparseable: assume TLS, the upstream default.
+	if serverRunsInsecure(context.Background(), "argocd", stubReader{err: true}) {
+		t.Error("should not report insecure when the Deployment cannot be read")
+	}
+	if serverRunsInsecure(context.Background(), "argocd", nil) {
+		t.Error("should not report insecure with no reader")
 	}
 }
 
@@ -326,3 +375,22 @@ func TestEnvSuffixNormalisesAgentNames(t *testing.T) {
 		t.Errorf("envSuffix = %q, want PROD_EKS_1", got)
 	}
 }
+
+// stubReader is a KubeReader returning a fixed body, or an error.
+type stubReader struct {
+	body string
+	err  bool
+}
+
+func (s stubReader) Get(context.Context, string) ([]byte, error) {
+	if s.err {
+		return nil, errStub
+	}
+	return []byte(s.body), nil
+}
+
+type stubErr string
+
+func (e stubErr) Error() string { return string(e) }
+
+const errStub = stubErr("kube unavailable")
