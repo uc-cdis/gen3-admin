@@ -110,7 +110,27 @@ export default async function handler(req, res) {
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
       issuer: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
       httpOptions: { timeout: 15000 },
-      authorization: { params: { scope: "openid profile email roles" } },
+      authorization: {
+        params: {
+          scope: "openid profile email roles",
+          // Force an interactive account chooser on every sign-in.
+          //
+          // Without this, clicking "Sign in with Keycloak" silently reuses
+          // whatever SSO session already exists, so signing out of the app
+          // does not let you pick a different account -- the previous identity
+          // comes straight back.
+          //
+          // Two hops have to be told, because each keeps its own session:
+          //   prompt=login          Keycloak re-authenticates rather than
+          //                         reusing its SSO cookie.
+          //   kc_idp_hint omitted   Keycloak shows its own login page, from
+          //                         which Google is chosen explicitly.
+          // The upstream Google prompt is configured on the Keycloak identity
+          // provider itself (Advanced -> "Prompt" = select_account); Keycloak
+          // does not forward this parameter for us.
+          prompt: "login",
+        },
+      },
       profile(profile) {
         return {
           id: profile.sub,
@@ -232,11 +252,42 @@ export default async function handler(req, res) {
     },
 
     events: {
-      async signOut() {
+      async signOut({ token }) {
         pendingCookies = [
           serialize(ACCESS_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: -1 }),
           serialize(REFRESH_TOKEN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: -1 }),
         ];
+
+        // Clearing our own cookies is not a sign-out as far as Keycloak is
+        // concerned: its SSO session lives in a cookie on the Keycloak domain
+        // and outlives ours. Leaving it behind is what made a "logged out"
+        // user get signed straight back in as the same identity.
+        //
+        // Best-effort: a failure here must not block the local sign-out, which
+        // has already happened by this point.
+        const issuer = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER;
+        if (!issuer || !token?.refreshToken) return;
+
+        try {
+          const body = new URLSearchParams({
+            client_id: process.env.NEXT_KEYCLOAK_CLIENT_ID ?? "",
+            client_secret: process.env.KEYCLOAK_CLIENT_SECRET ?? "",
+            refresh_token: token.refreshToken,
+          });
+          const res = await fetch(
+            `${issuer.replace(/\/+$/, "")}/protocol/openid-connect/logout`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body,
+            }
+          );
+          if (!res.ok) {
+            console.warn(`[auth] Keycloak logout returned ${res.status}`);
+          }
+        } catch (error) {
+          console.warn("[auth] Keycloak logout failed:", error?.message || error);
+        }
       },
     },
 
