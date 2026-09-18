@@ -8,6 +8,7 @@ import {
   namespaceColumn,
   numberColumn,
   readyColumn,
+  scaleColumn,
 } from '@/lib/workloadColumns';
 
 export default function Deployments() {
@@ -32,6 +33,7 @@ export default function Deployments() {
           numberColumn('Up-to-date', (r) => r.status?.updatedReplicas),
           numberColumn('Available', (r) => r.status?.availableReplicas),
           ageColumn(),
+          scaleColumn('Deployment', clusterName, (r) => r.spec?.replicas),
         ]}
       />
     </>

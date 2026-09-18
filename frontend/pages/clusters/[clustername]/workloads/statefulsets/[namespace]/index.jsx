@@ -7,6 +7,7 @@ import {
   nameColumn,
   numberColumn,
   readyColumn,
+  scaleColumn,
 } from '@/lib/workloadColumns';
 
 export default function NamespacedStatefulSets() {
@@ -27,6 +28,7 @@ export default function NamespacedStatefulSets() {
           ),
           numberColumn('Desired', (r) => r.spec?.replicas),
           ageColumn(),
+          scaleColumn('StatefulSet', clusterName, (r) => r.spec?.replicas),
         ]}
       />
     </>

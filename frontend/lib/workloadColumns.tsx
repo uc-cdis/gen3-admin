@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Anchor, Text } from '@mantine/core';
 
 import { ReplicaBadge, StatusBadge } from '@/components/ui';
+import ScaleControl from '@/components/ScaleControl';
 import { formatAge } from '@/lib/resourceHighlights';
 
 /**
@@ -204,4 +205,27 @@ export function formatDuration(startTime?: string, completionTime?: string): str
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+/**
+ * Row action for setting the replica count.
+ *
+ * Right-aligned and label-less in the header: it is a control, not data, and
+ * a "Scale" column heading over a column of buttons reads like a value.
+ */
+export function scaleColumn(kind: string, clusterName: string | undefined, desiredOf: (r: any) => number | undefined) {
+  return {
+    key: 'metadata.name',
+    label: ' ',
+    render: ({ original }: Row) => (
+      <ScaleControl
+        compact
+        kind={kind}
+        namespace={original.metadata?.namespace}
+        name={original.metadata?.name}
+        cluster={clusterName}
+        current={desiredOf(original)}
+      />
+    ),
+  };
 }

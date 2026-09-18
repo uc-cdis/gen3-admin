@@ -7,6 +7,7 @@ import {
   nameColumn,
   numberColumn,
   readyColumn,
+  scaleColumn,
 } from '@/lib/workloadColumns';
 
 export default function NamespacedReplicaSets() {
@@ -27,6 +28,7 @@ export default function NamespacedReplicaSets() {
           ),
           numberColumn('Desired', (r) => r.spec?.replicas),
           ageColumn(),
+          scaleColumn('ReplicaSet', clusterName, (r) => r.spec?.replicas),
         ]}
       />
     </>

@@ -8,6 +8,7 @@ import {
   namespaceColumn,
   numberColumn,
   readyColumn,
+  scaleColumn,
 } from '@/lib/workloadColumns';
 
 export default function StatefulSets() {
@@ -28,6 +29,7 @@ export default function StatefulSets() {
           ),
           numberColumn('Desired', (r) => r.spec?.replicas),
           ageColumn(),
+          scaleColumn('StatefulSet', clusterName, (r) => r.spec?.replicas),
         ]}
       />
     </>

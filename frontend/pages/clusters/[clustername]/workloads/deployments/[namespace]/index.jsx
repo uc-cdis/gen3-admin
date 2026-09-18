@@ -7,6 +7,7 @@ import {
   nameColumn,
   numberColumn,
   readyColumn,
+  scaleColumn,
 } from '@/lib/workloadColumns';
 
 export default function NamespacedDeployments() {
@@ -28,6 +29,7 @@ export default function NamespacedDeployments() {
           numberColumn('Up-to-date', (r) => r.status?.updatedReplicas),
           numberColumn('Available', (r) => r.status?.availableReplicas),
           ageColumn(),
+          scaleColumn('Deployment', clusterName, (r) => r.spec?.replicas),
         ]}
       />
     </>
