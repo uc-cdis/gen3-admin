@@ -37,6 +37,7 @@ import {
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
 import { CONVERGING_MS, SETTLED_MS } from "@/lib/workloadPolling";
+import { rolloutColor, rolloutLabel, summarizeRollout } from "@/lib/rolloutState";
 import ScaleControl from "@/components/ScaleControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
 import dynamic from 'next/dynamic'
@@ -56,6 +57,8 @@ type Service = {
   images: string[];
   podReason?: string;       // e.g. "CrashLoopBackOff", "ContainerCreating"
   podMessage?: string;     // human-readable detail from the pod status
+  /** The workload's own pods, for live rollout state. Already fetched. */
+  pods: any[];
 };
 
 function formatAge(timestamp: string | undefined) {
@@ -123,14 +126,6 @@ function reasonSeverity(reason?: string): "transitional" | "warning" | "error" {
   return "error";
 }
 
-function statusColor(health: ReturnType<typeof computeStatus>, podReason?: string): string {
-  if (health.status === "healthy") return "teal";
-  if (health.status === "stopped") return "gray";
-  const sev = reasonSeverity(podReason);
-  if (sev === "transitional") return "blue";
-  if (sev === "warning") return "orange";
-  return "red";
-}
 
 function buildLabelSelector(matchLabels: Record<string, string>) {
   return Object.entries(matchLabels)
@@ -553,7 +548,7 @@ function ContainerRow({
           </Badge>
           {container.reason && (
             <Tooltip label={container.reason} withArrow>
-              <Text size="xs" c="red" td="underline">{container.reason}</Text>
+              <Text size="xs" c="statusError" td="underline">{container.reason}</Text>
             </Tooltip>
           )}
           {container.restartCount > 0 && (
@@ -788,6 +783,27 @@ export default function CoreServicesOverview({
         podReasonByOwner[ownerName] = { reason, message };
       });
 
+      // The pods for this namespace are already in hand. Grouping them by
+      // owner costs nothing and is what lets a card show a rollout in
+      // progress rather than a stale count.
+      const podsByOwner: Record<string, any[]> = {};
+      allPods.forEach((p: any) => {
+        const ownerRef = p.metadata?.ownerReferences?.find(
+          (o: any) => o.kind === "Deployment" || o.kind === "StatefulSet" || o.kind === "ReplicaSet"
+        );
+        // A Deployment owns a ReplicaSet which owns the pod, so the pod's
+        // owner is the ReplicaSet: strip its generated suffix to recover the
+        // Deployment name.
+        let owner = ownerRef?.kind === "ReplicaSet"
+          ? ownerRef.name.replace(/-[a-z0-9]+$/, "")
+          : ownerRef?.name;
+        if (!owner || !svcNames.has(owner)) {
+          owner = Array.from(svcNames).find((n) => p.metadata.name.startsWith(n));
+        }
+        if (!owner) return;
+        (podsByOwner[owner] ||= []).push(p);
+      });
+
       const deployments =
         deploymentsRes?.items?.map((d: any) => {
           const availableCondition = d.status?.conditions?.find((c: any) => c.type === "Available");
@@ -818,6 +834,7 @@ export default function CoreServicesOverview({
             images: d.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
             podReason: reason,
             podMessage: message,
+            pods: podsByOwner[d.metadata.name] ?? [],
           };
         }) ?? [];
 
@@ -840,6 +857,7 @@ export default function CoreServicesOverview({
             images: s.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
             podReason: reason,
             podMessage: message,
+            pods: podsByOwner[s.metadata.name] ?? [],
           };
         }) ?? [];
 
@@ -1017,9 +1035,15 @@ export default function CoreServicesOverview({
   };
 
   // ── Summary stats ──
-  const healthyCount = services.filter(s => computeStatus(s.desired, s.ready).status === "healthy").length;
-  const degradedCount = services.filter(s => computeStatus(s.desired, s.ready).status === "degraded").length;
-  const downCount = services.filter(s => computeStatus(s.desired, s.ready).status === "down").length;
+  // Counted from the same rollout summary the cards use, so the header and
+  // the grid below it cannot disagree.
+  const phases = services.map((s) => summarizeRollout(s.pods, s.desired, s.ready).phase);
+  const healthyCount = phases.filter((p) => p === "ready").length;
+  const degradedCount = phases.filter(
+    (p) => p === "pulling" || p === "starting" || p === "pending" || p === "terminating"
+  ).length;
+  const downCount = phases.filter((p) => p === "failing").length;
+  const stoppedCount = phases.filter((p) => p === "stopped").length;
   const totalReplicasReady = services.reduce((sum, s) => sum + s.ready, 0);
   const totalReplicasDesired = services.reduce((sum, s) => sum + s.desired, 0);
   const replicaPct = totalReplicasDesired > 0 ? Math.round((totalReplicasReady / totalReplicasDesired) * 100) : 0;
@@ -1069,22 +1093,32 @@ export default function CoreServicesOverview({
           </Group>
           <Divider orientation="vertical" />
           <Group gap={6}>
-            <Text size="sm" fw={500} c="teal">{healthyCount} healthy</Text>
+            <Text size="sm" fw={500} c="statusOk">{healthyCount} healthy</Text>
           </Group>
           {degradedCount > 0 && (
             <>
               <Divider orientation="vertical" />
-              <Group gap={6}>
-                <Text size="sm" fw={500} c="orange">{degradedCount} degraded</Text>
-              </Group>
+              <Text size="sm" fw={500} c="statusPending">
+                {degradedCount} rolling out
+              </Text>
             </>
           )}
           {downCount > 0 && (
             <>
               <Divider orientation="vertical" />
-              <Group gap={6}>
-                <Text size="sm" fw={500} c="red">{downCount} down</Text>
-              </Group>
+              <Text size="sm" fw={500} c="statusError">
+                {downCount} failing
+              </Text>
+            </>
+          )}
+          {/* Stopped is not an outage, so it is reported plainly rather than
+              folded into the failing count. */}
+          {stoppedCount > 0 && (
+            <>
+              <Divider orientation="vertical" />
+              <Text size="sm" fw={500} c="dimmed">
+                {stoppedCount} stopped
+              </Text>
             </>
           )}
           <div style={{ flex: 1 }} />
@@ -1096,7 +1130,7 @@ export default function CoreServicesOverview({
               size="xs"
               radius="xl"
               w={80}
-              color={replicaPct === 100 ? "teal" : replicaPct >= 50 ? "orange" : "red"}
+              color={replicaPct === 100 ? "statusOk" : replicaPct >= 50 ? "statusWarn" : "statusError"}
             />
           </Group>
         </Group>
@@ -1106,10 +1140,13 @@ export default function CoreServicesOverview({
         {/* Service Cards Grid */}
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
           {services.map((svc) => {
-            const health = computeStatus(svc.desired, svc.ready);
+            // Derived from the pods themselves rather than replica counts
+            // alone, so the card says what is happening ("1 pulling image")
+            // instead of only how far off it is.
+            const rollout = summarizeRollout(svc.pods, svc.desired, svc.ready);
+            const clr = rolloutColor(rollout.phase);
             const sev = reasonSeverity(svc.podReason);
-            const clr = statusColor(health, svc.podReason);
-            const isUpdating = svc.updated < svc.desired && svc.desired > 0;
+            const isUpdating = rollout.converging;
 
             return (
               <Card
@@ -1135,17 +1172,13 @@ export default function CoreServicesOverview({
                         {svc.kind === "Deployment" ? "Deploy" : "STS"}
                       </Badge>
                     </Group>
-                    <Badge
-                      color={clr}
-                      variant="filled"
-                      size="xs"
-                    >
-                      {health.label.toUpperCase()}
+                    <Badge color={clr} variant="light" size="xs">
+                      {rolloutLabel(rollout.phase).toUpperCase()}
                     </Badge>
                   </Group>
 
                   {/* Pod reason for unhealthy services */}
-                  {health.status !== "healthy" && (svc.podReason || svc.podMessage) && (
+                  {rollout.phase !== "ready" && rollout.phase !== "stopped" && (svc.podReason || svc.podMessage) && (
                     <Tooltip
                       label={svc.podMessage || svc.podReason || "Service is not healthy"}
                       withArrow
@@ -1165,19 +1198,38 @@ export default function CoreServicesOverview({
                       indistinguishable from one with no replica information. */}
                   <Group gap={8} align="center" wrap="nowrap">
                     {svc.desired > 0 && (
-                      <Progress
-                        value={(svc.ready / svc.desired) * 100}
-                        size="xs"
-                        radius="xl"
-                        color={clr}
-                        style={{ flex: 1 }}
-                      />
+                      <Progress.Root size="sm" radius="xl" style={{ flex: 1 }}>
+                        {/* Ready replicas: solid, this much is actually
+                            serving. */}
+                        <Progress.Section
+                          value={(svc.ready / svc.desired) * 100}
+                          color={clr}
+                        />
+                        {/* Pods that exist but are not ready yet: striped and
+                            animated, so a rollout visibly moves rather than
+                            leaving a static bar that looks stalled. The
+                            animation stops when nothing is converging, which
+                            keeps a crash loop from looking like progress. */}
+                        {rollout.converging && (
+                          <Progress.Section
+                            value={Math.max(
+                              0,
+                              ((Math.min(svc.pods.length, svc.desired) - svc.ready) /
+                                svc.desired) *
+                                100
+                            )}
+                            color={clr}
+                            striped
+                            animated
+                          />
+                        )}
+                      </Progress.Root>
                     )}
-                    {/* Ready count only: the desired figure is the editable
-                        input beside it, so a badge showing ready/desired
-                        would state the same number twice. */}
-                    <Text size="xs" c="dimmed" ff="monospace">
-                      {svc.ready} up
+                    {/* What the pods are doing, not just how many. The
+                        desired figure is the input beside this, so repeating
+                        ready/desired here would state one number twice. */}
+                    <Text size="xs" c={rollout.detail ? clr : "dimmed"} ff="monospace" truncate="end">
+                      {rollout.detail || `${svc.ready} up`}
                     </Text>
                     <ScaleControl
                       compact
