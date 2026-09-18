@@ -56,7 +56,4 @@ export default withBundleAnalyzer({
   experimental: {
     proxyTimeout: 100000000,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 });
