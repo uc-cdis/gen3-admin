@@ -95,6 +95,11 @@ type PodEvent = {
 };
 
 function computeStatus(desired: number, ready: number) {
+  // Scaled to zero on purpose is a normal state, not an outage. Checking
+  // `ready === 0` first labelled every intentionally-stopped service "Down"
+  // in red, which is the whole distinction resolveReplicaStatus exists to
+  // make -- and it made a namespace of stopped services look like a fire.
+  if (desired === 0) return { status: "stopped", color: "gray", label: "Stopped" };
   if (ready === 0) return { status: "down", color: "red", label: "Down" };
   if (ready < desired)
     return { status: "degraded", color: "yellow", label: "Degraded" };
@@ -121,6 +126,7 @@ function reasonSeverity(reason?: string): "transitional" | "warning" | "error" {
 
 function statusColor(health: ReturnType<typeof computeStatus>, podReason?: string): string {
   if (health.status === "healthy") return "teal";
+  if (health.status === "stopped") return "gray";
   const sev = reasonSeverity(podReason);
   if (sev === "transitional") return "blue";
   if (sev === "warning") return "orange";
