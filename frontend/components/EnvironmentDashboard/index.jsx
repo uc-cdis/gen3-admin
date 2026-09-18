@@ -1,6 +1,7 @@
 import { AreaChart, BarChart } from "@mantine/charts";
 import { useGlobalState } from '@/contexts/global';
 import { resolveStatus } from '@/lib/status';
+import PodDetailModal from '@/components/PodDetailModal';
 import { getApplication, isOurOperation, isTerminalPhase, syncApplication } from '@/lib/argocd';
 import { notifications } from '@mantine/notifications';
 import { useRef } from "react";
@@ -107,6 +108,9 @@ export default function EnvironmentDashboardComp({
   const isArgoEnv = activeEnvManager === 'argocd';
 
   const [syncingArgo, setSyncingArgo] = useState(false);
+  // The pod whose detail modal is open, or null. Holds the raw Kubernetes
+  // object so the modal can read container statuses without refetching.
+  const [inspectedPod, setInspectedPod] = useState(null);
   const [argoStatus, setArgoStatus] = useState(null);
 
 
@@ -286,6 +290,9 @@ export default function EnvironmentDashboardComp({
           restarts,
           node: pod.spec?.nodeName || "N/A",
           age: calculateAge(pod.metadata?.creationTimestamp),
+          // The raw object, so the detail view can read container statuses
+          // rather than re-fetching what this loop already has.
+          raw: pod,
         });
       }
 
@@ -1066,17 +1073,24 @@ export default function EnvironmentDashboardComp({
                   withBorder
                   radius="sm"
                   p="xs"
+                  onClick={() => setInspectedPod(pod.raw)}
+                  style={{ cursor: "pointer" }}
                 >
                   <Group justify="space-between" wrap="nowrap" gap="xs" mb={4}>
-                    <Anchor
-                      href={`/clusters/${env}/workloads/pods/${pod.namespace}/${pod.name}`}
+                    <Text
+                      size="sm"
+                      fw={500}
+                      truncate="end"
+                      title={pod.name}
                       style={{ minWidth: 0 }}
                     >
-                      <Text size="sm" fw={500} truncate="end" title={pod.name}>
-                        {pod.name}
-                      </Text>
-                    </Anchor>
-                    <Badge size="xs" variant="light" color={status.color}>
+                      {pod.name}
+                    </Text>
+                    {/* flexShrink so the badge keeps its text: it was
+                        clipping to "SUCCE..." when the pod name was long,
+                        which is the one part of the row that must stay
+                        readable. */}
+                    <Badge size="xs" variant="light" color={status.color} style={{ flexShrink: 0 }}>
                       {status.label}
                     </Badge>
                   </Group>
@@ -1110,6 +1124,17 @@ export default function EnvironmentDashboardComp({
           </SimpleGrid>
         </Card>
       )}
+
+      {/* Opens over the dashboard rather than navigating away: these are
+          mostly Jobs and one-off runs, where the question ("why is this
+          pending") is short-lived and the answer belongs in place. */}
+      <PodDetailModal
+        pod={inspectedPod}
+        namespace={namespace}
+        cluster={env}
+        accessToken={accessToken}
+        onClose={() => setInspectedPod(null)}
+      />
 
       {/* <LogViewer hostname={hostname} /> */}
 
