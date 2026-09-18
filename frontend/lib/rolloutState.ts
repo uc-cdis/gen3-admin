@@ -64,13 +64,21 @@ function containerStates(pod: any): ContainerState[] {
  * `desired` comes from the spec rather than the pod count, so a scale-up is
  * reflected the instant it is applied -- before any new pod exists.
  */
-export function summarizeRollout(pods: any[], desired: number, ready: number): RolloutState {
+export function summarizeRollout(
+  pods: any[] | undefined,
+  desired: number,
+  ready: number
+): RolloutState {
+  // Defensive: callers pass a field off a captured object that may predate
+  // it. Treating "no list" as "no pods" is right anyway -- it degrades to
+  // the replica counts rather than throwing.
+  const list = Array.isArray(pods) ? pods : [];
   const base = { ready, desired };
 
   if (desired === 0) {
     // Nothing is meant to be running. Terminating pods are the tail of a
     // scale-down and worth saying, since the card is otherwise silent.
-    const terminating = pods.filter((p) => p?.metadata?.deletionTimestamp).length;
+    const terminating = list.filter((p) => p?.metadata?.deletionTimestamp).length;
     return {
       ...base,
       phase: terminating > 0 ? 'terminating' : 'stopped',
@@ -85,7 +93,7 @@ export function summarizeRollout(pods: any[], desired: number, ready: number): R
   let failing = 0;
   let failReason = '';
 
-  for (const pod of pods) {
+  for (const pod of list) {
     if (pod?.metadata?.deletionTimestamp) continue;
 
     const phase = pod?.status?.phase;

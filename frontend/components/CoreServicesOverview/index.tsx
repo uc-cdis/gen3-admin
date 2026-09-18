@@ -64,14 +64,17 @@ type Service = {
   podReason?: string;       // e.g. "CrashLoopBackOff", "ContainerCreating"
   podMessage?: string;     // human-readable detail from the pod status
   /** The workload's own pods, for live rollout state. Already fetched. */
-  pods: any[];
+  pods?: any[];
   /**
    * Deployment conditions, kept rather than collapsed into one reason
    * string. These carry their own timestamps and outlive both the pods and
    * the events, so they are the only thing left to show on a workload that
    * was stopped days ago.
+   *
+   * Optional because a Service object can outlive a refresh: the modal holds
+   * the one it was opened with, which may predate this field.
    */
-  conditions: any[];
+  conditions?: any[];
 };
 
 function formatAge(timestamp: string | undefined) {
@@ -198,6 +201,12 @@ function WorkloadDetail({
   // Keyed by object name, same store as pod events.
   const deploymentEvents = service ? podEvents[service.name] || [] : [];
 
+  // `selectedService` is captured when the modal opens and survives across
+  // refreshes, so it can be an object built before `conditions` existed on
+  // the type. TypeScript cannot see that -- the field is declared required
+  // -- so the access is guarded rather than trusted.
+  const conditions: any[] = service?.conditions ?? [];
+
   return (
     <Stack gap="md">
       {/* Deployment state. Read from the same summary the card uses, so the
@@ -274,12 +283,12 @@ function WorkloadDetail({
               the first version of this panel was reliably empty for exactly
               the case it was written for. Conditions carry their own
               timestamps and persist on the object. */}
-          {service && service.conditions.length > 0 && (
+          {conditions.length > 0 && (
             <>
               <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
                 Last known state
               </Text>
-              {service.conditions.map((c: any) => (
+              {conditions.map((c: any) => (
                 <Group key={c.type} gap="xs" wrap="nowrap" align="flex-start">
                   <Badge
                     size="xs"
@@ -1230,7 +1239,7 @@ export default function CoreServicesOverview({
                           <Progress.Section
                             value={Math.max(
                               0,
-                              ((Math.min(svc.pods.length, svc.desired) - svc.ready) /
+                              ((Math.min(svc.pods?.length ?? 0, svc.desired) - svc.ready) /
                                 svc.desired) *
                                 100
                             )}

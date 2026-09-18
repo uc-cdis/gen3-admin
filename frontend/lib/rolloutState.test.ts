@@ -10,6 +10,22 @@ const running = () => ({ state: { running: {} }, ready: true });
 const notReady = () => ({ state: { running: {} }, ready: false });
 
 describe('summarizeRollout', () => {
+  // The list comes off a Service object the modal captured when it opened,
+  // which can predate the field. This threw at runtime -- "Cannot read
+  // properties of undefined" -- because the type declared it required and
+  // TypeScript therefore trusted it.
+  it('degrades to the replica counts when the pod list is missing', () => {
+    expect(() => summarizeRollout(undefined, 2, 1)).not.toThrow();
+    const s = summarizeRollout(undefined, 2, 1);
+    expect(s.phase).toBe('starting');
+    expect(s.ready).toBe(1);
+    expect(s.desired).toBe(2);
+  });
+
+  it('reports stopped for a missing list with nothing desired', () => {
+    expect(summarizeRollout(undefined, 0, 0).phase).toBe('stopped');
+  });
+
   // Scaled to zero is deliberate, not an outage -- the whole point of the
   // distinction the dashboard was getting wrong.
   it('reports a deliberate zero as stopped, not failing', () => {
