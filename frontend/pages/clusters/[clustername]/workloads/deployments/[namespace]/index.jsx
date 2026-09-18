@@ -1,59 +1,35 @@
 import DataTable from '@/components/DataTable/DataTable';
-
-import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
-import calculateAge from '@/utils/calculateAge';
+import { PageHeader } from '@/components/ui';
+import {
+  ageColumn,
+  nameColumn,
+  numberColumn,
+  readyColumn,
+} from '@/lib/workloadColumns';
 
-import Link from 'next/link'
+export default function NamespacedDeployments() {
+  const clusterName = useParams()?.clustername;
+  const namespace = useParams()?.namespace;
 
-export default function Detail() {
-    const clusterName = useParams()?.clustername;
-    const namespace = useParams()?.namespace;
-
-    return (
-        <>
-            <DataTable
-                agent={clusterName}
-                endpoint={`/apis/apps/v1/namespaces/${namespace}/deployments`}
-                fields={[
-                    {
-                        key: "metadata.name",
-                        label: "Name",
-                        render: ({ original }) => (
-                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/deployments/${namespace}/${original.metadata.name}`}>
-                                <Text fw={500}>{original.metadata.name}</Text>
-                            </Anchor>
-                        )
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Ready",
-                        render: ({ original }) => {
-                            const ready = original.status?.readyReplicas || 0;
-                            const total = original.status?.replicas || 0;
-                            return <Text>{`${ready}/${total}`}</Text>;
-                        }
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Up-to-date",
-                        render: ({ original }) => {
-                            const updated = original.status?.updatedReplicas ?? '-';
-                            return <Text>{updated}</Text>;
-                        }
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Available",
-                        render: ({ original }) => {
-                            const available = original.status?.availableReplicas ?? '-';
-                            return <Text>{available}</Text>;
-                        }
-                    },
-                    { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                ]}
-            />
-        </>
-    )
+  return (
+    <>
+      <PageHeader title="Deployments" subtitle={`${clusterName} / ${namespace}`} />
+      <DataTable
+        agent={clusterName}
+        endpoint={`/apis/apps/v1/namespaces/${namespace}/deployments`}
+        fields={[
+          nameColumn(clusterName, 'deployments'),
+          readyColumn(
+            (r) => r.status?.readyReplicas,
+            (r) => r.spec?.replicas
+          ),
+          numberColumn('Up-to-date', (r) => r.status?.updatedReplicas),
+          numberColumn('Available', (r) => r.status?.availableReplicas),
+          ageColumn(),
+        ]}
+      />
+    </>
+  );
 }
