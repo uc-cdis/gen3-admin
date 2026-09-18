@@ -65,6 +65,13 @@ type Service = {
   podMessage?: string;     // human-readable detail from the pod status
   /** The workload's own pods, for live rollout state. Already fetched. */
   pods: any[];
+  /**
+   * Deployment conditions, kept rather than collapsed into one reason
+   * string. These carry their own timestamps and outlive both the pods and
+   * the events, so they are the only thing left to show on a workload that
+   * was stopped days ago.
+   */
+  conditions: any[];
 };
 
 function formatAge(timestamp: string | undefined) {
@@ -262,6 +269,43 @@ function WorkloadDetail({
               : "No pods found."}
           </Text>
 
+          {/* Conditions rather than events. Kubernetes expires events after
+              about an hour, so a workload stopped days ago has none left --
+              the first version of this panel was reliably empty for exactly
+              the case it was written for. Conditions carry their own
+              timestamps and persist on the object. */}
+          {service && service.conditions.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
+                Last known state
+              </Text>
+              {service.conditions.map((c: any) => (
+                <Group key={c.type} gap="xs" wrap="nowrap" align="flex-start">
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color={c.status === "True" ? "statusOk" : "statusWarn"}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {c.type}
+                  </Badge>
+                  <Stack gap={0} style={{ minWidth: 0, flex: 1 }}>
+                    <Text size="xs">{c.reason || c.status}</Text>
+                    {c.message && (
+                      <Text size="xs" c="dimmed" lineClamp={2}>
+                        {c.message}
+                      </Text>
+                    )}
+                  </Stack>
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                    {formatAge(c.lastUpdateTime || c.lastTransitionTime)}
+                  </Text>
+                </Group>
+              ))}
+            </>
+          )}
+
+          {/* Events when they happen to still exist -- a recent change. */}
           {deploymentEvents.length > 0 && (
             <>
               <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
@@ -790,6 +834,7 @@ export default function CoreServicesOverview({
             podReason: reason,
             podMessage: message,
             pods: podsByOwner[d.metadata.name] ?? [],
+            conditions: d.status?.conditions ?? [],
           };
         }) ?? [];
 
@@ -813,6 +858,7 @@ export default function CoreServicesOverview({
             podReason: reason,
             podMessage: message,
             pods: podsByOwner[s.metadata.name] ?? [],
+            conditions: s.status?.conditions ?? [],
           };
         }) ?? [];
 
