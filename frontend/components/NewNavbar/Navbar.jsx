@@ -45,6 +45,7 @@ import Link from 'next/link';
 
 
 import callK8sApi from '@/lib/k8s';
+import { parseEnvKey } from '@/lib/envKey';
 
 function NavbarLink({ icon: Icon, label, active, setActiveCluster, cluster }) {
     return (
@@ -144,9 +145,9 @@ export function NavBar() {
 function FullNavBar() {
     const router = useRouter()
 
-    const { activeCluster, setActiveCluster, activeGlobalEnv } = useGlobalState();
+    const { activeCluster, setActiveCluster, activeGlobalEnv, hydrated } = useGlobalState();
 
-    const [cluster, namespace] = activeGlobalEnv.split('/');
+    const { cluster, namespace } = parseEnvKey(activeGlobalEnv);
     const [clusters, setClusters] = useState([]);
     const [customResourceLinks, setCustomResourceLinks] = useState([]);
     const { data: sessionData } = useSession();
