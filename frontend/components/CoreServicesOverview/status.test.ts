@@ -1,34 +1,44 @@
-/**
- * Mirrors computeStatus from index.tsx. That file is a 1300-line component
- * with no export for this, so the logic is duplicated here rather than left
- * untested; the branches are the ones that decide what colour a whole
- * namespace of services renders.
- */
-function computeStatus(desired: number, ready: number) {
-  if (desired === 0) return { status: 'stopped', label: 'Stopped' };
-  if (ready === 0) return { status: 'down', label: 'Down' };
-  if (ready < desired) return { status: 'degraded', label: 'Degraded' };
-  return { status: 'healthy', label: 'Healthy' };
-}
+import { summarizeRollout } from '@/lib/rolloutState';
 
-describe('service health', () => {
-  // The bug this fixes: checking ready === 0 first meant a service someone
-  // had deliberately scaled down was flagged red as an outage, so a
-  // namespace of stopped services looked like a fire.
-  it('treats scaled-to-zero as stopped, not down', () => {
-    expect(computeStatus(0, 0)).toEqual({ status: 'stopped', label: 'Stopped' });
+/**
+ * The services dashboard used to derive health from replica counts with a
+ * local `computeStatus`, which checked `ready === 0` before looking at
+ * `desired` -- so a workload deliberately scaled to zero was reported as an
+ * outage and a namespace of stopped services looked like a fire.
+ *
+ * That helper is gone; the cards, the summary header and the modal all read
+ * `summarizeRollout` now. These cover the distinction at the level the
+ * dashboard actually uses.
+ */
+describe('dashboard service health', () => {
+  it('treats scaled-to-zero as stopped, not an outage', () => {
+    expect(summarizeRollout([], 0, 0).phase).toBe('stopped');
   });
 
   it('still reports a real outage', () => {
-    // Two replicas wanted, none running -- that is down.
-    expect(computeStatus(2, 0)).toEqual({ status: 'down', label: 'Down' });
+    const crashed = {
+      metadata: {},
+      status: {
+        phase: 'Running',
+        containerStatuses: [{ state: { waiting: { reason: 'CrashLoopBackOff' } }, ready: false }],
+      },
+    };
+    expect(summarizeRollout([crashed], 2, 0).phase).toBe('failing');
   });
 
-  it('reports a partial rollout as degraded', () => {
-    expect(computeStatus(3, 1)).toEqual({ status: 'degraded', label: 'Degraded' });
+  it('reports a partial rollout as in progress, not failed', () => {
+    const starting = {
+      metadata: {},
+      status: { phase: 'Running', containerStatuses: [{ state: { running: {} }, ready: false }] },
+    };
+    expect(summarizeRollout([starting], 3, 1).phase).toBe('starting');
   });
 
-  it('reports a full complement as healthy', () => {
-    expect(computeStatus(3, 3)).toEqual({ status: 'healthy', label: 'Healthy' });
+  it('reports a full complement as ready', () => {
+    const up = {
+      metadata: {},
+      status: { phase: 'Running', containerStatuses: [{ state: { running: {} }, ready: true }] },
+    };
+    expect(summarizeRollout([up, up], 2, 2).phase).toBe('ready');
   });
 });
