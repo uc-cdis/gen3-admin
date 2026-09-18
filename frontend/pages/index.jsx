@@ -37,7 +37,13 @@ export default function HomePage() {
   const router = useRouter();
   const { activeGlobalEnv, hydrated } = useGlobalState();
 
-  const { environments, loading: environmentsLoading, validating, refresh } = useEnvironments();
+  const {
+    environments,
+    inaccessibleAgents,
+    loading: environmentsLoading,
+    validating,
+    refresh,
+  } = useEnvironments();
 
   // Only asked when there is no environment to show; distinguishes "you have
   // no Gen3 releases yet" from "no cluster is connected at all", which need
@@ -74,6 +80,7 @@ export default function HomePage() {
       return (
         <EnvironmentPicker
           environments={environments}
+          inaccessibleAgents={inaccessibleAgents}
           refreshing={validating}
           onRefresh={refresh}
           onAddCluster={() => router.push('/bootstrap')}

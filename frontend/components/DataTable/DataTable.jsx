@@ -23,6 +23,7 @@ import callK8sApi from '@/lib/k8s';
 import { useSession } from "next-auth/react";
 import { useK8sList } from '@/hooks/useK8s';
 import { workloadRefreshInterval } from '@/lib/workloadPolling';
+import { ErrorState, isForbiddenError } from '@/components/ui';
 
 // Constants
 const SEARCH_DEBOUNCE_MS = 300;
@@ -391,7 +392,9 @@ const GenericDataTable = ({
     // Block the table only on a genuine first load. A background revalidation
     // should not blank out rows the user is already reading.
     const loading = listQuery.isLoading && listQuery.data === undefined;
-    const error = listQuery.error ? listQuery.error.message : null;
+    // Keep the error object, not just its message: the status is what
+    // distinguishes "you lack permission" from "the request failed".
+    const error = listQuery.error ?? null;
 
     const metricsData = metricsQuery.data ?? [];
     // Metrics degrade rather than break the table: metrics-server is often not
@@ -552,7 +555,16 @@ const GenericDataTable = ({
                 {/* Error Messages */}
                 {error && !loading && (
                     <Center mb="md">
-                        <Text c="red" size="sm">Failed to load data: {error}</Text>
+                        <ErrorState
+                            error={error}
+                            title="Failed to load data"
+                            onRetry={fetchData}
+                            hint={
+                                isForbiddenError(error)
+                                    ? `Ask an administrator for the ${agent}-read role.`
+                                    : undefined
+                            }
+                        />
                     </Center>
                 )}
                 {metricsError && (

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   Badge,
   Box,
   Button,
@@ -10,7 +11,7 @@ import {
   Title,
   UnstyledButton,
 } from '@mantine/core';
-import { IconPlus, IconSearch } from '@tabler/icons-react';
+import { IconLock, IconPlus, IconSearch } from '@tabler/icons-react';
 
 import { StatusBadge } from '@/components/ui';
 import type { EnvItem } from '@/hooks/useEnvironments';
@@ -19,6 +20,8 @@ import { parseEnvKey } from '@/lib/envKey';
 
 type EnvironmentPickerProps = {
   environments: EnvItem[];
+  /** Agents that returned 403, so "denied" is not shown as "empty". */
+  inaccessibleAgents?: string[];
   /** Start the setup wizard for a cluster that is not onboarded yet. */
   onAddCluster: () => void;
   refreshing?: boolean;
@@ -42,6 +45,7 @@ type EnvironmentPickerProps = {
  */
 export function EnvironmentPicker({
   environments,
+  inaccessibleAgents = [],
   onAddCluster,
   refreshing,
   onRefresh,
@@ -97,6 +101,27 @@ export function EnvironmentPicker({
           </Button>
         )}
       </Group>
+
+      {inaccessibleAgents.length > 0 && (
+        <Alert
+          variant="light"
+          color="statusWarn"
+          icon={<IconLock size={16} />}
+          title="Some clusters are not shown"
+        >
+          <Text size="sm">
+            You do not have read access to{' '}
+            <Text span fw={600}>
+              {inaccessibleAgents.join(', ')}
+            </Text>
+            . Ask an administrator for the{' '}
+            {inaccessibleAgents.length === 1
+              ? `${inaccessibleAgents[0]}-read role`
+              : 'corresponding -read roles'}
+            .
+          </Text>
+        </Alert>
+      )}
 
       {matchCount === 0 ? (
         <Text size="sm" c="dimmed" ta="center" py="xl">
