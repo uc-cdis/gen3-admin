@@ -188,6 +188,9 @@ function WorkloadDetail({
     ? summarizeRollout(service.pods, service.desired, service.ready)
     : null;
 
+  // Keyed by object name, same store as pod events.
+  const deploymentEvents = service ? podEvents[service.name] || [] : [];
+
   return (
     <Stack gap="md">
       {/* Deployment state. Read from the same summary the card uses, so the
@@ -249,11 +252,33 @@ function WorkloadDetail({
           </Text>
         </Group>
       ) : pods.length === 0 ? (
-        <Text size="sm" c="dimmed" ta="center" py="lg">
-          {service && service.desired === 0
-            ? "No pods: this workload is scaled to zero."
-            : "No pods found."}
-        </Text>
+        // No pods, but not nothing to say. The workload's own events outlive
+        // them, and for a stopped deployment they answer the only question
+        // worth asking here: why is this off, and since when.
+        <Stack gap="xs">
+          <Text size="sm" c="dimmed">
+            {service && service.desired === 0
+              ? "Scaled to zero, so there are no pods to show."
+              : "No pods found."}
+          </Text>
+
+          {deploymentEvents.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
+                Recent activity
+              </Text>
+              {deploymentEvents.slice(0, 6).map((e, i, shown) => (
+                <EventTimelineItem
+                  key={`${e.reason}-${i}`}
+                  event={e}
+                  index={i}
+                  compact
+                  isLast={i === shown.length - 1}
+                />
+              ))}
+            </>
+          )}
+        </Stack>
       ) : (
         <Stack gap={4}>
           <Text size="xs" fw={600} c="dimmed" tt="uppercase">
@@ -831,6 +856,13 @@ export default function CoreServicesOverview({
     fetchServices();
   }, [env, namespace, accessToken, fetchServices]);
 
+  /**
+   * Events for one object, by name.
+   *
+   * The fieldSelector matches any involvedObject, so this serves Deployments
+   * as well as pods -- which is how a scaled-to-zero workload can still
+   * explain itself after its pods are gone.
+   */
   const fetchPodEvents = async (podName: string) => {
     setEventsLoadingFor((prev) => new Set(prev).add(podName));
     try {
@@ -963,6 +995,10 @@ export default function CoreServicesOverview({
 
       setPods(parsed);
       parsed.forEach((p) => fetchPodEvents(p.name));
+      // Also the workload's own events. These outlive its pods, so a
+      // scaled-to-zero deployment can still say who scaled it and when --
+      // otherwise the modal has nothing to show but an empty state.
+      fetchPodEvents(svc.name);
     } finally {
       setPodsLoading(false);
     }
