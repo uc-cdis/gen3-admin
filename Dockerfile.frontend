@@ -4,13 +4,13 @@ ARG AZLINUX_BASE_VERSION=master
 FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION}
 
 
-ENV NODE_VERSION=20.17.0
-
-# Install nodejs
-# RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-
-# Install packages via yum
-RUN yum install -y unzip nodejs
+# Node 22, the current LTS line. The base image's default `nodejs` package is
+# 18, which Next 16 refuses (it wants >= 20.9), so the version has to be named
+# explicitly -- the ENV NODE_VERSION that used to sit here had no effect on
+# what yum installed, it was only a label.
+RUN yum install -y unzip nodejs22 nodejs22-npm && \
+    ln -sf /usr/bin/node-22 /usr/bin/node && \
+    ln -sf /usr/bin/npm-22 /usr/bin/npm
 
 WORKDIR /frontend
 
