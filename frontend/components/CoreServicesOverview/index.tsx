@@ -113,23 +113,6 @@ type PodEvent = {
 };
 
 
-// Classify a pod reason into severity for visual treatment
-const TRANSITIONAL_REASONS = new Set([
-  "ContainerCreating", "PodInitializing", "Pending", "Waiting",
-  "AttachVolume", "Pulling", "Created", "Scheduled",
-]);
-const WARNING_REASONS = new Set([
-  "CrashLoopBackOff", "ImagePullBackOff", "Evicted", "NodeAffinity",
-  "Unschedulable", "InsufficientCPU", "InsufficientMemory",
-]);
-
-function reasonSeverity(reason?: string): "transitional" | "warning" | "error" {
-  if (!reason) return "error";
-  const base = reason.split(" ")[0].replace(/[^a-zA-Z]/g, ""); // strip "(N restarts)" etc
-  if (TRANSITIONAL_REASONS.has(base)) return "transitional";
-  if (WARNING_REASONS.has(base)) return "warning";
-  return "error";
-}
 
 
 function buildLabelSelector(matchLabels: Record<string, string>) {
@@ -1170,7 +1153,6 @@ export default function CoreServicesOverview({
             // instead of only how far off it is.
             const rollout = summarizeRollout(svc.pods, svc.desired, svc.ready);
             const clr = rolloutColor(rollout.phase);
-            const sev = reasonSeverity(svc.podReason);
             const isUpdating = rollout.converging;
 
             return (
@@ -1182,80 +1164,90 @@ export default function CoreServicesOverview({
                 onClick={() => openPodsModal(svc)}
                 style={{ cursor: "pointer" }}
               >
-                <Stack gap={6}>
-                  {/* Top: Name + Status */}
-                  <Group justify="space-between" align="center">
-                    <Group gap={4} style={{ maxWidth: "65%" }}>
-                      <Text fw={550} size="sm" truncate="end" title={svc.name}>
+                {/* Fixed three-row structure so cards align down a column.
+                    Previously the kind badge wrapped to a second line on
+                    longer names and the progress bar only rendered above
+                    zero replicas, so every card was a different height --
+                    and healthy ones were the tallest, which is backwards. */}
+                <Stack gap={8}>
+                  {/* Name and state. Both single-line: the name truncates
+                      rather than wrapping, and the status badge is fixed
+                      width so the row never reflows. */}
+                  <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                      <Text fw={600} size="sm" truncate="end" title={svc.name}>
                         {svc.name}
                       </Text>
-                      <Badge
-                        size="xs"
-                        variant="outline"
-                        color="gray"
-                      >
-                        {svc.kind === "Deployment" ? "Deploy" : "STS"}
-                      </Badge>
+                      {/* Only when it is not the common case. Every card
+                          carrying a "DEPLOY" badge meant the badge carried
+                          no information while costing a line of height. */}
+                      {svc.kind === "StatefulSet" && (
+                        <Badge size="xs" variant="default" style={{ flexShrink: 0 }}>
+                          STS
+                        </Badge>
+                      )}
                     </Group>
-                    <Badge color={clr} variant="light" size="xs">
-                      {rolloutLabel(rollout.phase).toUpperCase()}
-                    </Badge>
-                  </Group>
 
-                  {/* Pod reason for unhealthy services */}
-                  {rollout.phase !== "ready" && rollout.phase !== "stopped" && (svc.podReason || svc.podMessage) && (
                     <Tooltip
-                      label={svc.podMessage || svc.podReason || "Service is not healthy"}
-                      withArrow
+                      label={svc.podMessage || svc.podReason || rolloutLabel(rollout.phase)}
+                      disabled={!svc.podMessage && !svc.podReason}
                       multiline
                       w={280}
+                      withArrow
                     >
-                      <Text size="xs" c={clr} truncate="end" td="underline" style={{ cursor: "help" }}>
-                        {svc.podReason || svc.podMessage?.split("\n")[0] || "Issue"}
-                      </Text>
+                      <Badge color={clr} variant="light" size="sm" style={{ flexShrink: 0 }}>
+                        {rolloutLabel(rollout.phase)}
+                      </Badge>
                     </Tooltip>
-                  )}
+                  </Group>
 
-                  {/* Replicas.
-                      The bar is only meaningful above zero, but the count
-                      must always show: gating the whole block on desired > 0
-                      meant a service scaled to zero rendered nothing at all,
-                      indistinguishable from one with no replica information. */}
-                  <Group gap={8} align="center" wrap="nowrap">
-                    {svc.desired > 0 && (
-                      <Progress.Root size="sm" radius="xl" style={{ flex: 1 }}>
-                        {/* Ready replicas: solid, this much is actually
-                            serving. */}
-                        <Progress.Section
-                          value={(svc.ready / svc.desired) * 100}
-                          color={clr}
-                        />
-                        {/* Pods that exist but are not ready yet: striped and
-                            animated, so a rollout visibly moves rather than
-                            leaving a static bar that looks stalled. The
-                            animation stops when nothing is converging, which
-                            keeps a crash loop from looking like progress. */}
-                        {rollout.converging && (
+                  {/* Replicas. The bar renders at every scale, empty when
+                      stopped, so the row occupies the same height on every
+                      card and the eye can track one line across the grid. */}
+                  <Group gap="xs" align="center" wrap="nowrap">
+                    <Progress.Root size={6} radius="xl" style={{ flex: 1 }}>
+                      {svc.desired > 0 && (
+                        <>
                           <Progress.Section
-                            value={Math.max(
-                              0,
-                              ((Math.min(svc.pods?.length ?? 0, svc.desired) - svc.ready) /
-                                svc.desired) *
-                                100
-                            )}
+                            value={(svc.ready / svc.desired) * 100}
                             color={clr}
-                            striped
-                            animated
                           />
-                        )}
-                      </Progress.Root>
-                    )}
-                    {/* What the pods are doing, not just how many. The
-                        desired figure is the input beside this, so repeating
-                        ready/desired here would state one number twice. */}
-                    <Text size="xs" c={rollout.detail ? clr : "dimmed"} ff="monospace" truncate="end">
-                      {rollout.detail || `${svc.ready} up`}
+                          {/* Pods that exist but are not ready: striped and
+                              animated, so a rollout visibly moves. Tied to
+                              `converging`, so a crash loop holds still --
+                              animation on a stuck workload would read as
+                              progress that is not happening. */}
+                          {rollout.converging && (
+                            <Progress.Section
+                              value={Math.max(
+                                0,
+                                ((Math.min(svc.pods?.length ?? 0, svc.desired) - svc.ready) /
+                                  svc.desired) *
+                                  100
+                              )}
+                              color={clr}
+                              striped
+                              animated
+                            />
+                          )}
+                        </>
+                      )}
+                    </Progress.Root>
+
+                    <Text
+                      size="xs"
+                      c={rollout.detail ? clr : "dimmed"}
+                      ta="right"
+                      style={{ flexShrink: 0, minWidth: 72 }}
+                      truncate="end"
+                      title={rollout.detail || undefined}
+                    >
+                      {/* ready/desired, not "N up" beside an input showing
+                          the same figure -- two numbers that looked like
+                          they might disagree. */}
+                      {rollout.detail || `${svc.ready}/${svc.desired}`}
                     </Text>
+
                     <ScaleControl
                       compact
                       kind={svc.kind}
@@ -1266,28 +1258,24 @@ export default function CoreServicesOverview({
                     />
                   </Group>
 
-                  {/* Images */}
-                  <Group gap={4}>
-                    {svc.images.slice(0, 2).map((img, idx) => (
-                      <Tooltip key={idx} label={`Image: ${img}`} withArrow>
-                        <Text size="xs" c="blue" style={{ fontFamily: "monospace" }}>
-                          {img}
-                        </Text>
-                      </Tooltip>
-                    ))}
-                    {svc.images.length > 2 && (
-                      <Text size="xs" c="dimmed">+{svc.images.length - 2} more</Text>
-                    )}
-                  </Group>
+                  {/* Images and age on one line. The image was styled as a
+                      blue link but is not one -- it competed with the name
+                      for emphasis when the name is what you scan by. */}
+                  <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Tooltip
+                      label={svc.images.join("\n")}
+                      disabled={svc.images.length === 0}
+                      multiline
+                      withArrow
+                    >
+                      <Text size="xs" c="dimmed" ff="monospace" truncate="end" style={{ minWidth: 0 }}>
+                        {svc.images[0] ?? "no image"}
+                        {svc.images.length > 1 && ` +${svc.images.length - 1}`}
+                      </Text>
+                    </Tooltip>
 
-                  {/* Bottom: timestamp */}
-                  <Group justify="space-between">
-                    <Text size="xs" c="dimmed">
-                      {isUpdating ? (
-                        <span>Rolling update...</span>
-                      ) : (
-                        <>Updated {svc.lastTransitionTime} ago</>
-                      )}
+                    <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                      {isUpdating ? "rolling" : svc.lastTransitionTime}
                     </Text>
                   </Group>
                 </Stack>
