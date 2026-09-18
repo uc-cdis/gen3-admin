@@ -22,6 +22,7 @@ import { resolveStatus } from '@/lib/status';
 import callK8sApi from '@/lib/k8s';
 import { useSession } from "next-auth/react";
 import { useK8sList } from '@/hooks/useK8s';
+import { workloadRefreshInterval } from '@/lib/workloadPolling';
 
 // Constants
 const SEARCH_DEBOUNCE_MS = 300;
@@ -343,9 +344,10 @@ const GenericDataTable = ({
     metricsEndpoint,
     buttonsConfig,
     searchableFields, // Optional: specify which fields to search
-    // Opt-in polling, in ms. Off by default: turning it on for every table would
-    // multiply load on the Go proxy and each agent's gRPC stream.
-    refreshInterval = 0,
+    // Polling, in ms, or a function of the data. Left undefined the table
+    // polls adaptively (see workloadPolling); pass 0 to disable, or a number
+    // to fix the cadence.
+    refreshInterval,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRecords, setSelectedRecords] = useState([]);
@@ -363,15 +365,25 @@ const GenericDataTable = ({
     // through GenericDataTable: identical requests are deduplicated, results
     // survive navigation instead of refetching from scratch, and the access token
     // is resolved by the hook rather than threaded through each call.
+    // Adaptive by default: quick while something is converging, background
+    // otherwise. Previously this defaulted to 0, so every list was fetch-once
+    // -- a rollout you had just triggered sat frozen until you reloaded, and
+    // the Age column never ticked because nothing caused a re-render. A page
+    // can still pass an explicit number (or 0) to opt out.
+    const listInterval = refreshInterval ?? workloadRefreshInterval;
+
     const listQuery = useK8sList(agent ? endpoint : null, {
         cluster: agent,
-        refreshInterval,
+        refreshInterval: listInterval,
         keepPreviousData: true,
     });
 
     const metricsQuery = useK8sList(agent && metricsEndpoint ? metricsEndpoint : null, {
         cluster: agent,
-        refreshInterval,
+        // Metrics are a fixed cadence: usage is always changing, so there is
+        // no "settled" state to slow down for, and metrics-server itself only
+        // recomputes about every 15s.
+        refreshInterval: refreshInterval ?? 30_000,
         keepPreviousData: true,
     });
 
