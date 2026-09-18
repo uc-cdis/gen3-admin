@@ -140,6 +140,34 @@ var agentScopedPrefixes = []string{
 	"/api/argocd/",
 }
 
+// writeEquivalentGETs are agent-scoped routes that use GET but confer the power
+// of a write, so the method alone is the wrong thing to authorize on.
+//
+// `terminal/exec` upgrades to a WebSocket carrying an interactive shell, and
+// the tunnel forwards arbitrary requests to a service inside the cluster.
+// Both are GETs only because of how the protocols are established. Granting
+// them on <agent>-read meant a "read-only" user could open a root shell in
+// any pod -- and since the agent's ServiceAccount is bound to cluster-admin,
+// that is unrestricted access to the cluster.
+//
+// Matched on the path segment that follows the agent name.
+var writeEquivalentGETs = []string{
+	"terminal/exec",
+	"terminal/test",
+	"tunnel/",
+}
+
+// requiresWriteDespiteGET reports whether an agent-scoped URL is one of the
+// routes above.
+func requiresWriteDespiteGET(url string) bool {
+	for _, marker := range writeEquivalentGETs {
+		if strings.Contains(url, "/"+marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // extractAgentFromPath returns the agent name a request targets, or "" when the
 // route is not agent-scoped.
 func extractAgentFromPath(url string) string {
@@ -425,10 +453,20 @@ func AuthMiddleware() gin.HandlerFunc {
 			readRole := agent + "-read"
 			writeRole := agent + "-write"
 
-			if method == http.MethodGet {
+			if method == http.MethodGet && !requiresWriteDespiteGET(url) {
 
 				if !(roleMap[readRole] || roleMap[writeRole] || roleMap["superadmin"]) {
 					c.JSON(http.StatusForbidden, gin.H{"error": "Read permission required"})
+					c.Abort()
+					return
+				}
+
+			} else if method == http.MethodGet {
+
+				// A GET that is really a write: exec and tunnel. See
+				// writeEquivalentGETs.
+				if !(roleMap[writeRole] || roleMap["superadmin"]) {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Write permission required"})
 					c.Abort()
 					return
 				}
