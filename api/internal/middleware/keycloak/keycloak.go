@@ -335,6 +335,10 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		openRoutes := []string{
 			"/api/environment",
+			// Any authenticated user must be able to ask what they may do --
+			// gating this behind a permission would make it useless for
+			// deciding which permissions to show.
+			"/api/me",
 		}
 		for _, route := range openRoutes {
 			if url == route {
