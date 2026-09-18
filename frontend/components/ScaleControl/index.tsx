@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Group, NumberInput, Popover, Stack, Text } from '@mantine/core';
-import { IconArrowsVertical } from '@tabler/icons-react';
+import { ActionIcon, Group, NumberInput, Text, Tooltip } from '@mantine/core';
+import { IconCheck, IconX } from '@tabler/icons-react';
 
 import { useRoles, writeRoleFor } from '@/hooks/useRoles';
 import { isScalable, useScaleWorkload } from '@/hooks/useScaleWorkload';
@@ -18,14 +18,18 @@ type ScaleControlProps = {
 /**
  * Sets the replica count on a workload.
  *
- * A popover rather than a modal: setting one number is not worth dimming the
- * page and losing the context you were reading. It also sits inside cards
- * that are themselves clickable, so every event here stops propagating --
- * otherwise opening the control also triggered the card's own handler and
- * the pods drawer slid open behind the dialog.
+ * The input is the control -- there is no button to press first. Typing a
+ * different number reveals a confirm and a cancel beside it; matching the
+ * current count hides them again. Setting one number never justified opening
+ * a dialog over the page you were reading it from.
  *
- * Disabled rather than hidden without write access, with the missing role
- * named in the title.
+ * Confirmation is not skipped, because this changes running infrastructure
+ * and the steppers make a stray click cheap. It just appears at the point
+ * the value actually diverges, rather than gating access to the input.
+ *
+ * Lives inside cards that are themselves clickable, so every handler stops
+ * propagation -- otherwise editing the count also triggered the card and
+ * slid the pods drawer open underneath.
  */
 export function ScaleControl({
   kind,
@@ -35,112 +39,116 @@ export function ScaleControl({
   current,
   compact,
 }: ScaleControlProps) {
-  const [open, setOpen] = useState(false);
   const [value, setValue] = useState<number | string>(current ?? 0);
   const { scale, pending } = useScaleWorkload();
   const { canWrite } = useRoles();
 
-  // Follow the live count while closed, so reopening does not show a stale
-  // number after a rollout or someone else's change.
+  // Follow the live count, but never overwrite an edit in progress: a poll
+  // landing mid-keystroke must not reset what the user is typing. `pristine`
+  // records the count the field was last synced to, so a genuine change from
+  // the cluster is distinguishable from the user's own.
+  const [pristine, setPristine] = useState(current ?? 0);
   useEffect(() => {
-    if (!open) setValue(current ?? 0);
-  }, [current, open]);
+    const live = current ?? 0;
+    if (live === pristine) return;
+    setPristine(live);
+    // Only adopt the new value if the field is untouched.
+    setValue((prev) => (prev === pristine ? live : prev));
+  }, [current, pristine]);
 
   if (!isScalable(kind)) return null;
 
   const allowed = canWrite(cluster);
-
+  const currentValue = current ?? 0;
   const replicas = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
   const valid = Number.isInteger(replicas) && replicas >= 0;
-  const unchanged = valid && replicas === (current ?? 0);
-  const scalingToZero = valid && replicas === 0 && (current ?? 0) > 0;
+  const dirty = valid && replicas !== currentValue;
+  const scalingToZero = dirty && replicas === 0;
 
-  const submit = async () => {
+  const apply = async () => {
     const ok = await scale({ kind, namespace, name, cluster }, replicas);
-    if (ok) setOpen(false);
+    if (!ok) setValue(currentValue);
   };
 
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
   return (
-    // The wrapper catches anything the popover's own handlers miss, so a
-    // click inside it never reaches a clickable ancestor.
-    <span
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
+    <Group
+      gap={4}
+      wrap="nowrap"
+      onClick={stop}
+      onKeyDown={stop}
       role="presentation"
     >
-      <Popover
-        opened={open}
-        onChange={setOpen}
-        position="bottom-end"
-        withArrow
-        shadow="md"
-        trapFocus
-        width={220}
+      <Tooltip
+        label={allowed ? 'Replicas' : `Requires the ${writeRoleFor(cluster)} role`}
+        openDelay={400}
       >
-        <Popover.Target>
-          {/* The Button must be Popover.Target's direct child so the ref
-              attaches; RequireWrite wraps its child in a span when disabled,
-              which would break positioning. The gate is inline instead. */}
-          <Button
-            variant={compact ? 'subtle' : 'default'}
-            size={compact ? 'compact-sm' : 'sm'}
-            leftSection={<IconArrowsVertical size={16} />}
-            disabled={!allowed}
-            title={allowed ? undefined : `Requires the ${writeRoleFor(cluster)} role`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen((o) => !o);
-            }}
+        <NumberInput
+          size={compact ? 'xs' : 'sm'}
+          w={compact ? 64 : 80}
+          value={value}
+          onChange={setValue}
+          min={0}
+          max={100}
+          step={1}
+          allowDecimal={false}
+          allowNegative={false}
+          clampBehavior="strict"
+          disabled={!allowed || pending}
+          aria-label={`Replicas for ${name}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && dirty) {
+              e.preventDefault();
+              apply();
+            }
+            if (e.key === 'Escape') setValue(currentValue);
+          }}
+        />
+      </Tooltip>
+
+      {dirty && (
+        <>
+          <Tooltip
+            label={
+              scalingToZero
+                ? 'Scale to zero: stops all replicas'
+                : `Scale to ${replicas}`
+            }
           >
-            Scale
-          </Button>
-        </Popover.Target>
+            <ActionIcon
+              size={compact ? 'sm' : 'md'}
+              variant="filled"
+              color={scalingToZero ? 'statusWarn' : 'statusOk'}
+              loading={pending}
+              onClick={apply}
+              aria-label={`Scale ${name} to ${replicas}`}
+            >
+              <IconCheck size={14} />
+            </ActionIcon>
+          </Tooltip>
 
-        <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
-          <Stack gap="xs">
-            <NumberInput
-              label="Replicas"
-              size="xs"
-              value={value}
-              onChange={setValue}
-              min={0}
-              max={100}
-              allowDecimal={false}
-              allowNegative={false}
-              clampBehavior="strict"
-              data-autofocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && valid && !unchanged) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-            />
+          <Tooltip label="Cancel">
+            <ActionIcon
+              size={compact ? 'sm' : 'md'}
+              variant="subtle"
+              color="gray"
+              disabled={pending}
+              onClick={() => setValue(currentValue)}
+              aria-label="Cancel scaling"
+            >
+              <IconX size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </>
+      )}
 
-            {scalingToZero && (
-              <Text size="xs" c="statusWarn">
-                Stops all replicas. Nothing will serve traffic until you scale back up.
-              </Text>
-            )}
-
-            <Group gap="xs" grow>
-              <Button size="xs" variant="default" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                size="xs"
-                loading={pending}
-                disabled={!valid || unchanged}
-                color={scalingToZero ? 'statusWarn' : undefined}
-                onClick={submit}
-              >
-                {scalingToZero ? 'Scale to 0' : 'Apply'}
-              </Button>
-            </Group>
-          </Stack>
-        </Popover.Dropdown>
-      </Popover>
-    </span>
+      {!dirty && !compact && (
+        <Text size="xs" c="dimmed">
+          replicas
+        </Text>
+      )}
+    </Group>
   );
 }
 

@@ -36,7 +36,6 @@ import {
   IconCircleDot,
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
-import { ReplicaBadge } from "@/components/ui";
 import { CONVERGING_MS, SETTLED_MS } from "@/lib/workloadPolling";
 import ScaleControl from "@/components/ScaleControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
@@ -1174,12 +1173,12 @@ export default function CoreServicesOverview({
                         style={{ flex: 1 }}
                       />
                     )}
-                    <ReplicaBadge
-                      ready={svc.ready}
-                      desired={svc.desired}
-                      reason={svc.podReason}
-                      size="sm"
-                    />
+                    {/* Ready count only: the desired figure is the editable
+                        input beside it, so a badge showing ready/desired
+                        would state the same number twice. */}
+                    <Text size="xs" c="dimmed" ff="monospace">
+                      {svc.ready} up
+                    </Text>
                     <ScaleControl
                       compact
                       kind={svc.kind}

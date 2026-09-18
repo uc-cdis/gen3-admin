@@ -208,15 +208,16 @@ export function formatDuration(startTime?: string, completionTime?: string): str
 }
 
 /**
- * Row action for setting the replica count.
+ * Editable replica count.
  *
- * Right-aligned and label-less in the header: it is a control, not data, and
- * a "Scale" column heading over a column of buttons reads like a value.
+ * Labelled now that the cell is an input showing the desired count rather
+ * than a button: the column holds a value you can change, so a heading is
+ * accurate.
  */
 export function scaleColumn(kind: string, clusterName: string | undefined, desiredOf: (r: any) => number | undefined) {
   return {
     key: 'metadata.name',
-    label: ' ',
+    label: 'Replicas',
     render: ({ original }: Row) => (
       <ScaleControl
         compact
