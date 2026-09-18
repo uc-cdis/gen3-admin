@@ -46,7 +46,7 @@ import DiffViewer from '@/components/ArgoCD/DiffViewer';
 import HistoryTable from '@/components/ArgoCD/HistoryTable';
 import SourceEditor from '@/components/ArgoCD/SourceEditor';
 import SyncDialog from '@/components/ArgoCD/SyncDialog';
-import { EmptyState, PageHeader, QueryState, StatusBadge } from '@/components/ui';
+import { EmptyState, PageHeader, QueryState, RequireWrite, StatusBadge } from '@/components/ui';
 import { useAccessToken } from '@/hooks/useK8s';
 import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
 import {
@@ -369,16 +369,20 @@ function ApplicationDetail({ cluster, name, appNamespace }) {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
-            <Button
-              variant="default"
-              leftSection={<IconGitBranch size={16} />}
-              onClick={() => setSourceOpen(true)}
-            >
-              Edit source
-            </Button>
-            <Button leftSection={<IconRefresh size={16} />} onClick={() => setSyncOpen(true)}>
-              Sync
-            </Button>
+            <RequireWrite cluster={cluster}>
+              <Button
+                variant="default"
+                leftSection={<IconGitBranch size={16} />}
+                onClick={() => setSourceOpen(true)}
+              >
+                Edit source
+              </Button>
+            </RequireWrite>
+            <RequireWrite cluster={cluster}>
+              <Button leftSection={<IconRefresh size={16} />} onClick={() => setSyncOpen(true)}>
+                Sync
+              </Button>
+            </RequireWrite>
           </>
         }
       />

@@ -1,16 +1,9 @@
 import { useState } from 'react';
-import {
-  Button,
-  Group,
-  Modal,
-  NumberInput,
-  Stack,
-  Text,
-  Tooltip,
-} from '@mantine/core';
+import { Button, Group, Modal, NumberInput, Stack, Text } from '@mantine/core';
 import { IconArrowsVertical } from '@tabler/icons-react';
 
-import { useRoles, writeRoleFor } from '@/hooks/useRoles';
+import { RequireWrite } from '@/components/ui';
+
 import { isScalable, useScaleWorkload } from '@/hooks/useScaleWorkload';
 
 type ScaleControlProps = {
@@ -42,11 +35,9 @@ export function ScaleControl({
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<number | string>(current ?? 0);
   const { scale, pending } = useScaleWorkload();
-  const { canWrite } = useRoles();
 
   if (!isScalable(kind)) return null;
 
-  const allowed = canWrite(cluster);
   const replicas = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
   const valid = Number.isInteger(replicas) && replicas >= 0;
   const scalingToZero = valid && replicas === 0 && (current ?? 0) > 0;
@@ -56,7 +47,6 @@ export function ScaleControl({
       variant={compact ? 'subtle' : 'default'}
       size={compact ? 'compact-sm' : 'sm'}
       leftSection={<IconArrowsVertical size={16} />}
-      disabled={!allowed}
       onClick={() => {
         setValue(current ?? 0);
         setOpen(true);
@@ -68,15 +58,7 @@ export function ScaleControl({
 
   return (
     <>
-      {allowed ? (
-        trigger
-      ) : (
-        <Tooltip label={`Requires the ${writeRoleFor(cluster)} role`}>
-          {/* A disabled button swallows pointer events, so the tooltip needs
-              a wrapper that still receives them. */}
-          <span>{trigger}</span>
-        </Tooltip>
-      )}
+      <RequireWrite cluster={cluster}>{trigger}</RequireWrite>
 
       <Modal opened={open} onClose={() => setOpen(false)} title={`Scale ${name}`} centered>
         <Stack gap="md">

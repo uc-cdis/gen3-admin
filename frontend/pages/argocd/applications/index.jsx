@@ -22,10 +22,11 @@ import {
   ArgoAvailabilityGate,
   useArgoMode,
 } from '@/components/ArgoCD/ArgoAvailabilityGate';
-import { PageHeader, QueryState, StatusBadge } from '@/components/ui';
+import { PageHeader, QueryState, RequireWrite, StatusBadge } from '@/components/ui';
 import { useArgoApplications, useArgoInvalidate } from '@/hooks/useArgoCD';
 import { useAccessToken } from '@/hooks/useK8s';
 import { useResolvedClusterWithFallback } from '@/hooks/useResolvedCluster';
+import { useRoles, writeRoleFor } from '@/hooks/useRoles';
 import { syncApplication, syncViaCRDFallback } from '@/lib/argocd';
 
 function timeAgo(timestamp) {
@@ -58,6 +59,7 @@ export default function ArgoCDApplicationsPage() {
   // These routes do not name a cluster, so fall back to stored state or the
   // single connected agent rather than dead-ending a shared link.
   const { cluster, resolving } = useResolvedClusterWithFallback();
+  const { canWrite } = useRoles();
 
   return (
     <ArgoAvailabilityGate cluster={cluster} resolving={resolving}>
@@ -195,10 +197,18 @@ function ApplicationsList({ cluster }) {
             {selected.length > 0 && (
               <Menu position="bottom-end">
                 <Menu.Target>
+                  {/* Not wrapped in RequireWrite: Menu.Target needs a direct
+                      child it can attach a ref to, so the gate is inline. */}
                   <Button
                     variant="light"
                     rightSection={<IconChevronDown size={14} />}
                     loading={syncing}
+                    disabled={!canWrite(cluster)}
+                    title={
+                      canWrite(cluster)
+                        ? undefined
+                        : `Requires the ${writeRoleFor(cluster)} role`
+                    }
                   >
                     Sync {selected.length} selected
                   </Button>
@@ -345,9 +355,11 @@ function ApplicationsList({ cluster }) {
                 title: '',
                 textAlign: 'right',
                 render: (row) => (
-                  <Button size="xs" variant="light" onClick={() => runSync([row])} loading={syncing}>
-                    Sync
-                  </Button>
+                  <RequireWrite cluster={cluster}>
+                    <Button size="xs" variant="light" onClick={() => runSync([row])} loading={syncing}>
+                      Sync
+                    </Button>
+                  </RequireWrite>
                 ),
               },
             ]}

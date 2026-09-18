@@ -36,6 +36,9 @@ import {
   IconCircleDot,
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
+import { ReplicaBadge } from "@/components/ui";
+import { CONVERGING_MS, SETTLED_MS } from "@/lib/workloadPolling";
+import ScaleControl from "@/components/ScaleControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
 import dynamic from 'next/dynamic'
 
@@ -653,7 +656,7 @@ export default function CoreServicesOverview({
 }) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -842,20 +845,32 @@ export default function CoreServicesOverview({
     }
   }, [env, namespace, accessToken]);
 
-  // Auto-refresh logic
+  // Auto-refresh.
+  //
+  // On by default and paced by what the data is doing, matching the workload
+  // lists: this is the screen someone watches while a deploy rolls out, and
+  // it previously sat frozen unless they found the toggle. Fast while
+  // anything is converging, background once everything has settled.
+  const anyConverging = services.some(
+    (svc) => svc.desired > 0 && (svc.ready !== svc.desired || svc.updated !== svc.desired)
+  );
+
   useEffect(() => {
-    if (autoRefresh) {
-      refreshIntervalRef.current = setInterval(fetchServices, 15000);
-    } else {
+    if (!autoRefresh) {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
+      return;
     }
+
+    const period = anyConverging ? CONVERGING_MS : SETTLED_MS;
+    refreshIntervalRef.current = setInterval(fetchServices, period);
+
     return () => {
       if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
     };
-  }, [autoRefresh, fetchServices]);
+  }, [autoRefresh, anyConverging, fetchServices]);
 
   // Initial fetch
   useEffect(() => {
@@ -1138,9 +1153,13 @@ export default function CoreServicesOverview({
                     </Tooltip>
                   )}
 
-                  {/* Replica Progress Bar */}
-                  {svc.desired > 0 && (
-                    <Group gap={8} align="center">
+                  {/* Replicas.
+                      The bar is only meaningful above zero, but the count
+                      must always show: gating the whole block on desired > 0
+                      meant a service scaled to zero rendered nothing at all,
+                      indistinguishable from one with no replica information. */}
+                  <Group gap={8} align="center" wrap="nowrap">
+                    {svc.desired > 0 && (
                       <Progress
                         value={(svc.ready / svc.desired) * 100}
                         size="xs"
@@ -1148,11 +1167,22 @@ export default function CoreServicesOverview({
                         color={clr}
                         style={{ flex: 1 }}
                       />
-                      <Text size="xs" c="dimmed" miw={36} ta="right">
-                        {svc.ready}/{svc.desired}
-                      </Text>
-                    </Group>
-                  )}
+                    )}
+                    <ReplicaBadge
+                      ready={svc.ready}
+                      desired={svc.desired}
+                      reason={svc.podReason}
+                      size="sm"
+                    />
+                    <ScaleControl
+                      compact
+                      kind={svc.kind}
+                      namespace={namespace}
+                      name={svc.name}
+                      cluster={env}
+                      current={svc.desired}
+                    />
+                  </Group>
 
                   {/* Images */}
                   <Group gap={4}>
