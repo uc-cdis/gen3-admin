@@ -128,6 +128,9 @@ func SetupHTTPServer() {
 	// Environment detection (public, no auth required)
 	r.GET("/api/environment", GetEnvironmentHandler)
 
+	// Who am I, and what may I do. Open to any authenticated user.
+	r.GET("/api/me", HandleMe)
+
 	// External routes (from pkg package)
 	routes.Routes(r)
 

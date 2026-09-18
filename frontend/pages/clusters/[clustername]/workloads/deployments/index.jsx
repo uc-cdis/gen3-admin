@@ -1,62 +1,41 @@
 import DataTable from '@/components/DataTable/DataTable';
-
-import { Badge, Anchor, Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
-import calculateAge from '@/utils/calculateAge';
-
-import Link from 'next/link'
+import { PageHeader } from '@/components/ui';
+import {
+  ageColumn,
+  nameColumn,
+  namespaceColumn,
+  numberColumn,
+  readyColumn,
+  scaleColumn,
+} from '@/lib/workloadColumns';
 
 export default function Deployments() {
-    const clusterName = useParams()?.clustername;
+  const clusterName = useParams()?.clustername;
 
-    return (
-        <>
-            <DataTable
-                agent={clusterName}
-                endpoint={`/apis/apps/v1/deployments`}
-                fields={[
-                    {
-                        key: "metadata.namespace",
-                        label: "Namespace",
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Name",
-                        render: ({ original }) => (
-                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/deployments/${original.metadata.namespace}/${original.metadata.name}`}>
-                                <Text fw={500}>{original.metadata.name}</Text>
-                            </Anchor>
-                        )
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Ready",
-                        render: ({ original }) => {
-                            const ready = original.status?.readyReplicas || 0;
-                            const total = original.status?.replicas || 0;
-                            return <Text>{`${ready}/${total}`}</Text>;
-                        }
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Up-to-date",
-                        render: ({ original }) => {
-                            const updated = original.status?.updatedReplicas ?? '-';
-                            return <Text>{updated}</Text>;
-                        }
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Available",
-                        render: ({ original }) => {
-                            const available = original.status?.availableReplicas ?? '-';
-                            return <Text>{available}</Text>;
-                        }
-                    },
-                    { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                ]}
-            />
-        </>
-    )
+  return (
+    <>
+      <PageHeader title="Deployments" subtitle={clusterName} />
+      <DataTable
+        agent={clusterName}
+        endpoint={`/apis/apps/v1/deployments`}
+        fields={[
+          namespaceColumn,
+          nameColumn(clusterName, 'deployments'),
+          // Desired comes from spec, not status: during a scale-down
+          // status.replicas still reports the old count, so using it as the
+          // denominator made a shrinking deployment look unhealthy.
+          readyColumn(
+            (r) => r.status?.readyReplicas,
+            (r) => r.spec?.replicas
+          ),
+          numberColumn('Up-to-date', (r) => r.status?.updatedReplicas),
+          numberColumn('Available', (r) => r.status?.availableReplicas),
+          ageColumn(),
+          scaleColumn('Deployment', clusterName, (r) => r.spec?.replicas),
+        ]}
+      />
+    </>
+  );
 }

@@ -16,6 +16,9 @@ import {
   ScrollArea,
   Switch,
   Progress,
+  Paper,
+  UnstyledButton,
+  Collapse,
   Tabs,
   ThemeIcon,
   Box,
@@ -23,6 +26,8 @@ import {
 } from "@mantine/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
+  IconChevronDown,
+  IconChevronRight,
   IconRefresh,
   IconContainer,
   IconPlayerPlay,
@@ -36,6 +41,18 @@ import {
   IconCircleDot,
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
+import { CONVERGING_MS, SETTLED_MS } from "@/lib/workloadPolling";
+import {
+  formatCpu,
+  formatMemory,
+  rolloutColor,
+  rolloutLabel,
+  sumUsage,
+  summarizeRollout,
+  type Usage,
+} from "@/lib/rolloutState";
+import { resolveStatus } from "@/lib/status";
+import ScaleControl from "@/components/ScaleControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
 import dynamic from 'next/dynamic'
 
@@ -54,6 +71,20 @@ type Service = {
   images: string[];
   podReason?: string;       // e.g. "CrashLoopBackOff", "ContainerCreating"
   podMessage?: string;     // human-readable detail from the pod status
+  /** The workload's own pods, for live rollout state. Already fetched. */
+  pods?: any[];
+  /**
+   * Deployment conditions, kept rather than collapsed into one reason
+   * string. These carry their own timestamps and outlive both the pods and
+   * the events, so they are the only thing left to show on a workload that
+   * was stopped days ago.
+   *
+   * Optional because a Service object can outlive a refresh: the modal holds
+   * the one it was opened with, which may predate this field.
+   */
+  conditions?: any[];
+  /** Live CPU/memory, or null when metrics-server is unavailable. */
+  usage?: Usage | null;
 };
 
 function formatAge(timestamp: string | undefined) {
@@ -91,38 +122,8 @@ type PodEvent = {
   lastTimestamp: string;
 };
 
-function computeStatus(desired: number, ready: number) {
-  if (ready === 0) return { status: "down", color: "red", label: "Down" };
-  if (ready < desired)
-    return { status: "degraded", color: "yellow", label: "Degraded" };
-  return { status: "healthy", color: "green", label: "Healthy" };
-}
 
-// Classify a pod reason into severity for visual treatment
-const TRANSITIONAL_REASONS = new Set([
-  "ContainerCreating", "PodInitializing", "Pending", "Waiting",
-  "AttachVolume", "Pulling", "Created", "Scheduled",
-]);
-const WARNING_REASONS = new Set([
-  "CrashLoopBackOff", "ImagePullBackOff", "Evicted", "NodeAffinity",
-  "Unschedulable", "InsufficientCPU", "InsufficientMemory",
-]);
 
-function reasonSeverity(reason?: string): "transitional" | "warning" | "error" {
-  if (!reason) return "error";
-  const base = reason.split(" ")[0].replace(/[^a-zA-Z]/g, ""); // strip "(N restarts)" etc
-  if (TRANSITIONAL_REASONS.has(base)) return "transitional";
-  if (WARNING_REASONS.has(base)) return "warning";
-  return "error";
-}
-
-function statusColor(health: ReturnType<typeof computeStatus>, podReason?: string): string {
-  if (health.status === "healthy") return "teal";
-  const sev = reasonSeverity(podReason);
-  if (sev === "transitional") return "blue";
-  if (sev === "warning") return "orange";
-  return "red";
-}
 
 function buildLabelSelector(matchLabels: Record<string, string>) {
   return Object.entries(matchLabels)
@@ -131,401 +132,374 @@ function buildLabelSelector(matchLabels: Record<string, string>) {
 }
 
 /* ── Single Pod Tabbed Detail View ── */
-function SinglePodDetailTabs({
-  pod,
-  events,
-  eventsLoading,
-  namespace,
-  cluster,
-  onRefreshEvents,
-  onOpenLogs,
-  onOpenShell,
-  selectedContainer,
-}: {
-  pod: Pod;
-  events: PodEvent[];
-  eventsLoading: boolean;
-  namespace: string;
-  cluster: string;
-  onRefreshEvents: () => void;
-  onOpenLogs: (container: string) => void;
-  onOpenShell: (container: string) => void;
-  selectedContainer: string | null;
-}) {
-  const initContainers = pod.containers.filter((c) => c.isInit);
-  const runningContainers = pod.containers.filter((c) => !c.isInit && c.state === "Running" && c.ready);
-  const waitingContainers = pod.containers.filter((c) => !c.isInit && (c.state === "Waiting" || (c.state === "Running" && !c.ready)));
-  const terminatedContainers = pod.containers.filter((c) => !c.isInit && c.state === "Terminated");
-
-  const tabs = [
-    ...(initContainers.length > 0 ? [{ value: "init", label: "INIT", icon: IconLoader, count: initContainers.length }] : []),
-    { value: "ready", label: "Ready", icon: IconCheck, count: runningContainers.length },
-    ...(waitingContainers.length > 0 ? [{ value: "waiting", label: "Waiting", icon: IconClock, count: waitingContainers.length }] : []),
-    ...(terminatedContainers.length > 0 ? [{ value: "terminated", label: "Terminated", icon: IconAlertTriangle, count: terminatedContainers.length }] : []),
-    { value: "events", label: "Events", icon: IconAlertTriangle, count: events.length },
-    { value: "logs", label: "Logs", icon: IconFileText },
-    { value: "shell", label: "Shell", icon: IconTerminal },
-  ];
-
-  return (
-    <Tabs defaultValue={runningContainers.length > 0 ? "ready" : tabs[0]?.value ?? "ready"}>
-      {/* Pod header row */}
-      <Box py="xs" px="md">
-        <Group justify="space-between">
-          <Group gap="sm">
-            <Text fw={600} size="lg">{pod.name}</Text>
-            <Badge
-              color={
-                pod.phase === "Running" ? "green" :
-                pod.phase === "Pending" ? "yellow" : "red"
-              }
-              variant="filled"
-              size="lg"
-            >
-              {pod.phase.toUpperCase()}
-            </Badge>
-          </Group>
-          <Button
-            size="compact-xs"
-            variant="light"
-            leftSection={<IconRefresh size={12} />}
-            loading={eventsLoading}
-            onClick={onRefreshEvents}
-          >
-            Refresh Events
-          </Button>
-        </Group>
-      </Box>
-
-      <Tabs.List>
-        {tabs.map((tab) => (
-          <Tabs.Tab key={tab.value} value={tab.value} leftSection={<tab.icon size={14} />}>
-            {tab.label}
-            {"count" in tab ? (
-              <Badge size="xs" ml={4} variant="filled">{tab.count as number}</Badge>
-            ) : null}
-          </Tabs.Tab>
-        ))}
-      </Tabs.List>
-
-      {/* INIT containers */}
-      {initContainers.length > 0 && (
-        <Tabs.Panel value="init" p="md">
-          <Stack gap="sm">
-            {initContainers.map((c) => (
-              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} />
-            ))}
-          </Stack>
-        </Tabs.Panel>
-      )}
-
-      {/* Ready / Running containers */}
-      <Tabs.Panel value="ready" p="md">
-        <Stack gap="sm">
-          {runningContainers.length > 0 ? (
-            runningContainers.map((c) => (
-              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} onShell={() => onOpenShell(c.name)} />
-            ))
-          ) : (
-            <Text c="dimmed" ta="center" py="xl">No ready containers</Text>
-          )}
-        </Stack>
-      </Tabs.Panel>
-
-      {/* Waiting containers */}
-      {waitingContainers.length > 0 && (
-        <Tabs.Panel value="waiting" p="md">
-          <Stack gap="sm">
-            {waitingContainers.map((c) => (
-              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} highlight />
-            ))}
-          </Stack>
-        </Tabs.Panel>
-      )}
-
-      {/* Terminated containers */}
-      {terminatedContainers.length > 0 && (
-        <Tabs.Panel value="terminated" p="md">
-          <Stack gap="sm">
-            {terminatedContainers.map((c) => (
-              <ContainerRow key={c.name} container={c} onLogs={() => onOpenLogs(c.name)} />
-            ))}
-          </Stack>
-        </Tabs.Panel>
-      )}
-
-      {/* Events timeline */}
-      <Tabs.Panel value="events" p="md">
-        <Stack gap="sm">
-          {events.length > 0 ? (
-            events.slice(0, 20).map((e, i) => (
-              <EventTimelineItem key={i} event={e} index={i} />
-            ))
-          ) : eventsLoading ? (
-            <Text c="dimmed" ta="center" py="xl"><Loader size="sm" /> Loading events...</Text>
-          ) : (
-            <Text c="dimmed" ta="center" py="xl">No events recorded</Text>
-          )}
-        </Stack>
-      </Tabs.Panel>
-
-      {/* Logs — opens sub-modal or inline */}
-      <Tabs.Panel value="logs" p="md">
-        <Box h="60vh">
-          <LogWindow namespace={namespace} pod={pod.name} cluster={cluster}
-            containers={selectedContainer
-              ? [selectedContainer]
-              : [...runningContainers, ...waitingContainers, ...initContainers].map(c => c.name)
-            } />
-        </Box>
-      </Tabs.Panel>
-
-      {/* Shell — opens sub-modal or inline */}
-      <Tabs.Panel value="shell" p="md">
-        <Box h="60vh">
-          <TerminalComponent namespace={namespace} pod={pod.name} cluster={cluster}
-            container={selectedContainer
-              ? selectedContainer
-              : [...runningContainers, ...waitingContainers].find(c => !c.isInit)?.name || ''
-            } />
-        </Box>
-      </Tabs.Panel>
-    </Tabs>
-  );
-}
-
-/* ── Multi-Pod Detail View (pod selector + tabs for selected pod) ── */
-function MultiPodDetailView({
+/**
+ * The workload detail view.
+ *
+ * This replaces two components -- `SinglePodDetailTabs` for exactly one pod
+ * and `MultiPodDetailView` for none or several. They were alternatives on
+ * `pods.length === 1`, so the same screen had two implementations that had
+ * drifted: Running was green in one and teal in the other, only one had a
+ * loading state, and the multi-pod one rendered its container list twice
+ * under different tabs.
+ *
+ * One view, two levels. The deployment's own state at the top -- which was
+ * absent entirely, so the modal title showed a stale "STOPPED" over a pod
+ * reporting RUNNING -- then a row per pod that expands in place. No tabs:
+ * with at most a handful of pods, five tabs to reach a container's logs was
+ * more navigation than the content warranted.
+ */
+function WorkloadDetail({
+  service,
   pods,
   podEvents,
-  eventsLoading,
+  eventsLoadingFor,
   loading,
   namespace,
   cluster,
-  selectedPod,
-  onSelectPod,
   onRefreshEvents,
   onOpenLogs,
   onOpenShell,
-  selectedContainer,
 }: {
+  service: Service | null;
   pods: Pod[];
   podEvents: Record<string, PodEvent[]>;
-  eventsLoading: boolean;
+  /** Pod names with an events request in flight. */
+  eventsLoadingFor: Set<string>;
   loading: boolean;
   namespace: string;
   cluster: string;
-  selectedPod: Pod | null;
-  onSelectPod: (p: Pod) => void;
   onRefreshEvents: (name: string) => void;
   onOpenLogs: (p: Pod, c: string) => void;
   onOpenShell: (p: Pod, c: string) => void;
-  selectedContainer: string | null;
 }) {
-  const activePod = selectedPod || pods[0] || null;
+  // Which pods are expanded. A single pod opens by default, since there is
+  // nothing to choose between and collapsing it would hide the only content.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (pods.length === 1) setExpanded(new Set([pods[0].name]));
+  }, [pods]);
 
-  if (!activePod) {
-    return <Text c="dimmed" ta="center" py="xl">No pods found</Text>;
-  }
+  const toggle = (name: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const rollout = service
+    ? summarizeRollout(service.pods, service.desired, service.ready)
+    : null;
+
+  // Keyed by object name, same store as pod events.
+  const deploymentEvents = service ? podEvents[service.name] || [] : [];
+
+  // `selectedService` is captured when the modal opens and survives across
+  // refreshes, so it can be an object built before `conditions` existed on
+  // the type. TypeScript cannot see that -- the field is declared required
+  // -- so the access is guarded rather than trusted.
+  const conditions: any[] = service?.conditions ?? [];
 
   return (
-    <Tabs defaultValue="overview">
-      {/* Pod selector bar */}
-      <Box py="xs" px="md" bg="dark.6">
-        <Group gap="sm">
-          {loading ? (
-            <Loader size="xs" />
-          ) : (
-            pods.map((p) => {
-              const isActive = activePod.name === p.name;
-              const hasIssues = p.phase !== "Running" ||
-                p.containers.some((c) => !c.ready && !c.isInit);
-              return (
-                <Anchor
-                  key={p.name}
-                  onClick={() => onSelectPod(p)}
-                  style={{
-                    fontWeight: isActive ? 700 : 400,
-                    opacity: isActive ? 1 : 0.6,
-                    borderBottom: isActive ? "2px solid #228be6" : "none",
-                    paddingBottom: 2,
-                  }}
-                  size={isActive ? "sm" : "xs"}
-                >
-                  <Group gap={4}>
-                    <ThemeIcon
-                      size="xs"
-                      color={
-                        p.phase === "Running" ? "teal" :
-                        p.phase === "Pending" ? "yellow" : "red"
-                      }
-                      variant="filled"
-                      radius="xl"
-                    >
-                      <IconCircleDot size={8} />
-                    </ThemeIcon>
-                    <span>{p.name}</span>
-                    {hasIssues && !isActive && (
-                      <Badge size="xs" color="red" variant="filled">!</Badge>
-                    )}
-                  </Group>
-                </Anchor>
-              );
-            })
-          )}
-        </Group>
-      </Box>
+    <Stack gap="md">
+      {/* Deployment state. Read from the same summary the card uses, so the
+          two cannot disagree the way the old title did. */}
+      {service && rollout && (
+        <Paper withBorder p="md" radius="md">
+          <Group justify="space-between" wrap="nowrap" align="flex-start">
+            <Stack gap={6} style={{ minWidth: 0 }}>
+              <Group gap="xs">
+                <Badge color={rolloutColor(rollout.phase)} variant="light">
+                  {rolloutLabel(rollout.phase).toUpperCase()}
+                </Badge>
+                <Text size="sm" c="dimmed">
+                  {service.ready}/{service.desired} ready
+                </Text>
+                {rollout.detail && (
+                  <Text size="sm" c={rolloutColor(rollout.phase)}>
+                    {rollout.detail}
+                  </Text>
+                )}
+              </Group>
 
-      <Tabs.List>
-        <Tabs.Tab value="overview" leftSection={<IconContainer size={14} />}>Overview</Tabs.Tab>
-        <Tabs.Tab value="containers" leftSection={<IconPlayerPlay size={14} />}>
-          Containers
-          <Badge size="xs" ml={4}>{activePod.containers.length}</Badge>
-        </Tabs.Tab>
-        <Tabs.Tab value="events" leftSection={<IconAlertTriangle size={14} />}>
-          Events
-          <Badge size="xs" ml={4}>{(podEvents[activePod.name] || []).length}</Badge>
-        </Tabs.Tab>
-        <Tabs.Tab value="logs" leftSection={<IconFileText size={14} />}>Logs</Tabs.Tab>
-        <Tabs.Tab value="shell" leftSection={<IconTerminal size={14} />}>Shell</Tabs.Tab>
-      </Tabs.List>
+              {service.images.map((img) => (
+                <Text key={img} size="xs" ff="monospace" c="dimmed" truncate="end">
+                  {img}
+                </Text>
+              ))}
 
-      {/* Overview panel */}
-      <Tabs.Panel value="overview" p="md">
-        <Card withBorder radius="sm">
-          <Group justify="space-between" mb="sm">
-            <Group gap="sm">
-              <Text fw={700} size="lg">{activePod.name}</Text>
-              <Badge
-                color={
-                  activePod.phase === "Running" ? "green" :
-                  activePod.phase === "Pending" ? "yellow" : "red"
-                }
-                variant="filled"
-                size="lg"
-              >
-                {activePod.phase.toUpperCase()}
-              </Badge>
-            </Group>
-            <Button
-              size="compact-xs"
-              variant="light"
-              leftSection={<IconRefresh size={12} />}
-              loading={eventsLoading}
-              onClick={() => onRefreshEvents(activePod.name)}
-            >
-              Refresh Events
-            </Button>
+              <Text size="xs" c="dimmed">
+                Created {service.age} ago
+                {service.lastTransitionTime !== "N/A" &&
+                  ` · last change ${service.lastTransitionTime} ago`}
+              </Text>
+            </Stack>
+
+            <ScaleControl
+              kind={service.kind}
+              namespace={namespace}
+              name={service.name}
+              cluster={cluster}
+              current={service.desired}
+            />
           </Group>
 
-          <Divider my="sm" />
+          {service.podMessage && rollout.phase === "failing" && (
+            <Text size="xs" c="statusError" mt="sm">
+              {service.podMessage}
+            </Text>
+          )}
+        </Paper>
+      )}
 
-          <Stack gap="xs">
-            {activePod.containers.map((c) => (
-              <ContainerRow
-                key={c.name}
-                container={c}
-                onLogs={() => onOpenLogs(activePod, c.name)}
-                onShell={!c.isInit ? () => onOpenShell(activePod, c.name) : undefined}
-                highlight={!c.ready}
-              />
-            ))}
-          </Stack>
+      {/* Pods */}
+      {loading && pods.length === 0 ? (
+        <Group gap="xs" py="lg" justify="center">
+          <Loader size="sm" />
+          <Text size="sm" c="dimmed">
+            Loading pods…
+          </Text>
+        </Group>
+      ) : pods.length === 0 ? (
+        // No pods, but not nothing to say. The workload's own events outlive
+        // them, and for a stopped deployment they answer the only question
+        // worth asking here: why is this off, and since when.
+        <Stack gap="xs">
+          <Text size="sm" c="dimmed">
+            {service && service.desired === 0
+              ? "Scaled to zero, so there are no pods to show."
+              : "No pods found."}
+          </Text>
 
-          <Divider my="sm" />
-
-          {/* Event summary */}
-          {(podEvents[activePod.name] || []).length > 0 && (
+          {/* Conditions rather than events. Kubernetes expires events after
+              about an hour, so a workload stopped days ago has none left --
+              the first version of this panel was reliably empty for exactly
+              the case it was written for. Conditions carry their own
+              timestamps and persist on the object. */}
+          {conditions.length > 0 && (
             <>
-              <Text fw={600} size="sm" mb="xs">Recent Events</Text>
-              <Stack gap={4}>
-                {(podEvents[activePod.name] || []).slice(0, 5).map((e, i) => (
-                  <EventTimelineItem key={i} event={e} index={i} compact />
-                ))}
-              </Stack>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
+                Last known state
+              </Text>
+              {conditions.map((c: any) => (
+                <Group key={c.type} gap="xs" wrap="nowrap" align="flex-start">
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color={c.status === "True" ? "statusOk" : "statusWarn"}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {c.type}
+                  </Badge>
+                  <Stack gap={0} style={{ minWidth: 0, flex: 1 }}>
+                    <Text size="xs">{c.reason || c.status}</Text>
+                    {c.message && (
+                      <Text size="xs" c="dimmed" lineClamp={2}>
+                        {c.message}
+                      </Text>
+                    )}
+                  </Stack>
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                    {formatAge(c.lastUpdateTime || c.lastTransitionTime)}
+                  </Text>
+                </Group>
+              ))}
             </>
           )}
-        </Card>
-      </Tabs.Panel>
 
-      {/* Containers panel */}
-      <Tabs.Panel value="containers" p="md">
-        <Stack gap="sm">
-          {activePod.containers.map((c) => (
-            <ContainerRow
-              key={c.name}
-              container={c}
-              onLogs={() => onOpenLogs(activePod, c.name)}
-              onShell={!c.isInit ? () => onOpenShell(activePod, c.name) : undefined}
-              expanded
+          {/* Events when they happen to still exist -- a recent change. */}
+          {deploymentEvents.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mt="xs">
+                Recent activity
+              </Text>
+              {deploymentEvents.slice(0, 6).map((e, i, shown) => (
+                <EventTimelineItem
+                  key={`${e.reason}-${i}`}
+                  event={e}
+                  index={i}
+                  compact
+                  isLast={i === shown.length - 1}
+                />
+              ))}
+            </>
+          )}
+        </Stack>
+      ) : (
+        <Stack gap={4}>
+          <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+            Pods ({pods.length})
+          </Text>
+
+          {pods.map((p) => (
+            <PodRow
+              key={p.name}
+              pod={p}
+              expanded={expanded.has(p.name)}
+              onToggle={() => toggle(p.name)}
+              events={podEvents[p.name] || []}
+              eventsLoading={eventsLoadingFor.has(p.name)}
+              onRefreshEvents={() => onRefreshEvents(p.name)}
+              onOpenLogs={(c) => onOpenLogs(p, c)}
+              onOpenShell={(c) => onOpenShell(p, c)}
             />
           ))}
         </Stack>
-      </Tabs.Panel>
-
-      {/* Events panel */}
-      <Tabs.Panel value="events" p="md">
-        <Stack gap="sm">
-          {(podEvents[activePod.name] || []).length > 0 ? (
-            (podEvents[activePod.name] || []).slice(0, 30).map((e, i) => (
-              <EventTimelineItem key={i} event={e} index={i} />
-            ))
-          ) : (
-            <Text c="dimmed" ta="center" py="xl">No events recorded for this pod</Text>
-          )}
-        </Stack>
-      </Tabs.Panel>
-
-      {/* Logs panel */}
-      <Tabs.Panel value="logs" p="md">
-        <Box h="60vh">
-          <LogWindow namespace={namespace} pod={activePod.name} cluster={cluster}
-            containers={selectedContainer
-              ? [selectedContainer]
-              : activePod.containers.filter(c => !c.isInit).map(c => c.name)
-            } />
-        </Box>
-      </Tabs.Panel>
-
-      {/* Shell panel */}
-      <Tabs.Panel value="shell" p="md">
-        <Box h="60vh">
-          <TerminalComponent namespace={namespace} pod={activePod.name} cluster={cluster}
-            container={selectedContainer
-              ? selectedContainer
-              : activePod.containers.find(c => !c.isInit)?.name || ''
-            } />
-        </Box>
-      </Tabs.Panel>
-    </Tabs>
+      )}
+    </Stack>
   );
 }
 
-/* ── Container Row Component ── */
+/** One pod: a compact summary row that expands to containers and events. */
+function PodRow({
+  pod,
+  expanded,
+  onToggle,
+  events,
+  eventsLoading,
+  onRefreshEvents,
+  onOpenLogs,
+  onOpenShell,
+}: {
+  pod: Pod;
+  expanded: boolean;
+  onToggle: () => void;
+  events: PodEvent[];
+  eventsLoading: boolean;
+  onRefreshEvents: () => void;
+  onOpenLogs: (container: string) => void;
+  onOpenShell: (container: string) => void;
+}) {
+  const main = pod.containers.filter((c) => !c.isInit);
+  const init = pod.containers.filter((c) => c.isInit);
+  const ready = main.filter((c) => c.ready).length;
+  const restarts = pod.containers.reduce((n, c) => n + (c.restartCount || 0), 0);
+
+  // One resolver for the dot, rather than the phase ternary that was
+  // duplicated three times and disagreed with itself.
+  const status = resolveStatus("pod", pod.phase, {
+    reason: pod.containers.find((c) => c.reason)?.reason,
+    ready: main.length > 0 && main.every((c) => c.ready),
+  });
+
+  return (
+    <Paper withBorder radius="sm">
+      <UnstyledButton w="100%" p="xs" onClick={onToggle}>
+        <Group gap="sm" wrap="nowrap">
+          {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Badge size="xs" variant="light" color={status.color}>
+            {status.label}
+          </Badge>
+          <Text size="sm" ff="monospace" truncate="end" style={{ flex: 1, minWidth: 0 }}>
+            {pod.name}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {ready}/{main.length}
+          </Text>
+          {restarts > 0 && (
+            <Text size="xs" c={restarts > 5 ? "statusError" : "statusWarn"} fw={600}>
+              {restarts}↺
+            </Text>
+          )}
+        </Group>
+      </UnstyledButton>
+
+      <Collapse expanded={expanded}>
+        <Stack gap="xs" p="xs" pt={0}>
+          <Divider />
+
+          {init.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+                Init
+              </Text>
+              {init.map((c) => (
+                <ContainerRow
+                  key={c.name}
+                  container={c}
+                  onLogs={() => onOpenLogs(c.name)}
+                  highlight={!c.ready && c.state !== "Terminated"}
+                />
+              ))}
+            </>
+          )}
+
+          {main.map((c) => (
+            <ContainerRow
+              key={c.name}
+              container={c}
+              onLogs={() => onOpenLogs(c.name)}
+              onShell={() => onOpenShell(c.name)}
+              highlight={!c.ready}
+            />
+          ))}
+
+          <Group justify="space-between" mt={4}>
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+              Recent events
+            </Text>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              loading={eventsLoading}
+              onClick={onRefreshEvents}
+            >
+              Refresh
+            </Button>
+          </Group>
+
+          {events.length === 0 ? (
+            <Text size="xs" c="dimmed">
+              {eventsLoading ? "Loading…" : "No events recorded."}
+            </Text>
+          ) : (
+            events
+              .slice(0, 8)
+              .map((e, i, shown) => (
+                <EventTimelineItem
+                  key={`${e.reason}-${i}`}
+                  event={e}
+                  index={i}
+                  compact
+                  isLast={i === shown.length - 1}
+                />
+              ))
+          )}
+        </Stack>
+      </Collapse>
+    </Paper>
+  );
+}
+
+
 function ContainerRow({
   container,
   onLogs,
   onShell,
   highlight = false,
-  expanded = false,
 }: {
   container: ContainerStatus;
   onLogs: () => void;
   onShell?: () => void;
   highlight?: boolean;
-  expanded?: boolean;
 }) {
   const stateColor =
-    container.state === "Running" ? "teal" :
-    container.state === "Waiting" ? "blue" :
-    container.state === "Terminated" ? "orange" : "gray";
+    container.state === "Running" ? "statusOk" :
+    container.state === "Waiting" ? "statusPending" :
+    container.state === "Terminated" ? "statusWarn" : "statusNeutral";
 
   return (
     <Card
       withBorder
       radius="sm"
       p="xs"
-      bg={highlight ? "red.0" : undefined}
+      // light-dark() rather than a fixed palette shade: red.0 is a
+      // near-white tint that vanishes in light mode and glares in dark.
+      bg={
+        highlight
+          ? "light-dark(var(--mantine-color-statusError-0), var(--mantine-color-statusError-9))"
+          : undefined
+      }
     >
       <Group justify="space-between" align="center">
         <Group gap="xs">
@@ -545,7 +519,7 @@ function ContainerRow({
           </Badge>
           {container.reason && (
             <Tooltip label={container.reason} withArrow>
-              <Text size="xs" c="red" td="underline">{container.reason}</Text>
+              <Text size="xs" c="statusError" td="underline">{container.reason}</Text>
             </Tooltip>
           )}
           {container.restartCount > 0 && (
@@ -571,7 +545,20 @@ function ContainerRow({
 }
 
 /* ── Event Timeline Item ── */
-function EventTimelineItem({ event, index, compact = false }: { event: PodEvent; index: number; compact?: boolean }) {
+function EventTimelineItem({
+  event,
+  index,
+  compact = false,
+  isLast = false,
+}: {
+  event: PodEvent;
+  index: number;
+  compact?: boolean;
+  /** Suppresses the connector below the final item. Previously hardcoded to
+      `index < 19`, which came from a 20-item slice -- so a longer list lost
+      its connector partway down. */
+  isLast?: boolean;
+}) {
   const isWarning = event.type === "Warning";
   const isNormal = event.type === "Normal";
 
@@ -612,13 +599,27 @@ function EventTimelineItem({ event, index, compact = false }: { event: PodEvent;
         <ThemeIcon size="sm" color={dotColor} variant="filled" radius="xl">
           <IconCircleDot size={8} />
         </ThemeIcon>
-        {index < 19 && (
-          <Box w={1} h={28} bg={`${dotColor}.3`} style={{ minHeight: 28 }} />
+        {!isLast && (
+          <Box
+            w={1}
+            h={28}
+            style={{ minHeight: 28, background: "var(--mantine-color-default-border)" }}
+          />
         )}
       </Box>
 
       {/* Content */}
-      <Card withBorder radius="sm" p="xs" style={{ flex: 1 }} bg={isWarning ? "red.0" : undefined}>
+      <Card
+        withBorder
+        radius="sm"
+        p="xs"
+        style={{ flex: 1 }}
+        bg={
+          isWarning
+            ? "light-dark(var(--mantine-color-statusError-0), var(--mantine-color-statusError-9))"
+            : undefined
+        }
+      >
         <Group justify="space-between" align="center">
           <Group gap="xs">
             <Badge
@@ -634,7 +635,7 @@ function EventTimelineItem({ event, index, compact = false }: { event: PodEvent;
           </Group>
           <Text size="xs" c="dimmed">{formatAge(event.lastTimestamp)}</Text>
         </Group>
-        <Text size="sm" mt={4} c={isWarning ? "red.8" : "dimmed"} lineClamp={2}>
+        <Text size="sm" mt={4} c={isWarning ? "statusError" : "dimmed"} lineClamp={2}>
           {event.message}
         </Text>
       </Card>
@@ -653,7 +654,7 @@ export default function CoreServicesOverview({
 }) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -668,13 +669,16 @@ export default function CoreServicesOverview({
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
 
-  const [eventsLoading, setEventsLoading] = useState(false);
+  // Per pod, not one shared boolean: opening the modal fires one events
+  // request per pod, and a single flag meant the first response to land
+  // cleared the spinner for all the others still in flight.
+  const [eventsLoadingFor, setEventsLoadingFor] = useState<Set<string>>(new Set());
   const [podEvents, setPodEvents] = useState<Record<string, PodEvent[]>>({});
 
   const fetchServices = useCallback(async () => {
     setLoading(true);
     try {
-      const [deploymentsRes, statefulSetsRes, podsRes] = await Promise.all([
+      const [deploymentsRes, statefulSetsRes, podsRes, metricsRes] = await Promise.all([
         callK8sApi(
           `/apis/apps/v1/namespaces/${namespace}/deployments`,
           "GET",
@@ -699,6 +703,17 @@ export default function CoreServicesOverview({
           env,
           accessToken
         ),
+        // Live usage. metrics-server is frequently absent, so this must not
+        // take the rest of the dashboard down with it -- a namespace with no
+        // metrics still has workloads worth showing.
+        callK8sApi(
+          `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`,
+          "GET",
+          null,
+          null,
+          env,
+          accessToken
+        ).catch(() => null),
       ]);
 
       // Build a map of pod reasons by service name using multiple strategies
@@ -780,6 +795,43 @@ export default function CoreServicesOverview({
         podReasonByOwner[ownerName] = { reason, message };
       });
 
+      // The pods for this namespace are already in hand. Grouping them by
+      // owner costs nothing and is what lets a card show a rollout in
+      // progress rather than a stale count.
+      const podsByOwner: Record<string, any[]> = {};
+      allPods.forEach((p: any) => {
+        const ownerRef = p.metadata?.ownerReferences?.find(
+          (o: any) => o.kind === "Deployment" || o.kind === "StatefulSet" || o.kind === "ReplicaSet"
+        );
+        // A Deployment owns a ReplicaSet which owns the pod, so the pod's
+        // owner is the ReplicaSet: strip its generated suffix to recover the
+        // Deployment name.
+        let owner = ownerRef?.kind === "ReplicaSet"
+          ? ownerRef.name.replace(/-[a-z0-9]+$/, "")
+          : ownerRef?.name;
+        if (!owner || !svcNames.has(owner)) {
+          owner = Array.from(svcNames).find((n) => p.metadata.name.startsWith(n));
+        }
+        if (!owner) return;
+        (podsByOwner[owner] ||= []).push(p);
+      });
+
+      // Usage, grouped by the owner each pod already resolved to. Keyed by
+      // pod name so a metrics entry with no matching pod is simply skipped.
+      const podToOwner: Record<string, string> = {};
+      Object.entries(podsByOwner).forEach(([owner, list]) => {
+        (list as any[]).forEach((p) => {
+          podToOwner[p.metadata.name] = owner;
+        });
+      });
+
+      const metricsByOwner: Record<string, any[]> = {};
+      (metricsRes?.items ?? []).forEach((m: any) => {
+        const owner = podToOwner[m?.metadata?.name];
+        if (!owner) return;
+        (metricsByOwner[owner] ||= []).push(m);
+      });
+
       const deployments =
         deploymentsRes?.items?.map((d: any) => {
           const availableCondition = d.status?.conditions?.find((c: any) => c.type === "Available");
@@ -810,6 +862,9 @@ export default function CoreServicesOverview({
             images: d.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
             podReason: reason,
             podMessage: message,
+            pods: podsByOwner[d.metadata.name] ?? [],
+            conditions: d.status?.conditions ?? [],
+            usage: sumUsage(metricsByOwner[d.metadata.name]),
           };
         }) ?? [];
 
@@ -832,6 +887,9 @@ export default function CoreServicesOverview({
             images: s.spec?.template?.spec?.containers?.map((c: any) => formatImageName(c.image)) ?? [],
             podReason: reason,
             podMessage: message,
+            pods: podsByOwner[s.metadata.name] ?? [],
+            conditions: s.status?.conditions ?? [],
+            usage: sumUsage(metricsByOwner[s.metadata.name]),
           };
         }) ?? [];
 
@@ -842,20 +900,32 @@ export default function CoreServicesOverview({
     }
   }, [env, namespace, accessToken]);
 
-  // Auto-refresh logic
+  // Auto-refresh.
+  //
+  // On by default and paced by what the data is doing, matching the workload
+  // lists: this is the screen someone watches while a deploy rolls out, and
+  // it previously sat frozen unless they found the toggle. Fast while
+  // anything is converging, background once everything has settled.
+  const anyConverging = services.some(
+    (svc) => svc.desired > 0 && (svc.ready !== svc.desired || svc.updated !== svc.desired)
+  );
+
   useEffect(() => {
-    if (autoRefresh) {
-      refreshIntervalRef.current = setInterval(fetchServices, 15000);
-    } else {
+    if (!autoRefresh) {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
+      return;
     }
+
+    const period = anyConverging ? CONVERGING_MS : SETTLED_MS;
+    refreshIntervalRef.current = setInterval(fetchServices, period);
+
     return () => {
       if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
     };
-  }, [autoRefresh, fetchServices]);
+  }, [autoRefresh, anyConverging, fetchServices]);
 
   // Initial fetch
   useEffect(() => {
@@ -863,8 +933,15 @@ export default function CoreServicesOverview({
     fetchServices();
   }, [env, namespace, accessToken, fetchServices]);
 
+  /**
+   * Events for one object, by name.
+   *
+   * The fieldSelector matches any involvedObject, so this serves Deployments
+   * as well as pods -- which is how a scaled-to-zero workload can still
+   * explain itself after its pods are gone.
+   */
   const fetchPodEvents = async (podName: string) => {
-    setEventsLoading(true);
+    setEventsLoadingFor((prev) => new Set(prev).add(podName));
     try {
       const res = await callK8sApi(
         `/api/v1/namespaces/${namespace}/events?fieldSelector=involvedObject.name=${podName}`,
@@ -895,7 +972,11 @@ export default function CoreServicesOverview({
         ),
       }));
     } finally {
-      setEventsLoading(false);
+      setEventsLoadingFor((prev) => {
+        const next = new Set(prev);
+        next.delete(podName);
+        return next;
+      });
     }
   };
 
@@ -991,15 +1072,25 @@ export default function CoreServicesOverview({
 
       setPods(parsed);
       parsed.forEach((p) => fetchPodEvents(p.name));
+      // Also the workload's own events. These outlive its pods, so a
+      // scaled-to-zero deployment can still say who scaled it and when --
+      // otherwise the modal has nothing to show but an empty state.
+      fetchPodEvents(svc.name);
     } finally {
       setPodsLoading(false);
     }
   };
 
   // ── Summary stats ──
-  const healthyCount = services.filter(s => computeStatus(s.desired, s.ready).status === "healthy").length;
-  const degradedCount = services.filter(s => computeStatus(s.desired, s.ready).status === "degraded").length;
-  const downCount = services.filter(s => computeStatus(s.desired, s.ready).status === "down").length;
+  // Counted from the same rollout summary the cards use, so the header and
+  // the grid below it cannot disagree.
+  const phases = services.map((s) => summarizeRollout(s.pods, s.desired, s.ready).phase);
+  const healthyCount = phases.filter((p) => p === "ready").length;
+  const degradedCount = phases.filter(
+    (p) => p === "pulling" || p === "starting" || p === "pending" || p === "terminating"
+  ).length;
+  const downCount = phases.filter((p) => p === "failing").length;
+  const stoppedCount = phases.filter((p) => p === "stopped").length;
   const totalReplicasReady = services.reduce((sum, s) => sum + s.ready, 0);
   const totalReplicasDesired = services.reduce((sum, s) => sum + s.desired, 0);
   const replicaPct = totalReplicasDesired > 0 ? Math.round((totalReplicasReady / totalReplicasDesired) * 100) : 0;
@@ -1049,22 +1140,32 @@ export default function CoreServicesOverview({
           </Group>
           <Divider orientation="vertical" />
           <Group gap={6}>
-            <Text size="sm" fw={500} c="teal">{healthyCount} healthy</Text>
+            <Text size="sm" fw={500} c="statusOk">{healthyCount} healthy</Text>
           </Group>
           {degradedCount > 0 && (
             <>
               <Divider orientation="vertical" />
-              <Group gap={6}>
-                <Text size="sm" fw={500} c="orange">{degradedCount} degraded</Text>
-              </Group>
+              <Text size="sm" fw={500} c="statusPending">
+                {degradedCount} rolling out
+              </Text>
             </>
           )}
           {downCount > 0 && (
             <>
               <Divider orientation="vertical" />
-              <Group gap={6}>
-                <Text size="sm" fw={500} c="red">{downCount} down</Text>
-              </Group>
+              <Text size="sm" fw={500} c="statusError">
+                {downCount} failing
+              </Text>
+            </>
+          )}
+          {/* Stopped is not an outage, so it is reported plainly rather than
+              folded into the failing count. */}
+          {stoppedCount > 0 && (
+            <>
+              <Divider orientation="vertical" />
+              <Text size="sm" fw={500} c="dimmed">
+                {stoppedCount} stopped
+              </Text>
             </>
           )}
           <div style={{ flex: 1 }} />
@@ -1076,7 +1177,7 @@ export default function CoreServicesOverview({
               size="xs"
               radius="xl"
               w={80}
-              color={replicaPct === 100 ? "teal" : replicaPct >= 50 ? "orange" : "red"}
+              color={replicaPct === 100 ? "statusOk" : replicaPct >= 50 ? "statusWarn" : "statusError"}
             />
           </Group>
         </Group>
@@ -1086,10 +1187,12 @@ export default function CoreServicesOverview({
         {/* Service Cards Grid */}
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
           {services.map((svc) => {
-            const health = computeStatus(svc.desired, svc.ready);
-            const sev = reasonSeverity(svc.podReason);
-            const clr = statusColor(health, svc.podReason);
-            const isUpdating = svc.updated < svc.desired && svc.desired > 0;
+            // Derived from the pods themselves rather than replica counts
+            // alone, so the card says what is happening ("1 pulling image")
+            // instead of only how far off it is.
+            const rollout = summarizeRollout(svc.pods, svc.desired, svc.ready);
+            const clr = rolloutColor(rollout.phase);
+            const isUpdating = rollout.converging;
 
             return (
               <Card
@@ -1100,83 +1203,137 @@ export default function CoreServicesOverview({
                 onClick={() => openPodsModal(svc)}
                 style={{ cursor: "pointer" }}
               >
-                <Stack gap={6}>
-                  {/* Top: Name + Status */}
-                  <Group justify="space-between" align="center">
-                    <Group gap={4} style={{ maxWidth: "65%" }}>
-                      <Text fw={550} size="sm" truncate="end" title={svc.name}>
+                {/* Fixed three-row structure so cards align down a column.
+                    Previously the kind badge wrapped to a second line on
+                    longer names and the progress bar only rendered above
+                    zero replicas, so every card was a different height --
+                    and healthy ones were the tallest, which is backwards. */}
+                <Stack gap={8}>
+                  {/* Name and state. Both single-line: the name truncates
+                      rather than wrapping, and the status badge is fixed
+                      width so the row never reflows. */}
+                  <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                      <Text fw={600} size="sm" truncate="end" title={svc.name}>
                         {svc.name}
                       </Text>
-                      <Badge
-                        size="xs"
-                        variant="outline"
-                        color="gray"
-                      >
-                        {svc.kind === "Deployment" ? "Deploy" : "STS"}
-                      </Badge>
+                      {/* Only when it is not the common case. Every card
+                          carrying a "DEPLOY" badge meant the badge carried
+                          no information while costing a line of height. */}
+                      {svc.kind === "StatefulSet" && (
+                        <Badge size="xs" variant="default" style={{ flexShrink: 0 }}>
+                          STS
+                        </Badge>
+                      )}
                     </Group>
-                    <Badge
-                      color={clr}
-                      variant="filled"
-                      size="xs"
-                    >
-                      {health.label.toUpperCase()}
-                    </Badge>
-                  </Group>
 
-                  {/* Pod reason for unhealthy services */}
-                  {health.status !== "healthy" && (svc.podReason || svc.podMessage) && (
                     <Tooltip
-                      label={svc.podMessage || svc.podReason || "Service is not healthy"}
-                      withArrow
+                      label={svc.podMessage || svc.podReason || rolloutLabel(rollout.phase)}
+                      disabled={!svc.podMessage && !svc.podReason}
                       multiline
                       w={280}
+                      withArrow
                     >
-                      <Text size="xs" c={clr} truncate="end" td="underline" style={{ cursor: "help" }}>
-                        {svc.podReason || svc.podMessage?.split("\n")[0] || "Issue"}
-                      </Text>
+                      <Badge color={clr} variant="light" size="sm" style={{ flexShrink: 0 }}>
+                        {rolloutLabel(rollout.phase)}
+                      </Badge>
                     </Tooltip>
-                  )}
-
-                  {/* Replica Progress Bar */}
-                  {svc.desired > 0 && (
-                    <Group gap={8} align="center">
-                      <Progress
-                        value={(svc.ready / svc.desired) * 100}
-                        size="xs"
-                        radius="xl"
-                        color={clr}
-                        style={{ flex: 1 }}
-                      />
-                      <Text size="xs" c="dimmed" miw={36} ta="right">
-                        {svc.ready}/{svc.desired}
-                      </Text>
-                    </Group>
-                  )}
-
-                  {/* Images */}
-                  <Group gap={4}>
-                    {svc.images.slice(0, 2).map((img, idx) => (
-                      <Tooltip key={idx} label={`Image: ${img}`} withArrow>
-                        <Text size="xs" c="blue" style={{ fontFamily: "monospace" }}>
-                          {img}
-                        </Text>
-                      </Tooltip>
-                    ))}
-                    {svc.images.length > 2 && (
-                      <Text size="xs" c="dimmed">+{svc.images.length - 2} more</Text>
-                    )}
                   </Group>
 
-                  {/* Bottom: timestamp */}
-                  <Group justify="space-between">
-                    <Text size="xs" c="dimmed">
-                      {isUpdating ? (
-                        <span>Rolling update...</span>
-                      ) : (
-                        <>Updated {svc.lastTransitionTime} ago</>
+                  {/* Replicas. The bar renders at every scale, empty when
+                      stopped, so the row occupies the same height on every
+                      card and the eye can track one line across the grid. */}
+                  <Group gap="xs" align="center" wrap="nowrap">
+                    <Progress.Root size={6} radius="xl" style={{ flex: 1 }}>
+                      {svc.desired > 0 && (
+                        <>
+                          <Progress.Section
+                            value={(svc.ready / svc.desired) * 100}
+                            color={clr}
+                          />
+                          {/* Pods that exist but are not ready: striped and
+                              animated, so a rollout visibly moves. Tied to
+                              `converging`, so a crash loop holds still --
+                              animation on a stuck workload would read as
+                              progress that is not happening. */}
+                          {rollout.converging && (
+                            <Progress.Section
+                              value={Math.max(
+                                0,
+                                ((Math.min(svc.pods?.length ?? 0, svc.desired) - svc.ready) /
+                                  svc.desired) *
+                                  100
+                              )}
+                              color={clr}
+                              striped
+                              animated
+                            />
+                          )}
+                        </>
                       )}
+                    </Progress.Root>
+
+                    <Text
+                      size="xs"
+                      c={rollout.detail ? clr : "dimmed"}
+                      ta="right"
+                      style={{ flexShrink: 0, minWidth: 72 }}
+                      truncate="end"
+                      title={rollout.detail || undefined}
+                    >
+                      {/* ready/desired, not "N up" beside an input showing
+                          the same figure -- two numbers that looked like
+                          they might disagree. */}
+                      {rollout.detail || `${svc.ready}/${svc.desired}`}
                     </Text>
+
+                    <ScaleControl
+                      compact
+                      kind={svc.kind}
+                      namespace={namespace}
+                      name={svc.name}
+                      cluster={env}
+                      current={svc.desired}
+                    />
+                  </Group>
+
+                  {/* Images and age on one line. The image was styled as a
+                      blue link but is not one -- it competed with the name
+                      for emphasis when the name is what you scan by. */}
+                  <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Tooltip
+                      label={svc.images.join("\n")}
+                      disabled={svc.images.length === 0}
+                      multiline
+                      withArrow
+                    >
+                      <Text size="xs" c="dimmed" ff="monospace" truncate="end" style={{ minWidth: 0 }}>
+                        {svc.images[0] ?? "no image"}
+                        {svc.images.length > 1 && ` +${svc.images.length - 1}`}
+                      </Text>
+                    </Tooltip>
+
+                    <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                      {/* Live usage when metrics-server has it. Omitted
+                          rather than shown as zero when it does not: a
+                          missing reading is unknown, and "0" would read as
+                          an idle service. */}
+                      {svc.usage && (
+                        <Tooltip
+                          label={`${formatCpu(svc.usage.cpuMillis)} CPU · ${formatMemory(
+                            svc.usage.memoryMiB
+                          )} memory, summed across containers`}
+                          withArrow
+                        >
+                          <Text size="xs" c="dimmed" ff="monospace" style={{ cursor: "help" }}>
+                            {formatCpu(svc.usage.cpuMillis)} · {formatMemory(svc.usage.memoryMiB)}
+                          </Text>
+                        </Tooltip>
+                      )}
+                      <Text size="xs" c="dimmed">
+                        {isUpdating ? "rolling" : svc.lastTransitionTime}
+                      </Text>
+                    </Group>
                   </Group>
                 </Stack>
               </Card>
@@ -1201,64 +1358,41 @@ export default function CoreServicesOverview({
           setSelectedContainer(null);
           setPodEvents({});
         }}
-        size="95vw"
+        size="lg"
         title={
           <Group gap="sm">
             <Text fw={600}>{selectedService?.name}</Text>
-            <Badge color={computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).color} variant="filled" size="lg">
-              {computeStatus(selectedService?.desired ?? 0, selectedService?.ready ?? 0).label.toUpperCase()}
+            {/* Kind only. The status badge that used to sit here read the
+                stale `selectedService` while the pods below reported
+                something else -- a header saying STOPPED above a RUNNING
+                pod. Live state now lives in the body, from one source. */}
+            <Badge variant="outline" size="sm">
+              {selectedService?.kind}
             </Badge>
-            <Badge variant="outline" size="lg">{selectedService?.kind}</Badge>
           </Group>
         }
         keepMounted
       >
-        {pods.length === 1 ? (
-          /* Single pod — show tabs directly */
-          <SinglePodDetailTabs
-            pod={pods[0]}
-            events={podEvents[pods[0].name] || []}
-            eventsLoading={eventsLoading}
-            namespace={namespace}
-            cluster={env}
-            onRefreshEvents={() => fetchPodEvents(pods[0].name)}
-            onOpenLogs={(container) => {
-              setSelectedPod(pods[0]);
-              setSelectedContainer(container);
-              setLogsOpened(true);
-            }}
-            onOpenShell={(container) => {
-              setSelectedPod(pods[0]);
-              setSelectedContainer(container);
-              setShellOpened(true);
-            }}
-            selectedContainer={selectedContainer}
-          />
-        ) : (
-          /* Multi-pod — pod selector + tabs */
-          <MultiPodDetailView
-            pods={pods}
-            podEvents={podEvents}
-            eventsLoading={eventsLoading}
-            loading={podsLoading}
-            namespace={namespace}
-            cluster={env}
-            selectedPod={selectedPod}
-            onSelectPod={setSelectedPod}
-            onRefreshEvents={fetchPodEvents}
-            onOpenLogs={(pod, container) => {
-              setSelectedPod(pod);
-              setSelectedContainer(container);
-              setLogsOpened(true);
-            }}
-            onOpenShell={(pod, container) => {
-              setSelectedPod(pod);
-              setSelectedContainer(container);
-              setShellOpened(true);
-            }}
-            selectedContainer={selectedContainer}
-          />
-        )}
+        <WorkloadDetail
+          service={selectedService}
+          pods={pods}
+          podEvents={podEvents}
+          eventsLoadingFor={eventsLoadingFor}
+          loading={podsLoading}
+          namespace={namespace}
+          cluster={env}
+          onRefreshEvents={fetchPodEvents}
+          onOpenLogs={(pod, container) => {
+            setSelectedPod(pod);
+            setSelectedContainer(container);
+            setLogsOpened(true);
+          }}
+          onOpenShell={(pod, container) => {
+            setSelectedPod(pod);
+            setSelectedContainer(container);
+            setShellOpened(true);
+          }}
+        />
 
         {/* Logs sub-modal (overlay) */}
         <Modal

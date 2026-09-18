@@ -386,7 +386,14 @@ func GetAgentsHandler(c *gin.Context) {
 		return
 	}
 
-	visibleAgents := visibleAgentsRaw.([]string)
+	// Comma-ok: a bare assertion panics if this is ever set to another type,
+	// taking down the request rather than denying it.
+	visibleAgents, ok := visibleAgentsRaw.([]string)
+	if !ok {
+		log.Error().Msg("visibleAgents in context is not []string")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Malformed permission data"})
+		return
+	}
 
 	isSuperAdmin := false
 	allowedAgents := map[string]bool{}

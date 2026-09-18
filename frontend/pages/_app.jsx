@@ -46,6 +46,7 @@ import { SessionProvider, signIn, useSession } from "next-auth/react"
 // import TrackerProvider from '@/contexts/openreplay'
 
 import { GlobalStateProvider } from '@/contexts/global';
+import { FocusedLayoutProvider, useFocusedLayoutState } from '@/contexts/focusedLayout';
 
 
 
@@ -131,14 +132,20 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 
   const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
 
+  // A page that owns the whole viewport -- the environment chooser, the setup
+  // wizard -- asks for the chrome to step aside. Both are "you have not picked
+  // a context yet" screens, where a sidebar for navigating *within* a context
+  // is dead weight that also squeezes the content into a narrow column.
+  const focusedLayout = useFocusedLayoutState();
+  const chromeless = bootstrapEnabled || focusedLayout;
+
   const appShellProps = {
     header: { height: 60 },
     withBorder: true,
     padding: "md",
   };
 
-  // Add navbar ONLY if bootstrap is NOT enabled
-  if (!bootstrapEnabled) {
+  if (!chromeless) {
     appShellProps.navbar = {
       width: 300,
       breakpoint: "sm",
@@ -165,14 +172,16 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
       </AppShell.Header>
 
 
-      <AppShell.Navbar p="md" withBorder={false}>
-        <NavBar />
-      </AppShell.Navbar>
+      {!chromeless && (
+        <AppShell.Navbar p="md" withBorder={false}>
+          <NavBar />
+        </AppShell.Navbar>
+      )}
 
       <AppShell.Main>
         <Notifications limit={10} position="bottom-right" />
-        <Container size="xl" fluid>
-          <Breadcrumbs />
+        <Container size={chromeless ? "md" : "xl"} fluid={!chromeless}>
+          {!chromeless && <Breadcrumbs />}
           {/* <Alert mt="md" color="red" withCloseButton={false}>
             <b>You are currently connected to {url?.hostname}</b>
           </Alert> */}
@@ -213,6 +222,7 @@ export default function App({
 
   return (
     <GlobalStateProvider>
+      <FocusedLayoutProvider>
       <SessionProvider
         session={session}
         // NextAuth expresses this in SECONDS, not milliseconds: 150s = 2.5 min.
@@ -243,6 +253,7 @@ export default function App({
         </BootstrapAuthGate>
         {/* </KeycloakProvider> */}
       </SessionProvider>
+      </FocusedLayoutProvider>
     </GlobalStateProvider>
   );
 }

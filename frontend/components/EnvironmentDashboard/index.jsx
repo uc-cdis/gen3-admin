@@ -1,5 +1,7 @@
 import { AreaChart, BarChart } from "@mantine/charts";
 import { useGlobalState } from '@/contexts/global';
+import { resolveStatus } from '@/lib/status';
+import PodDetailModal from '@/components/PodDetailModal';
 import { getApplication, isOurOperation, isTerminalPhase, syncApplication } from '@/lib/argocd';
 import { notifications } from '@mantine/notifications';
 import { useRef } from "react";
@@ -106,6 +108,9 @@ export default function EnvironmentDashboardComp({
   const isArgoEnv = activeEnvManager === 'argocd';
 
   const [syncingArgo, setSyncingArgo] = useState(false);
+  // The pod whose detail modal is open, or null. Holds the raw Kubernetes
+  // object so the modal can read container statuses without refetching.
+  const [inspectedPod, setInspectedPod] = useState(null);
   const [argoStatus, setArgoStatus] = useState(null);
 
 
@@ -285,6 +290,9 @@ export default function EnvironmentDashboardComp({
           restarts,
           node: pod.spec?.nodeName || "N/A",
           age: calculateAge(pod.metadata?.creationTimestamp),
+          // The raw object, so the detail view can read container statuses
+          // rather than re-fetching what this loop already has.
+          raw: pod,
         });
       }
 
@@ -1050,55 +1058,83 @@ export default function EnvironmentDashboardComp({
             <Badge variant="light" color="blue">{podSummary.otherPods.length}</Badge>
           </Group>
 
-          <ScrollArea h={Math.min(420, 76 + podSummary.otherPods.length * 54)}>
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Owner</Table.Th>
-                  <Table.Th>Restarts</Table.Th>
-                  <Table.Th>Age</Table.Th>
-                  <Table.Th>Node</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {podSummary.otherPods.map((pod) => {
-                  const statusColor = pod.phase === "Failed"
-                    ? "red"
-                    : pod.phase === "Succeeded"
-                      ? "blue"
-                      : pod.ready
-                        ? "teal"
-                        : "orange";
+          {/* A card grid rather than a table. Six rows of the table filled a
+              screen: pod names wrapped across two lines and the node column
+              took a third of the width for a value nobody scans. Three
+              columns of compact cards fit roughly four times as many pods in
+              the same space, and the node moves into a tooltip. */}
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
+            {podSummary.otherPods.map((pod) => {
+              const status = resolveStatus("pod", pod.phase, { ready: pod.ready });
 
-                  return (
-                    <Table.Tr key={`${pod.namespace}-${pod.name}`}>
-                      <Table.Td>
-                        <Anchor href={`/clusters/${env}/workloads/pods/${pod.namespace}/${pod.name}`}>
-                          <Text fw={500}>{pod.name}</Text>
-                        </Anchor>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge variant="light" color={statusColor}>{pod.status}</Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{pod.ownerKind}</Text>
-                        {pod.ownerName && <Text size="xs" c="dimmed">{pod.ownerName}</Text>}
-                      </Table.Td>
-                      <Table.Td>{pod.restarts}</Table.Td>
-                      <Table.Td>{pod.age}</Table.Td>
-                      <Table.Td>
-                        <Text size="sm" c="dimmed">{pod.node}</Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
+              return (
+                <Card
+                  key={`${pod.namespace}-${pod.name}`}
+                  withBorder
+                  radius="sm"
+                  p="xs"
+                  onClick={() => setInspectedPod(pod.raw)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <Group justify="space-between" wrap="nowrap" gap="xs" mb={4}>
+                    <Text
+                      size="sm"
+                      fw={500}
+                      truncate="end"
+                      title={pod.name}
+                      style={{ minWidth: 0 }}
+                    >
+                      {pod.name}
+                    </Text>
+                    {/* flexShrink so the badge keeps its text: it was
+                        clipping to "SUCCE..." when the pod name was long,
+                        which is the one part of the row that must stay
+                        readable. */}
+                    <Badge size="xs" variant="light" color={status.color} style={{ flexShrink: 0 }}>
+                      {status.label}
+                    </Badge>
+                  </Group>
+
+                  <Group gap="xs" wrap="nowrap">
+                    <Text size="xs" c="dimmed" truncate="end" title={pod.ownerName}>
+                      {pod.ownerKind}
+                      {pod.ownerName ? ` · ${pod.ownerName}` : ""}
+                    </Text>
+                    <div style={{ flex: 1 }} />
+                    {pod.restarts > 0 && (
+                      <Text
+                        size="xs"
+                        fw={600}
+                        c={pod.restarts > 5 ? "statusError" : "statusWarn"}
+                      >
+                        {pod.restarts}↺
+                      </Text>
+                    )}
+                    {/* Node is worth having but not worth a column: it is
+                        long, uniform, and rarely the thing being looked for. */}
+                    <Tooltip label={`Node: ${pod.node}`} withArrow>
+                      <Text size="xs" c="dimmed" style={{ cursor: "help" }}>
+                        {pod.age}
+                      </Text>
+                    </Tooltip>
+                  </Group>
+                </Card>
+              );
+            })}
+          </SimpleGrid>
         </Card>
       )}
+
+      {/* Opens over the dashboard rather than navigating away: these are
+          mostly Jobs and one-off runs, where the question ("why is this
+          pending") is short-lived and the answer belongs in place. */}
+      <PodDetailModal
+        pod={inspectedPod}
+        namespace={namespace}
+        cluster={env}
+        accessToken={accessToken}
+        onClose={() => setInspectedPod(null)}
+      />
 
       {/* <LogViewer hostname={hostname} /> */}
 

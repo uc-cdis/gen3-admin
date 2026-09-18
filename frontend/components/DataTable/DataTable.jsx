@@ -22,6 +22,8 @@ import { resolveStatus } from '@/lib/status';
 import callK8sApi from '@/lib/k8s';
 import { useSession } from "next-auth/react";
 import { useK8sList } from '@/hooks/useK8s';
+import { workloadRefreshInterval } from '@/lib/workloadPolling';
+import { ErrorState, isForbiddenError } from '@/components/ui';
 
 // Constants
 const SEARCH_DEBOUNCE_MS = 300;
@@ -336,19 +338,68 @@ const StatusBadgeWithEvents = ({ status, resourceName, resourceNamespace, agent,
     );
 };
 
+// Total CPU and memory for one metrics object, formatted for display.
+//
+// Kubernetes reports CPU in nanocores ("123456789n") or millicores ("15m"),
+// and memory in KiB ("123456Ki"). Summing containers means parsing those
+// suffixes rather than the raw strings.
+export const parseCpuToMillicores = (value) => {
+    if (!value) return 0;
+    const raw = String(value);
+    if (raw.endsWith('n')) return parseInt(raw, 10) / 1_000_000;
+    if (raw.endsWith('u')) return parseInt(raw, 10) / 1_000;
+    if (raw.endsWith('m')) return parseInt(raw, 10);
+    return parseFloat(raw) * 1000;
+};
+
+export const parseMemoryToMiB = (value) => {
+    if (!value) return 0;
+    const raw = String(value);
+    const num = parseFloat(raw);
+    if (raw.endsWith('Ki')) return num / 1024;
+    if (raw.endsWith('Mi')) return num;
+    if (raw.endsWith('Gi')) return num * 1024;
+    if (raw.endsWith('Ti')) return num * 1024 * 1024;
+    // Bare bytes.
+    return num / (1024 * 1024);
+};
+
+export const summarizeUsage = (metric) => {
+    const containers = metric?.containers;
+    const sources = Array.isArray(containers) && containers.length > 0
+        ? containers.map(c => c?.usage)
+        : [metric?.usage];
+
+    let cpuMillis = 0;
+    let memMiB = 0;
+    for (const usage of sources) {
+        if (!usage) continue;
+        cpuMillis += parseCpuToMillicores(usage.cpu);
+        memMiB += parseMemoryToMiB(usage.memory);
+    }
+
+    return {
+        cpu: cpuMillis >= 1000 ? `${(cpuMillis / 1000).toFixed(2)}` : `${Math.round(cpuMillis)}m`,
+        memory: memMiB >= 1024 ? `${(memMiB / 1024).toFixed(1)}Gi` : `${Math.round(memMiB)}Mi`,
+    };
+};
+
 const GenericDataTable = ({
     agent,
     endpoint,
     fields,
     metricsEndpoint,
-    buttonsConfig,
     searchableFields, // Optional: specify which fields to search
-    // Opt-in polling, in ms. Off by default: turning it on for every table would
-    // multiply load on the Go proxy and each agent's gRPC stream.
-    refreshInterval = 0,
+    // Polling, in ms, or a function of the data. Left undefined the table
+    // polls adaptively (see workloadPolling); pass 0 to disable, or a number
+    // to fix the cadence.
+    refreshInterval,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedRecords, setSelectedRecords] = useState([]);
+    // Every column has advertised itself as sortable since this table was
+    // written, but sortStatus was never wired, so clicking a header did
+    // nothing at all.
+    const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
     // Still needed for the per-row events popover, which fetches on demand
     // rather than through the shared hooks.
@@ -363,15 +414,25 @@ const GenericDataTable = ({
     // through GenericDataTable: identical requests are deduplicated, results
     // survive navigation instead of refetching from scratch, and the access token
     // is resolved by the hook rather than threaded through each call.
+    // Adaptive by default: quick while something is converging, background
+    // otherwise. Previously this defaulted to 0, so every list was fetch-once
+    // -- a rollout you had just triggered sat frozen until you reloaded, and
+    // the Age column never ticked because nothing caused a re-render. A page
+    // can still pass an explicit number (or 0) to opt out.
+    const listInterval = refreshInterval ?? workloadRefreshInterval;
+
     const listQuery = useK8sList(agent ? endpoint : null, {
         cluster: agent,
-        refreshInterval,
+        refreshInterval: listInterval,
         keepPreviousData: true,
     });
 
     const metricsQuery = useK8sList(agent && metricsEndpoint ? metricsEndpoint : null, {
         cluster: agent,
-        refreshInterval,
+        // Metrics are a fixed cadence: usage is always changing, so there is
+        // no "settled" state to slow down for, and metrics-server itself only
+        // recomputes about every 15s.
+        refreshInterval: refreshInterval ?? 30_000,
         keepPreviousData: true,
     });
 
@@ -379,7 +440,9 @@ const GenericDataTable = ({
     // Block the table only on a genuine first load. A background revalidation
     // should not blank out rows the user is already reading.
     const loading = listQuery.isLoading && listQuery.data === undefined;
-    const error = listQuery.error ? listQuery.error.message : null;
+    // Keep the error object, not just its message: the status is what
+    // distinguishes "you lack permission" from "the request failed".
+    const error = listQuery.error ?? null;
 
     const metricsData = metricsQuery.data ?? [];
     // Metrics degrade rather than break the table: metrics-server is often not
@@ -467,8 +530,12 @@ const GenericDataTable = ({
             return baseRows;
         }
 
+        // PodMetrics reports usage per container, not on the object, so the
+        // previous `metric.usage` spread merged undefined and every row lost
+        // its metrics silently. NodeMetrics does use a top-level `usage`, so
+        // both shapes are handled.
         const metricsMap = new Map(
-            metricsData.map(metric => [metric.metadata?.name, metric.usage])
+            metricsData.map(metric => [metric.metadata?.name, summarizeUsage(metric)])
         );
 
         return baseRows.map(row => {
@@ -476,6 +543,37 @@ const GenericDataTable = ({
             return metrics ? { ...row, ...metrics } : row;
         });
     }, [baseRows, metricsData]);
+
+    // Sorting happens after filtering so the visible set is what gets ordered.
+    //
+    // Compares the underlying value rather than the rendered cell: Age holds
+    // an ISO timestamp while the cell shows "3d", so sorting the rendered text
+    // would order 10d before 3d. Numeric-looking strings sort numerically for
+    // the same reason -- "10" must not come before "9".
+    const sortedRows = useMemo(() => {
+        const { columnAccessor, direction } = sortStatus;
+        if (!columnAccessor) return filteredRows;
+
+        const factor = direction === 'desc' ? -1 : 1;
+        return [...filteredRows].sort((a, b) => {
+            const av = a[columnAccessor];
+            const bv = b[columnAccessor];
+
+            // Absent values sort last regardless of direction; a blank cell is
+            // not "smallest", it is unknown.
+            const aEmpty = av === undefined || av === null || av === '';
+            const bEmpty = bv === undefined || bv === null || bv === '';
+            if (aEmpty && bEmpty) return 0;
+            if (aEmpty) return 1;
+            if (bEmpty) return -1;
+
+            const an = Number(av);
+            const bn = Number(bv);
+            if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * factor;
+
+            return String(av).localeCompare(String(bv), undefined, { numeric: true }) * factor;
+        });
+    }, [filteredRows, sortStatus]);
 
     // Filter rows based on search term
     const filteredRows = useMemo(() => {
@@ -503,11 +601,6 @@ const GenericDataTable = ({
             });
         });
     }, [debouncedSearchTerm, baseRows, rowsWithMetrics, metricsData.length, fields, searchableFields]);
-
-    // Clear selection when filtered data changes
-    useEffect(() => {
-        setSelectedRecords([]);
-    }, [filteredRows]);
 
     return (
         <>
@@ -540,7 +633,16 @@ const GenericDataTable = ({
                 {/* Error Messages */}
                 {error && !loading && (
                     <Center mb="md">
-                        <Text c="red" size="sm">Failed to load data: {error}</Text>
+                        <ErrorState
+                            error={error}
+                            title="Failed to load data"
+                            onRetry={fetchData}
+                            hint={
+                                isForbiddenError(error)
+                                    ? `Ask an administrator for the ${agent}-read role.`
+                                    : undefined
+                            }
+                        />
                     </Center>
                 )}
                 {metricsError && (
@@ -553,10 +655,10 @@ const GenericDataTable = ({
                     highlightOnHover
                     striped
                     columns={columns}
-                    records={filteredRows}
+                    records={sortedRows}
                     fetching={loading}
-                    selectedRecords={selectedRecords}
-                    onSelectedRecordsChange={setSelectedRecords}
+                    sortStatus={sortStatus}
+                    onSortStatusChange={setSortStatus}
                     withColumnBorders
                     loaderVariant="dots"
                     minHeight={150}
@@ -577,7 +679,6 @@ GenericDataTable.propTypes = {
         render: PropTypes.func,
     })).isRequired,
     metricsEndpoint: PropTypes.string,
-    buttonsConfig: PropTypes.object,
     searchableFields: PropTypes.arrayOf(PropTypes.string),
 };
 
