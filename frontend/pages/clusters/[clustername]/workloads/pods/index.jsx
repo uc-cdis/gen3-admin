@@ -10,6 +10,7 @@ import {
   podReadyColumn,
   podRestartsColumn,
   podStatusColumn,
+  usageColumns,
 } from '@/lib/workloadColumns';
 
 export default function Pods() {
@@ -38,6 +39,7 @@ export default function Pods() {
             label: 'Node',
             render: ({ original }) => <Text>{original.spec?.nodeName ?? '-'}</Text>,
           },
+          ...usageColumns(),
           ageColumn(),
         ]}
       />

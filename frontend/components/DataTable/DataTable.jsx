@@ -338,12 +338,57 @@ const StatusBadgeWithEvents = ({ status, resourceName, resourceNamespace, agent,
     );
 };
 
+// Total CPU and memory for one metrics object, formatted for display.
+//
+// Kubernetes reports CPU in nanocores ("123456789n") or millicores ("15m"),
+// and memory in KiB ("123456Ki"). Summing containers means parsing those
+// suffixes rather than the raw strings.
+export const parseCpuToMillicores = (value) => {
+    if (!value) return 0;
+    const raw = String(value);
+    if (raw.endsWith('n')) return parseInt(raw, 10) / 1_000_000;
+    if (raw.endsWith('u')) return parseInt(raw, 10) / 1_000;
+    if (raw.endsWith('m')) return parseInt(raw, 10);
+    return parseFloat(raw) * 1000;
+};
+
+export const parseMemoryToMiB = (value) => {
+    if (!value) return 0;
+    const raw = String(value);
+    const num = parseFloat(raw);
+    if (raw.endsWith('Ki')) return num / 1024;
+    if (raw.endsWith('Mi')) return num;
+    if (raw.endsWith('Gi')) return num * 1024;
+    if (raw.endsWith('Ti')) return num * 1024 * 1024;
+    // Bare bytes.
+    return num / (1024 * 1024);
+};
+
+export const summarizeUsage = (metric) => {
+    const containers = metric?.containers;
+    const sources = Array.isArray(containers) && containers.length > 0
+        ? containers.map(c => c?.usage)
+        : [metric?.usage];
+
+    let cpuMillis = 0;
+    let memMiB = 0;
+    for (const usage of sources) {
+        if (!usage) continue;
+        cpuMillis += parseCpuToMillicores(usage.cpu);
+        memMiB += parseMemoryToMiB(usage.memory);
+    }
+
+    return {
+        cpu: cpuMillis >= 1000 ? `${(cpuMillis / 1000).toFixed(2)}` : `${Math.round(cpuMillis)}m`,
+        memory: memMiB >= 1024 ? `${(memMiB / 1024).toFixed(1)}Gi` : `${Math.round(memMiB)}Mi`,
+    };
+};
+
 const GenericDataTable = ({
     agent,
     endpoint,
     fields,
     metricsEndpoint,
-    buttonsConfig,
     searchableFields, // Optional: specify which fields to search
     // Polling, in ms, or a function of the data. Left undefined the table
     // polls adaptively (see workloadPolling); pass 0 to disable, or a number
@@ -351,7 +396,10 @@ const GenericDataTable = ({
     refreshInterval,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedRecords, setSelectedRecords] = useState([]);
+    // Every column has advertised itself as sortable since this table was
+    // written, but sortStatus was never wired, so clicking a header did
+    // nothing at all.
+    const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
     // Still needed for the per-row events popover, which fetches on demand
     // rather than through the shared hooks.
@@ -482,8 +530,12 @@ const GenericDataTable = ({
             return baseRows;
         }
 
+        // PodMetrics reports usage per container, not on the object, so the
+        // previous `metric.usage` spread merged undefined and every row lost
+        // its metrics silently. NodeMetrics does use a top-level `usage`, so
+        // both shapes are handled.
         const metricsMap = new Map(
-            metricsData.map(metric => [metric.metadata?.name, metric.usage])
+            metricsData.map(metric => [metric.metadata?.name, summarizeUsage(metric)])
         );
 
         return baseRows.map(row => {
@@ -491,6 +543,37 @@ const GenericDataTable = ({
             return metrics ? { ...row, ...metrics } : row;
         });
     }, [baseRows, metricsData]);
+
+    // Sorting happens after filtering so the visible set is what gets ordered.
+    //
+    // Compares the underlying value rather than the rendered cell: Age holds
+    // an ISO timestamp while the cell shows "3d", so sorting the rendered text
+    // would order 10d before 3d. Numeric-looking strings sort numerically for
+    // the same reason -- "10" must not come before "9".
+    const sortedRows = useMemo(() => {
+        const { columnAccessor, direction } = sortStatus;
+        if (!columnAccessor) return filteredRows;
+
+        const factor = direction === 'desc' ? -1 : 1;
+        return [...filteredRows].sort((a, b) => {
+            const av = a[columnAccessor];
+            const bv = b[columnAccessor];
+
+            // Absent values sort last regardless of direction; a blank cell is
+            // not "smallest", it is unknown.
+            const aEmpty = av === undefined || av === null || av === '';
+            const bEmpty = bv === undefined || bv === null || bv === '';
+            if (aEmpty && bEmpty) return 0;
+            if (aEmpty) return 1;
+            if (bEmpty) return -1;
+
+            const an = Number(av);
+            const bn = Number(bv);
+            if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * factor;
+
+            return String(av).localeCompare(String(bv), undefined, { numeric: true }) * factor;
+        });
+    }, [filteredRows, sortStatus]);
 
     // Filter rows based on search term
     const filteredRows = useMemo(() => {
@@ -518,11 +601,6 @@ const GenericDataTable = ({
             });
         });
     }, [debouncedSearchTerm, baseRows, rowsWithMetrics, metricsData.length, fields, searchableFields]);
-
-    // Clear selection when filtered data changes
-    useEffect(() => {
-        setSelectedRecords([]);
-    }, [filteredRows]);
 
     return (
         <>
@@ -577,10 +655,10 @@ const GenericDataTable = ({
                     highlightOnHover
                     striped
                     columns={columns}
-                    records={filteredRows}
+                    records={sortedRows}
                     fetching={loading}
-                    selectedRecords={selectedRecords}
-                    onSelectedRecordsChange={setSelectedRecords}
+                    sortStatus={sortStatus}
+                    onSortStatusChange={setSortStatus}
                     withColumnBorders
                     loaderVariant="dots"
                     minHeight={150}
@@ -601,7 +679,6 @@ GenericDataTable.propTypes = {
         render: PropTypes.func,
     })).isRequired,
     metricsEndpoint: PropTypes.string,
-    buttonsConfig: PropTypes.object,
     searchableFields: PropTypes.arrayOf(PropTypes.string),
 };
 

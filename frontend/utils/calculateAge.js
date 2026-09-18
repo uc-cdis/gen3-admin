@@ -1,10 +1,17 @@
+import { formatAge } from '@/lib/resourceHighlights';
+
+/**
+ * Relative age of a timestamp.
+ *
+ * Delegates to `formatAge`, which is the better implementation: it handles
+ * seconds and years (this one bucketed everything into m/h/d, so a two-second
+ * pod read "1m" and a two-year-old resource read "730d"), clamps negatives
+ * rather than taking the absolute value of a future timestamp, and returns
+ * '-' instead of "NaNd" for unparseable input.
+ *
+ * Kept as a shim because ~28 pages outside the workload views still import
+ * it. New code should call `formatAge` directly.
+ */
 export default function calculateAge(created) {
-    const now = new Date();
-    const createdDate = new Date(created);
-    const diffTime = Math.abs(now - createdDate);
-    const diffMinutes = Math.ceil(diffTime / (1000 * 60));
-    if (diffMinutes < 60) return `${diffMinutes}m`;
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours}h`;
-    return `${Math.floor(diffHours / 24)}d`;
+  return formatAge(created);
 }

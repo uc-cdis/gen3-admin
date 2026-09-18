@@ -229,3 +229,26 @@ export function scaleColumn(kind: string, clusterName: string | undefined, desir
     ),
   };
 }
+
+/**
+ * CPU and memory, from the metrics endpoint.
+ *
+ * These read from the row rather than `original`: DataTable merges the
+ * summarised usage onto the row by name, so there is nothing on the
+ * Kubernetes object itself to read. Renders a dash when metrics-server is not
+ * installed, which is common enough that it must not look like an error.
+ */
+export function usageColumns() {
+  return [
+    {
+      key: 'cpu',
+      label: 'cpu',
+      render: (row: any) => <Text c={row.cpu ? undefined : 'dimmed'}>{row.cpu ?? '-'}</Text>,
+    },
+    {
+      key: 'memory',
+      label: 'memory',
+      render: (row: any) => <Text c={row.memory ? undefined : 'dimmed'}>{row.memory ?? '-'}</Text>,
+    },
+  ];
+}
