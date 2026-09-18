@@ -84,13 +84,16 @@ export function permissionPredicates(me: Me | undefined): Pick<RolesResult, 'can
 }
 
 /**
- * The role a user would need to write to `agent`, for explaining a disabled
- * control. Mirrors the naming the Go middleware checks.
+ * How to describe the permission a disabled control needs.
+ *
+ * Names superadmin as the alternative because the middleware accepts either,
+ * and "requires the dev0-write role" alone reads as though that specific role
+ * is the only way in.
  */
 export function writeRoleFor(agent: string | null | undefined): string {
-  return agent ? `${agent}-write` : 'write access';
+  return agent ? `${agent}-write or superadmin` : 'write access';
 }
 
 export function readRoleFor(agent: string | null | undefined): string {
-  return agent ? `${agent}-read` : 'read access';
+  return agent ? `${agent}-read or superadmin` : 'read access';
 }

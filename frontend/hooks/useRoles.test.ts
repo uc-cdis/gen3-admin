@@ -61,8 +61,8 @@ describe('role predicates', () => {
 
 describe('role name helpers', () => {
   it('mirrors the naming the Go middleware checks', () => {
-    expect(writeRoleFor('dev0')).toBe('dev0-write');
-    expect(readRoleFor('dev0')).toBe('dev0-read');
+    expect(writeRoleFor('dev0')).toBe('dev0-write or superadmin');
+    expect(readRoleFor('dev0')).toBe('dev0-read or superadmin');
   });
 
   it('degrades to readable prose without an agent', () => {

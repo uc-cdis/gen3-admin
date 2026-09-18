@@ -142,3 +142,47 @@ func TestHandleMeRejectsMalformedUserInfo(t *testing.T) {
 		t.Errorf("status = %d, want 500 for malformed userInfo", rec.Code)
 	}
 }
+
+// AuthMiddleware sets roles as map[string]bool; SuccessMiddleware (mock auth)
+// sets []string. Handling only the map meant a mock superadmin reported no
+// roles at all, so every write control rendered disabled -- the opposite of
+// what that mode exists for.
+func TestHandleMeAcceptsMockAuthRoleShape(t *testing.T) {
+	_, resp := meRequest(t, map[string]interface{}{
+		"username": "mockuser",
+		"roles":    []string{"superadmin"},
+	}, true)
+
+	if !resp.IsSuperAdmin {
+		t.Error("mock auth superadmin not recognised; []string roles were ignored")
+	}
+}
+
+func TestHandleMeAcceptsInterfaceSliceRoles(t *testing.T) {
+	_, resp := meRequest(t, map[string]interface{}{
+		"username": "jdoe",
+		"roles":    []interface{}{"dev0-write", 42, "perf-read"},
+	}, true)
+
+	// The non-string entry is skipped rather than crashing the request.
+	if len(resp.WritableAgents) != 1 || resp.WritableAgents[0] != "dev0" {
+		t.Errorf("WritableAgents = %v, want [dev0]", resp.WritableAgents)
+	}
+	if len(resp.ReadableAgents) != 2 {
+		t.Errorf("ReadableAgents = %v, want dev0 and perf", resp.ReadableAgents)
+	}
+}
+
+func TestHandleMeToleratesUnknownRoleShape(t *testing.T) {
+	rec, resp := meRequest(t, map[string]interface{}{
+		"username": "jdoe",
+		"roles":    12345,
+	}, true)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for an unusable roles claim", rec.Code)
+	}
+	if len(resp.Roles) != 0 {
+		t.Errorf("Roles = %v, want empty", resp.Roles)
+	}
+}

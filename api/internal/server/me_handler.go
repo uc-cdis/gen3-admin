@@ -64,8 +64,7 @@ func HandleMe(c *gin.Context) {
 		WritableAgents: []string{},
 	}
 
-	roleMap, _ := userInfo["roles"].(map[string]bool)
-	for role := range roleMap {
+	for _, role := range rolesFrom(userInfo["roles"]) {
 		resp.Roles = append(resp.Roles, role)
 
 		switch {
@@ -87,6 +86,37 @@ func HandleMe(c *gin.Context) {
 	resp.WritableAgents = sortedUnique(resp.WritableAgents)
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// rolesFrom normalises the two shapes "roles" arrives in.
+//
+// AuthMiddleware builds a map[string]bool from the realm_access claim, while
+// SuccessMiddleware (mock auth) sets a []string. Handling only the map meant
+// mock auth reported no roles at all, so a mock superadmin saw every write
+// control disabled -- the opposite of what that mode is for.
+func rolesFrom(raw interface{}) []string {
+	switch v := raw.(type) {
+	case map[string]bool:
+		out := make([]string, 0, len(v))
+		for role, ok := range v {
+			if ok {
+				out = append(out, role)
+			}
+		}
+		return out
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if role, ok := item.(string); ok {
+				out = append(out, role)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func stringClaim(info map[string]interface{}, key string) string {
