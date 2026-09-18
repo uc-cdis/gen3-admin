@@ -42,7 +42,15 @@ import {
 } from "@tabler/icons-react";
 import callK8sApi from "@/lib/k8s";
 import { CONVERGING_MS, SETTLED_MS } from "@/lib/workloadPolling";
-import { rolloutColor, rolloutLabel, summarizeRollout } from "@/lib/rolloutState";
+import {
+  formatCpu,
+  formatMemory,
+  rolloutColor,
+  rolloutLabel,
+  sumUsage,
+  summarizeRollout,
+  type Usage,
+} from "@/lib/rolloutState";
 import { resolveStatus } from "@/lib/status";
 import ScaleControl from "@/components/ScaleControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
@@ -75,6 +83,8 @@ type Service = {
    * the one it was opened with, which may predate this field.
    */
   conditions?: any[];
+  /** Live CPU/memory, or null when metrics-server is unavailable. */
+  usage?: Usage | null;
 };
 
 function formatAge(timestamp: string | undefined) {
@@ -668,7 +678,7 @@ export default function CoreServicesOverview({
   const fetchServices = useCallback(async () => {
     setLoading(true);
     try {
-      const [deploymentsRes, statefulSetsRes, podsRes] = await Promise.all([
+      const [deploymentsRes, statefulSetsRes, podsRes, metricsRes] = await Promise.all([
         callK8sApi(
           `/apis/apps/v1/namespaces/${namespace}/deployments`,
           "GET",
@@ -693,6 +703,17 @@ export default function CoreServicesOverview({
           env,
           accessToken
         ),
+        // Live usage. metrics-server is frequently absent, so this must not
+        // take the rest of the dashboard down with it -- a namespace with no
+        // metrics still has workloads worth showing.
+        callK8sApi(
+          `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`,
+          "GET",
+          null,
+          null,
+          env,
+          accessToken
+        ).catch(() => null),
       ]);
 
       // Build a map of pod reasons by service name using multiple strategies
@@ -795,6 +816,22 @@ export default function CoreServicesOverview({
         (podsByOwner[owner] ||= []).push(p);
       });
 
+      // Usage, grouped by the owner each pod already resolved to. Keyed by
+      // pod name so a metrics entry with no matching pod is simply skipped.
+      const podToOwner: Record<string, string> = {};
+      Object.entries(podsByOwner).forEach(([owner, list]) => {
+        (list as any[]).forEach((p) => {
+          podToOwner[p.metadata.name] = owner;
+        });
+      });
+
+      const metricsByOwner: Record<string, any[]> = {};
+      (metricsRes?.items ?? []).forEach((m: any) => {
+        const owner = podToOwner[m?.metadata?.name];
+        if (!owner) return;
+        (metricsByOwner[owner] ||= []).push(m);
+      });
+
       const deployments =
         deploymentsRes?.items?.map((d: any) => {
           const availableCondition = d.status?.conditions?.find((c: any) => c.type === "Available");
@@ -827,6 +864,7 @@ export default function CoreServicesOverview({
             podMessage: message,
             pods: podsByOwner[d.metadata.name] ?? [],
             conditions: d.status?.conditions ?? [],
+            usage: sumUsage(metricsByOwner[d.metadata.name]),
           };
         }) ?? [];
 
@@ -851,6 +889,7 @@ export default function CoreServicesOverview({
             podMessage: message,
             pods: podsByOwner[s.metadata.name] ?? [],
             conditions: s.status?.conditions ?? [],
+            usage: sumUsage(metricsByOwner[s.metadata.name]),
           };
         }) ?? [];
 
@@ -1274,9 +1313,27 @@ export default function CoreServicesOverview({
                       </Text>
                     </Tooltip>
 
-                    <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                      {isUpdating ? "rolling" : svc.lastTransitionTime}
-                    </Text>
+                    <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                      {/* Live usage when metrics-server has it. Omitted
+                          rather than shown as zero when it does not: a
+                          missing reading is unknown, and "0" would read as
+                          an idle service. */}
+                      {svc.usage && (
+                        <Tooltip
+                          label={`${formatCpu(svc.usage.cpuMillis)} CPU · ${formatMemory(
+                            svc.usage.memoryMiB
+                          )} memory, summed across containers`}
+                          withArrow
+                        >
+                          <Text size="xs" c="dimmed" ff="monospace" style={{ cursor: "help" }}>
+                            {formatCpu(svc.usage.cpuMillis)} · {formatMemory(svc.usage.memoryMiB)}
+                          </Text>
+                        </Tooltip>
+                      )}
+                      <Text size="xs" c="dimmed">
+                        {isUpdating ? "rolling" : svc.lastTransitionTime}
+                      </Text>
+                    </Group>
                   </Group>
                 </Stack>
               </Card>

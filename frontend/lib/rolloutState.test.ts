@@ -1,4 +1,13 @@
-import { rolloutColor, rolloutLabel, summarizeRollout } from './rolloutState';
+import {
+  formatCpu,
+  formatMemory,
+  parseCpu,
+  parseMemory,
+  rolloutColor,
+  rolloutLabel,
+  sumUsage,
+  summarizeRollout,
+} from './rolloutState';
 
 const pod = (phase: string, containers: any[] = [], deleting = false) => ({
   metadata: deleting ? { deletionTimestamp: '2026-01-01T00:00:00Z' } : {},
@@ -118,5 +127,56 @@ describe('phase presentation', () => {
     expect(rolloutLabel('stopped')).toBe('Stopped');
     expect(rolloutLabel('pulling')).toBe('Pulling');
     expect(rolloutLabel('ready')).toBe('Healthy');
+  });
+});
+
+describe('usage parsing', () => {
+  // The units metrics.k8s.io actually emits, verified against a live
+  // cluster: cpu=12128092n, mem=101300Ki.
+  it('parses the CPU units the API emits', () => {
+    expect(parseCpu('12128092n')).toBeCloseTo(12.128092);
+    expect(parseCpu('47m')).toBe(47);
+    expect(parseCpu('2')).toBe(2000);
+    expect(parseCpu(undefined)).toBe(0);
+  });
+
+  it('parses binary memory suffixes', () => {
+    expect(parseMemory('101300Ki')).toBeCloseTo(98.925, 2);
+    expect(parseMemory('512Mi')).toBe(512);
+    expect(parseMemory('2Gi')).toBe(2048);
+    expect(parseMemory(undefined)).toBe(0);
+  });
+
+  it('sums every container across every pod', () => {
+    const metrics = [
+      { containers: [{ usage: { cpu: '10m', memory: '100Mi' } }] },
+      {
+        containers: [
+          { usage: { cpu: '5m', memory: '50Mi' } },
+          { usage: { cpu: '5m', memory: '50Mi' } },
+        ],
+      },
+    ];
+    expect(sumUsage(metrics)).toEqual({ cpuMillis: 20, memoryMiB: 200 });
+  });
+
+  // metrics-server is often absent. Absent must not render as zero, which
+  // would look like an idle service rather than an unknown one.
+  it('returns null when there is nothing to report', () => {
+    expect(sumUsage(undefined)).toBeNull();
+    expect(sumUsage([])).toBeNull();
+  });
+
+  it('formats compactly', () => {
+    expect(formatCpu(12)).toBe('12m');
+    expect(formatCpu(1500)).toBe('1.5');
+    expect(formatCpu(0)).toBe('0');
+    expect(formatMemory(101)).toBe('101Mi');
+    expect(formatMemory(2048)).toBe('2.0Gi');
+  });
+
+  // A service using a trace of CPU should not read as using none.
+  it('does not round a small but real reading to zero', () => {
+    expect(formatCpu(0.4)).toBe('<1m');
   });
 });

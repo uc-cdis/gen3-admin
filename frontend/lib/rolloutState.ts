@@ -203,3 +203,63 @@ export function rolloutLabel(phase: RolloutPhase): string {
       return 'Stopped';
   }
 }
+
+/**
+ * Live CPU and memory for a set of pods, from metrics.k8s.io.
+ *
+ * The API reports per container, in nanocores/millicores and Ki/Mi/Gi, so a
+ * per-workload figure means parsing those suffixes and summing. Returns null
+ * when there is nothing to report -- metrics-server is often not installed,
+ * and a missing reading must render as absent rather than as zero, which
+ * would look like an idle service.
+ */
+export type Usage = { cpuMillis: number; memoryMiB: number };
+
+export function parseCpu(value: string | undefined): number {
+  if (!value) return 0;
+  const raw = String(value);
+  if (raw.endsWith('n')) return parseInt(raw, 10) / 1_000_000;
+  if (raw.endsWith('u')) return parseInt(raw, 10) / 1_000;
+  if (raw.endsWith('m')) return parseInt(raw, 10);
+  return parseFloat(raw) * 1000;
+}
+
+export function parseMemory(value: string | undefined): number {
+  if (!value) return 0;
+  const raw = String(value);
+  const num = parseFloat(raw);
+  if (Number.isNaN(num)) return 0;
+  if (raw.endsWith('Ki')) return num / 1024;
+  if (raw.endsWith('Mi')) return num;
+  if (raw.endsWith('Gi')) return num * 1024;
+  if (raw.endsWith('Ti')) return num * 1024 * 1024;
+  return num / (1024 * 1024); // bare bytes
+}
+
+export function sumUsage(podMetrics: any[] | undefined): Usage | null {
+  if (!Array.isArray(podMetrics) || podMetrics.length === 0) return null;
+
+  let cpuMillis = 0;
+  let memoryMiB = 0;
+  for (const pod of podMetrics) {
+    for (const c of pod?.containers ?? []) {
+      cpuMillis += parseCpu(c?.usage?.cpu);
+      memoryMiB += parseMemory(c?.usage?.memory);
+    }
+  }
+  return { cpuMillis, memoryMiB };
+}
+
+/** Compact rendering: "12m" / "1.2" cores, "101Mi" / "1.4Gi". */
+export function formatCpu(cpuMillis: number): string {
+  if (cpuMillis >= 1000) return `${(cpuMillis / 1000).toFixed(1)}`;
+  if (cpuMillis >= 1) return `${Math.round(cpuMillis)}m`;
+  // Below a millicore, round up rather than to zero: a service using
+  // something should not read as using nothing.
+  return cpuMillis > 0 ? '<1m' : '0';
+}
+
+export function formatMemory(memoryMiB: number): string {
+  if (memoryMiB >= 1024) return `${(memoryMiB / 1024).toFixed(1)}Gi`;
+  return `${Math.round(memoryMiB)}Mi`;
+}
