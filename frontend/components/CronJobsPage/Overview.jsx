@@ -14,6 +14,8 @@ import {
   Modal,
   ScrollArea,
   Divider,
+  Switch,
+  Tooltip,
 } from "@mantine/core";
 import {
   IconPlayerPlay,
@@ -32,10 +34,14 @@ import {
 
 import JobGrid from "./JobGrid";
 import callK8sApi from "@/lib/k8s";
+import { isSuspended, useSuspendCronJob } from "@/hooks/useSuspendCronJob";
+import { useRoles, writeRoleFor } from "@/hooks/useRoles";
 
 function deriveJobStatus(cronJob, jobInstances) {
-  if (cronJob.spec.suspended) {
-    return { label: "Suspended", color: "gray" };
+  // The field is `spec.suspend`. This read `spec.suspended`, which does not
+  // exist on the object, so a suspended CronJob always rendered as active.
+  if (isSuspended(cronJob)) {
+    return { label: "Suspended", color: "statusNeutral" };
   }
 
   if (!jobInstances.length) {
@@ -60,6 +66,9 @@ export default function JobsPage({
   const { data: sessionData } = useSession();
   const accessToken = sessionData?.accessToken;
   const clusterName = useParams()?.clustername || cluster;
+
+  const { setSuspended, pending: suspendPending } = useSuspendCronJob();
+  const { canWrite } = useRoles();
 
   const [cronJobs, setCronJobs] = useState([]);
   const [jobInstances, setJobInstances] = useState([]);
@@ -116,7 +125,7 @@ export default function JobsPage({
   const filtered = cronJobs.filter((cj) => {
     if (!cj.metadata.name.includes(search)) return false;
     if (!filter) return true;
-    return cj.spec.suspended ? filter === "Suspended" : filter === "Active";
+    return isSuspended(cj) ? filter === "Suspended" : filter === "Active";
   });
 
   return (
@@ -192,12 +201,22 @@ export default function JobsPage({
                   </Badge>
                 </Group>
 
-                <Text size="sm" c="dimmed">
-                  Schedule:{" "}
-                  {cronJob.spec.suspended
-                    ? "Suspended (manual)"
-                    : cronJob.spec.schedule}
-                </Text>
+                <Group gap="xs" mb={4}>
+                  <Text size="sm" c="dimmed">
+                    Schedule:
+                  </Text>
+                  <Text size="sm" c="dimmed" ff="monospace">
+                    {cronJob.spec.schedule}
+                  </Text>
+                  {/* The schedule stays visible when suspended: it is what
+                      the job will resume to, and hiding it made a suspended
+                      job look like it had no schedule at all. */}
+                  {isSuspended(cronJob) && (
+                    <Badge size="sm" color="statusWarn" variant="light">
+                      Not scheduling
+                    </Badge>
+                  )}
+                </Group>
 
                 <Group mt="sm">
                   <Button
@@ -236,6 +255,32 @@ export default function JobsPage({
                   >
                     View history
                   </Button>
+
+                  <Tooltip
+                    label={
+                      canWrite(clusterName)
+                        ? isSuspended(cronJob)
+                          ? "Resume the schedule"
+                          : "Stop starting new runs. Anything already running continues."
+                        : `Requires the ${writeRoleFor(clusterName)} role`
+                    }
+                  >
+                    <Switch
+                      ml="auto"
+                      size="sm"
+                      labelPosition="left"
+                      label={isSuspended(cronJob) ? "Suspended" : "Active"}
+                      checked={!isSuspended(cronJob)}
+                      disabled={!canWrite(clusterName) || suspendPending}
+                      onChange={async (e) => {
+                        const ok = await setSuspended(
+                          { namespace: selectedNamespace, name, cluster: clusterName },
+                          !e.currentTarget.checked
+                        );
+                        if (ok) refresh();
+                      }}
+                    />
+                  </Tooltip>
                 </Group>
               </Card>
             );

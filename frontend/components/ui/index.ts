@@ -9,7 +9,7 @@ export type { PageHeaderProps } from './PageHeader';
 export { ReplicaBadge, StatusBadge } from './StatusBadge';
 export type { ReplicaBadgeProps, StatusBadgeProps } from './StatusBadge';
 
-export { EmptyState, ErrorState, LoadingState, QueryState } from './QueryState';
+export { EmptyState, ErrorState, isForbiddenError, LoadingState, QueryState } from './QueryState';
 export type {
   EmptyStateProps,
   ErrorStateProps,
@@ -17,3 +17,6 @@ export type {
   QueryStateProps,
   SkeletonKind,
 } from './QueryState';
+
+export { RequireWrite } from './RequireWrite';
+export type { RequireWriteProps } from './RequireWrite';

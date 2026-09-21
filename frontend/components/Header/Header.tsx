@@ -36,6 +36,7 @@ import {
 import { ColorSchemeToggle } from '@/components/ColorSchemeToggle/ColorSchemeToggle';
 import { useGlobalState } from '@/contexts/global';
 import { useEnvironments } from '@/hooks/useEnvironments';
+import { useFocusedLayoutState } from '@/contexts/focusedLayout';
 import { callGoApi } from '@/lib/k8s';
 import callK8sApi from '@/lib/k8s';
 import classes from './Header.module.css';
@@ -126,6 +127,8 @@ function FullHeader({
     refresh: fetchEnvironments,
   } = useEnvironments();
 
+  const focusedLayout = useFocusedLayoutState();
+
   // Clear stored selection if it no longer exists, so the picker cannot point at
   // a deleted environment.
   useEffect(() => {
@@ -165,10 +168,17 @@ function FullHeader({
   return (
     <Group h="100%" px="md" justify="space-between" align="center" wrap="nowrap">
       <Group wrap="nowrap" gap="xs">
-        <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
-        <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
+        {/* In focused layout there is no navbar to toggle, and the page below
+            is itself the environment chooser -- so both the burgers and this
+            picker would be controls for things that are not there. */}
+        {!focusedLayout && (
+          <>
+            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
+            <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
+          </>
+        )}
 
-        <Group wrap="wrap" gap="xs" style={{ flexGrow: 1 }}>
+        <Group wrap="wrap" gap="xs" style={{ flexGrow: 1 }} display={focusedLayout ? 'none' : undefined}>
           {/* 👇 Rendered directly instead of as an inline component */}
           <Select
             data={environments.map(item => ({

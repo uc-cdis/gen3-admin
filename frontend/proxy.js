@@ -1,9 +1,10 @@
-// Remember to change the name of this file to middleware.js when we want to enable auth again
+// Remember to re-enable auth here when we want it again:
 // export { default } from "next-auth/middleware"
+//
+// Next 16 renamed the middleware file convention to "proxy"; the exported
+// function follows the file name.
 
-// middleware.js
-
-export function middleware(req) {
+export function proxy(req) {
   const bootstrapEnabled = process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true";
 
   if (bootstrapEnabled) {

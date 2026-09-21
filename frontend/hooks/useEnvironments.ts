@@ -35,19 +35,34 @@ export type EnvItem = {
   k8sVersion: string;
 };
 
+/** One scan of the fleet: what was found, and what could not be read. */
+export type EnvironmentScan = {
+  environments: EnvItem[];
+  /** Agents that returned 403, so the UI can distinguish denied from empty. */
+  inaccessibleAgents: string[];
+};
+
 const ENVIRONMENTS_CACHE_MS = 5 * 60 * 1000;
 
-async function fetchEnvironments(token: string): Promise<EnvItem[]> {
+async function fetchEnvironments(token: string): Promise<EnvironmentScan> {
   const agents = await callGoApi('/agents', 'GET', null, null, token);
   const connected = (agents || []).filter((agent: any) => agent?.connected);
+
+  const inaccessible: string[] = [];
 
   const perAgent = await Promise.all(
     connected.map(async (agent: any) => {
       let charts: any[] = [];
       try {
         charts = await callGoApi(`/agents/${agent.name}/helm/list`, 'GET', null, null, token);
-      } catch {
-        // One unreachable agent should not blank the whole picker.
+      } catch (err: any) {
+        // One unreachable agent should not blank the whole picker. But a 403
+        // is not a transient failure -- dropping it silently is why "you lack
+        // access to this cluster" looked identical to "this cluster has no
+        // Gen3 releases". Record it so the caller can say which.
+        if (err?.status === 403 || err?.isForbidden) {
+          inaccessible.push(agent.name);
+        }
         return [] as EnvItem[];
       }
 
@@ -92,13 +107,13 @@ async function fetchEnvironments(token: string): Promise<EnvItem[]> {
     })
   );
 
-  return perAgent.flat();
+  return { environments: perAgent.flat(), inaccessibleAgents: inaccessible };
 }
 
 export function useEnvironments() {
   const token = useAccessToken();
 
-  const swr = useSWR<EnvItem[]>(
+  const swr = useSWR<EnvironmentScan>(
     token ? ['environments'] : null,
     () => fetchEnvironments(token as string),
     {
@@ -112,7 +127,8 @@ export function useEnvironments() {
   );
 
   return {
-    environments: swr.data ?? [],
+    environments: swr.data?.environments ?? [],
+    inaccessibleAgents: swr.data?.inaccessibleAgents ?? [],
     // Only a true first load; a background revalidate keeps the list visible.
     loading: swr.isLoading && !swr.data,
     validating: swr.isValidating,

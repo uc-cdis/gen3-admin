@@ -1,43 +1,47 @@
 import DataTable from '@/components/DataTable/DataTable';
-
-import { Badge, Anchor, Text } from '@mantine/core';
+import { Text } from '@mantine/core';
 import { useParams } from 'next/navigation';
 
-import calculateAge from '@/utils/calculateAge';
+import { PageHeader } from '@/components/ui';
+import {
+  ageColumn,
+  formatDuration,
+  jobStatusColumn,
+  nameColumn,
+} from '@/lib/workloadColumns';
 
-import Link from 'next/link'
+export default function NamespacedJobs() {
+  const clusterName = useParams()?.clustername;
+  const namespace = useParams()?.namespace;
 
-export default function Detail() {
-    const clusterName = useParams()?.clustername;
-    const namespace = useParams()?.namespace;
-
-    return (
-        <>
-            <DataTable
-                agent={clusterName}
-                endpoint={`/apis/batch/v1/namespaces/${namespace}/jobs`}
-                fields={[
-                    {
-                        key: "metadata.name",
-                        label: "Name",
-                        render: ({ original }) => (
-                            <Anchor component={Link} href={`/clusters/${clusterName}/workloads/jobs/${namespace}/${original.metadata.name}`}>
-                                <Text fw={500}>{original.metadata.name}</Text>
-                            </Anchor>
-                        )
-                    },
-                    {
-                        key: "metadata.name",
-                        label: "Completions",
-                        render: ({ original }) => {
-                            const succeeded = original.status?.succeeded || 0;
-                            const total = original.spec?.completions || 1;
-                            return <Text>{`${succeeded}/${total}`}</Text>;
-                        }
-                    },
-                    { key: "metadata.creationTimestamp", label: "Age", render: ({ Age }) => calculateAge(Age) },
-                ]}
-            />
-        </>
-    )
+  return (
+    <>
+      <PageHeader title="Jobs" subtitle={`${clusterName} / ${namespace}`} />
+      <DataTable
+        agent={clusterName}
+        endpoint={`/apis/batch/v1/namespaces/${namespace}/jobs`}
+        fields={[
+          nameColumn(clusterName, 'jobs'),
+          jobStatusColumn(),
+          {
+            key: 'metadata.name',
+            label: 'Completions',
+            render: ({ original }) => (
+              <Text>{`${original.status?.succeeded || 0}/${original.spec?.completions || 1}`}</Text>
+            ),
+          },
+          {
+            key: 'metadata.name',
+            label: 'Duration',
+            render: ({ original }) => (
+              <Text>
+                {formatDuration(original.status?.startTime, original.status?.completionTime)}
+              </Text>
+            ),
+          },
+          ageColumn(),
+        ]}
+      />
+    </>
+  );
 }

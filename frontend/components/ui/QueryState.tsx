@@ -11,7 +11,7 @@ import {
   Stack,
   Text,
 } from '@mantine/core';
-import { IconAlertTriangle, IconInbox, IconRefresh } from '@tabler/icons-react';
+import { IconAlertTriangle, IconInbox, IconLock, IconRefresh } from '@tabler/icons-react';
 
 export type SkeletonKind = 'spinner' | 'table' | 'cards';
 
@@ -95,12 +95,18 @@ function errorMessage(error: unknown): string {
  * made a broken API indistinguishable from an empty one.
  */
 export function ErrorState({ error, title = 'Something went wrong', onRetry, hint }: ErrorStateProps) {
+  // A 403 is not a failure that might pass on a second attempt, so it gets
+  // its own framing and, importantly, no Retry button. Offering one on a
+  // permission error invites the user to click it repeatedly and conclude the
+  // product is broken, when the real answer is "ask for a role".
+  const forbidden = isForbiddenError(error);
+
   return (
     <Alert
       variant="light"
-      color="statusError"
-      icon={<IconAlertTriangle size={18} />}
-      title={title}
+      color={forbidden ? 'statusWarn' : 'statusError'}
+      icon={forbidden ? <IconLock size={18} /> : <IconAlertTriangle size={18} />}
+      title={forbidden ? 'You do not have access' : title}
       role="alert"
     >
       <Stack gap="sm" align="flex-start">
@@ -110,7 +116,7 @@ export function ErrorState({ error, title = 'Something went wrong', onRetry, hin
             {hint}
           </Text>
         )}
-        {onRetry && (
+        {onRetry && !forbidden && (
           <Button
             size="xs"
             variant="light"
@@ -124,6 +130,20 @@ export function ErrorState({ error, title = 'Something went wrong', onRetry, hin
       </Stack>
     </Alert>
   );
+}
+
+/**
+ * Whether an error is a permission denial.
+ *
+ * `ApiError.isForbidden` has existed since the error type was introduced and
+ * had no callers -- every 403 rendered as a generic red "Something went
+ * wrong" with a Retry button that could never succeed. The status check is
+ * duck-typed so this works for anything carrying a status, not just ApiError.
+ */
+export function isForbiddenError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { isForbidden?: boolean; status?: number };
+  return e.isForbidden === true || e.status === 403;
 }
 
 export type EmptyStateProps = {

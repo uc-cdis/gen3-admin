@@ -15,7 +15,19 @@ import { IconRefresh, IconTrash, IconCode, IconEye, IconActivityHeartbeat } from
 import { notifications } from '@mantine/notifications';
 
 import { useSession } from 'next-auth/react';
-import { resolveStatus } from '@/lib/status';
+import { resolveReplicaStatus, resolveStatus } from '@/lib/status';
+// How to read ready/desired for each replica-backed kind. Field names differ
+// per kind, which is why this cannot be one generic accessor.
+const REPLICA_KINDS = {
+    Deployment: (r) => ({ ready: r?.status?.readyReplicas, desired: r?.spec?.replicas }),
+    StatefulSet: (r) => ({ ready: r?.status?.readyReplicas, desired: r?.spec?.replicas }),
+    ReplicaSet: (r) => ({ ready: r?.status?.readyReplicas, desired: r?.spec?.replicas }),
+    DaemonSet: (r) => ({
+        ready: r?.status?.numberReady,
+        desired: r?.status?.desiredNumberScheduled,
+    }),
+};
+
 import { useK8sResource } from '@/hooks/useK8s';
 
 export default function ResourceDetails({ cluster, namespace, resource, type, tabs, url, columnDefinitions, columnConfig }) {
@@ -128,7 +140,6 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
         }
     };
 
-
     // Determine status for the header badge
     // Pick the right status domain for this resource kind; the colours and
     // labels themselves come from lib/status.ts so they match every other view.
@@ -145,8 +156,41 @@ export default function ResourceDetails({ cluster, namespace, resource, type, ta
                 ready: containers?.every(c => c.ready),
             });
         }
-        if (resourceData?.status?.phase) {
+
+        // Replica-backed workloads have no status.phase, so they used to fall
+        // through and render no badge at all -- the detail page for a
+        // Deployment with zero available replicas looked identical to a
+        // healthy one.
+        if (REPLICA_KINDS[type]) {
+            const { ready, desired } = REPLICA_KINDS[type](resourceData);
+            return resolveReplicaStatus(ready, desired);
+        }
+
+        if (type === 'Job') {
+            const conditions = resourceData?.status?.conditions ?? [];
+            const failed = conditions.find(c => c.type === 'Failed' && c.status === 'True');
+            if (failed) return resolveStatus('job', 'failed', { reason: failed.reason });
+            if (conditions.find(c => c.type === 'Complete' && c.status === 'True')) {
+                return resolveStatus('job', 'complete');
+            }
+            if ((resourceData?.status?.active ?? 0) > 0) return resolveStatus('job', 'active');
+            return resolveStatus('job', resourceData?.spec?.suspend ? 'suspended' : 'unknown');
+        }
+
+        if (type === 'CronJob') {
+            return resolveStatus('job', resourceData?.spec?.suspend ? 'suspended' : 'active');
+        }
+
+        // PVC and PV are the kinds whose phase this domain actually describes.
+        if (resourceData?.status?.phase && (type === 'PersistentVolumeClaim' || type === 'PersistentVolume')) {
             return resolveStatus('pvc', resourceData.status.phase);
+        }
+
+        // Any other kind carrying a phase: label it without claiming a domain
+        // it may not belong to. The catch-all used to route everything through
+        // the pvc domain, which mislabels anything that is not a volume.
+        if (resourceData?.status?.phase) {
+            return resolveStatus('generic', resourceData.status.phase);
         }
         return null;
     };
