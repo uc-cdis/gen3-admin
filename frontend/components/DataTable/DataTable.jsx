@@ -544,6 +544,33 @@ const GenericDataTable = ({
         });
     }, [baseRows, metricsData]);
 
+    // Filter rows based on search term
+    const filteredRows = useMemo(() => {
+        const sourceRows = metricsData.length > 0 ? rowsWithMetrics : baseRows;
+
+        if (!debouncedSearchTerm.trim()) {
+            return sourceRows;
+        }
+
+        const lowerCaseSearchTerm = debouncedSearchTerm.trim().toLowerCase();
+
+        return sourceRows.filter(row => {
+            // If searchableFields is specified, only search those fields
+            if (searchableFields && searchableFields.length > 0) {
+                return searchableFields.some(fieldLabel => {
+                    const value = row[fieldLabel];
+                    return String(value).toLowerCase().includes(lowerCaseSearchTerm);
+                });
+            }
+
+            // Otherwise, search all field values (excluding metadata and original)
+            return fields.some(field => {
+                const value = row[field.label];
+                return String(value).toLowerCase().includes(lowerCaseSearchTerm);
+            });
+        });
+    }, [debouncedSearchTerm, baseRows, rowsWithMetrics, metricsData.length, fields, searchableFields]);
+
     // Sorting happens after filtering so the visible set is what gets ordered.
     //
     // Compares the underlying value rather than the rendered cell: Age holds
@@ -575,32 +602,6 @@ const GenericDataTable = ({
         });
     }, [filteredRows, sortStatus]);
 
-    // Filter rows based on search term
-    const filteredRows = useMemo(() => {
-        const sourceRows = metricsData.length > 0 ? rowsWithMetrics : baseRows;
-
-        if (!debouncedSearchTerm.trim()) {
-            return sourceRows;
-        }
-
-        const lowerCaseSearchTerm = debouncedSearchTerm.trim().toLowerCase();
-
-        return sourceRows.filter(row => {
-            // If searchableFields is specified, only search those fields
-            if (searchableFields && searchableFields.length > 0) {
-                return searchableFields.some(fieldLabel => {
-                    const value = row[fieldLabel];
-                    return String(value).toLowerCase().includes(lowerCaseSearchTerm);
-                });
-            }
-
-            // Otherwise, search all field values (excluding metadata and original)
-            return fields.some(field => {
-                const value = row[field.label];
-                return String(value).toLowerCase().includes(lowerCaseSearchTerm);
-            });
-        });
-    }, [debouncedSearchTerm, baseRows, rowsWithMetrics, metricsData.length, fields, searchableFields]);
 
     return (
         <>
