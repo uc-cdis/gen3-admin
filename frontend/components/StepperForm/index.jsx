@@ -16,7 +16,7 @@ import { notifications } from '@mantine/notifications';
 import { callGoApi } from '@/lib/k8s';
 import YAML from 'yaml';
 
-import Editor from "@monaco-editor/react";
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';

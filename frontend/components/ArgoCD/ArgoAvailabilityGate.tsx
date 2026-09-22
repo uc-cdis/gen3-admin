@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { Alert, Anchor, Button, Group, Stack, Text } from '@mantine/core';
 import { IconAlertTriangle, IconGitBranch, IconInfoCircle, IconServer2 } from '@tabler/icons-react';
@@ -97,6 +97,23 @@ export function ArgoAvailabilityGate({
 }: ArgoAvailabilityGateProps) {
   const status = useArgoStatus(cluster);
 
+  // A failed availability probe is itself a degraded state, not a hard error.
+  const availability = status.data;
+  const available = availability?.available === true;
+  const reason = (availability as any)?.reason as ArgoUnavailableReason | undefined;
+  const message = (availability as any)?.message ?? 'ArgoCD is not reachable.';
+
+  // Hooks must run before the early returns below, so both context values are
+  // built up front even though only one of them is used on any given render.
+  const fullMode = useMemo(
+    () => ({ full: true, degraded: false, version: (availability as any)?.version }),
+    [availability]
+  );
+  const degradedMode = useMemo(
+    () => ({ full: false, degraded: true, reason, message }),
+    [reason, message]
+  );
+
   // Still working out which cluster this is; showing "no cluster" here would be a
   // false negative on the first paint of a shared link.
   if (!cluster && resolving) {
@@ -123,22 +140,13 @@ export function ArgoAvailabilityGate({
     return <LoadingState label="Checking ArgoCD availability..." />;
   }
 
-  // A failed availability probe is itself a degraded state, not a hard error.
-  const availability = status.data;
-  const available = availability?.available === true;
-
   if (available) {
     return (
-      <ArgoModeContext.Provider
-        value={{ full: true, degraded: false, version: (availability as any).version }}
-      >
+      <ArgoModeContext.Provider value={fullMode}>
         {children}
       </ArgoModeContext.Provider>
     );
   }
-
-  const reason = (availability as any)?.reason as ArgoUnavailableReason | undefined;
-  const message = (availability as any)?.message ?? 'ArgoCD is not reachable.';
 
   if (reason === 'not_installed') {
     return (
@@ -164,7 +172,7 @@ export function ArgoAvailabilityGate({
   const { title, body } = explain(reason ?? 'upstream_error', message);
 
   return (
-    <ArgoModeContext.Provider value={{ full: false, degraded: true, reason, message }}>
+    <ArgoModeContext.Provider value={degradedMode}>
       <Stack gap="md">
         <Alert
           variant="light"

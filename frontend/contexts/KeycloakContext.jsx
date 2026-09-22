@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import { initKeycloak, keycloak, logout } from "@/lib/keycloak";
 
 
@@ -33,8 +33,13 @@ export const KeycloakProvider = ({ children }) => {
   }, []);
 
 
+  const value = useMemo(
+    () => ({ initialized, authenticated, user, logout }),
+    [initialized, authenticated, user]
+  );
+
   return (
-    <KeycloakContext.Provider value={{ initialized, authenticated, user, logout }}>
+    <KeycloakContext.Provider value={value}>
       {children}
     </KeycloakContext.Provider>
   );

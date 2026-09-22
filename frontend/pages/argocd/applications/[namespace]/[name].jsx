@@ -30,7 +30,7 @@ import {
   IconRefresh,
   IconTerminal2,
 } from '@tabler/icons-react';
-import Editor from '@monaco-editor/react';
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import YAML from 'yaml';

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import { formatDistanceToNow } from 'date-fns';
-import Editor from "@monaco-editor/react";
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 import { Button, Container, TextInput, Select, Group, ActionIcon, Card, Checkbox } from "@mantine/core";
 
 import { useViewportSize } from "@mantine/hooks";

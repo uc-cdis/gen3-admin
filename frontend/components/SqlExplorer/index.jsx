@@ -29,7 +29,7 @@ import {
   IconStethoscope,
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
-import Editor from '@monaco-editor/react';
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 import { useComputedColorScheme } from '@mantine/core';
 
 import { callGoApi } from '@/lib/k8s';

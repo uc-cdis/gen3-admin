@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Stack, Paper, TextInput, Text, Divider, Group, Card, Title, Switch, Button, NumberInput, Collapse, Accordion, Textarea, Select, PasswordInput, Alert, Code, useComputedColorScheme } from '@mantine/core';
 import { IconArrowBackUp, IconPlus, IconTrash, IconAlertCircle } from '@tabler/icons-react';
-import Editor from '@monaco-editor/react';
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 import YAML from 'yaml';
 
 import { notifications } from '@mantine/notifications';
