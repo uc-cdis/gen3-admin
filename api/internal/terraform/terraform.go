@@ -46,6 +46,16 @@ const (
 	StatusUnknown  ExecutionStatus = "unknown"
 )
 
+// AWSCredentials carries short-lived credentials for a single run. These come
+// either from the operator (manual entry) or from assuming a role in a target
+// account, and are passed to the runner as environment variables rather than
+// being written to disk.
+type AWSCredentials struct {
+	AccessKeyID     string `json:"access_key_id,omitempty"`
+	SecretAccessKey string `json:"secret_access_key,omitempty"`
+	SessionToken    string `json:"session_token,omitempty"`
+}
+
 type TerraformRequest struct {
 	Operation   TerraformOperation `json:"operation" binding:"required"`
 	WorkDir     string             `json:"work_dir" binding:"required"`
@@ -57,6 +67,24 @@ type TerraformRequest struct {
 	// State configuration
 	StateBucket string `json:"state_bucket,omitempty"`
 	StateRegion string `json:"state_region,omitempty"`
+
+	// FromModule, when set on an init, copies a module into the work dir
+	// before initialising it (terraform init -from-module=...). It is kept
+	// separate from Operation so Operation stays a bare enum.
+	FromModule string `json:"from_module,omitempty"`
+
+	// AWS credentials. Docker mode previously relied solely on the server's
+	// mounted ~/.aws, which does not exist when CSOC itself runs in-cluster.
+	AWSRegion      string          `json:"aws_region,omitempty"`
+	AWSProfile     string          `json:"aws_profile,omitempty"`
+	AWSCredentials *AWSCredentials `json:"aws_credentials,omitempty"`
+
+	// StateKey is the object key for the S3 backend, one per environment.
+	StateKey string `json:"state_key,omitempty"`
+
+	// PlanFile, when set on an apply, applies a previously saved plan instead
+	// of re-planning.
+	PlanFile string `json:"plan_file,omitempty"`
 
 	// Docker specific
 	DockerImage          string `json:"docker_image,omitempty"`
@@ -119,6 +147,35 @@ func ensureTerraformNamespace(namespace string) error {
 	return nil
 }
 
+// shellQuote wraps a value in single quotes for safe interpolation into the
+// generated docker shell script. Credentials and ARNs can contain characters
+// the shell would otherwise treat as syntax.
+func shellQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+// buildAWSEnvFlags renders the per-request AWS settings as docker -e flags.
+// Explicit credentials are what allow a CSOC running in-cluster, with no
+// ~/.aws to mount, to provision into a target account.
+func buildAWSEnvFlags(req *TerraformRequest) string {
+	flags := ""
+	if req.AWSRegion != "" {
+		flags += fmt.Sprintf("-e AWS_REGION=%s -e AWS_DEFAULT_REGION=%s ",
+			shellQuote(req.AWSRegion), shellQuote(req.AWSRegion))
+	}
+	if req.AWSProfile != "" {
+		flags += fmt.Sprintf("-e AWS_PROFILE=%s ", shellQuote(req.AWSProfile))
+	}
+	if c := req.AWSCredentials; c != nil && c.AccessKeyID != "" {
+		flags += fmt.Sprintf("-e AWS_ACCESS_KEY_ID=%s -e AWS_SECRET_ACCESS_KEY=%s ",
+			shellQuote(c.AccessKeyID), shellQuote(c.SecretAccessKey))
+		if c.SessionToken != "" {
+			flags += fmt.Sprintf("-e AWS_SESSION_TOKEN=%s ", shellQuote(c.SessionToken))
+		}
+	}
+	return flags
+}
+
 func buildDockerCommand(req *TerraformRequest, executionID string) (string, []string) {
 	op := strings.Split(string(req.Operation), " ")[0]
 	containerName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(op)), executionID[:8])
@@ -149,8 +206,13 @@ echo "=== Validation passed ==="
 	}
 
 	tfArgs := buildTerraformArgs(req)
+	// The official image's entrypoint is terraform itself, so the args are
+	// passed through directly. Images built on a shell entrypoint instead
+	// need the whole command as a single quoted string.
 	tfCommand := strings.Join(tfArgs, " ")
-	println("[DEBUG]: TFcommand: ", tfCommand)
+	if !imageProvidesTerraformEntrypoint(req.DockerImage) {
+		tfCommand = shellQuote(tfCommand)
+	}
 
 	// Build environment flags for main Terraform container
 	envFlags := ""
@@ -165,6 +227,11 @@ echo "=== Validation passed ==="
 	if awsProfile != "" {
 		envFlags += fmt.Sprintf("-e AWS_PROFILE=%s ", awsProfile)
 	}
+
+	// Per-request AWS settings take precedence over the server's own
+	// environment, so two runs targeting different accounts cannot pick up
+	// each other's credentials.
+	envFlags += buildAWSEnvFlags(req)
 
 	networkFlag := ""
 	if req.DockerNetwork != "" {
@@ -184,13 +251,13 @@ docker run \
   --label %s=%s \
   --label %s=%s \
   -v %s/.aws:/root/.aws:ro \
-  -v %s:/workspace/csoc:rw \
-  -v %s-vars/terraform.tfvars:/workspace/gen3-terraform/terraform.tfvars:rw \
-  -w /workspace/csoc \
+  -v %s:%s:rw \
+  -v %s-vars:%s:rw \
+  -w %s \
   %s \
   %s \
   %s \
-  -- "%s"
+  %s
   `,
 		validationCmd,
 		containerName,
@@ -199,8 +266,9 @@ docker run \
 		LabelOperation, string(op),
 		LabelExecutionID, executionID,
 		homeDir,
-		req.WorkDir,
-		req.WorkDir,
+		req.WorkDir, containerWorkDir,
+		req.WorkDir, containerVarsDir,
+		containerWorkDir,
 		envFlags,
 		networkFlag,
 		image,
@@ -254,48 +322,103 @@ func buildKubectlCommand(req *TerraformRequest, executionID string) (*exec.Cmd, 
 	return cmd, podSpecJSON, nil
 }
 
+// Paths inside the runner container. The work dir holds the Terraform sources
+// and is where every command runs; the vars dir is mounted separately so the
+// tfvars file can be replaced per run without touching the sources.
+const (
+	containerWorkDir = "/workspace/tf"
+	containerVarsDir = "/workspace/tf-vars"
+	containerPlanOut = containerWorkDir + "/tfplan"
+)
+
+// imageProvidesTerraformEntrypoint reports whether the image's entrypoint is
+// already terraform, in which case the binary name must not be repeated in the
+// args. The official image behaves this way; custom images built on a shell
+// entrypoint do not.
+func imageProvidesTerraformEntrypoint(image string) bool {
+	if image == "" {
+		// Empty means the caller gets the default, which is the official image.
+		return true
+	}
+	return strings.HasPrefix(image, "hashicorp/terraform")
+}
+
 func buildTerraformArgs(req *TerraformRequest) []string {
 	var args []string
 
-	// // If it's not the official Terraform image, prepend "terraform"
-	if req.DockerImage != "hashicorp/terraform:latest" {
+	// Only name the binary when the image will not supply it itself. The old
+	// check compared against the literal default, so an empty DockerImage --
+	// the common case -- wrongly took the prepend branch.
+	if !imageProvidesTerraformEntrypoint(req.DockerImage) {
 		args = append(args, "terraform")
 	}
 
-	// Add init, &&, terraform <operation>
-	// args = append(args, "init", "&&", "terraform", string(req.Operation))
 	args = append(args, string(req.Operation))
+
+	varFileArgs := func() []string {
+		var out []string
+		for _, varFile := range req.VarFiles {
+			out = append(out, "-var-file="+containerVarsDir+"/"+filepath.Base(varFile))
+		}
+		return out
+	}
 
 	switch req.Operation {
 	case OpInit:
-		// Add any init-specific flags
-	case OpPlan:
-		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
+		if req.FromModule != "" {
+			args = append(args, "-from-module="+req.FromModule)
 		}
-		args = append(args, "-out=/workspace/gen3-terraform/tfplan")
+		// Backend settings are supplied as -backend-config so the same sources
+		// can be initialised against a different state key per environment.
+		for _, kv := range buildBackendConfigArgs(req) {
+			args = append(args, kv)
+		}
+	case OpPlan:
+		args = append(args, varFileArgs()...)
+		args = append(args, "-out="+containerPlanOut)
 	case OpApply:
+		// Apply the plan that was reviewed, rather than re-planning and
+		// potentially applying something the operator never saw. A saved plan
+		// already encodes its variables, so -var-file must not be repeated.
+		if req.PlanFile != "" {
+			if req.AutoApprove {
+				args = append(args, "-auto-approve")
+			}
+			args = append(args, req.PlanFile)
+			break
+		}
 		if req.AutoApprove {
 			args = append(args, "-auto-approve")
 		}
-		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
-		}
+		args = append(args, varFileArgs()...)
 	case OpDestroy:
 		if req.AutoApprove {
 			args = append(args, "-auto-approve")
 		}
-		for _, varFile := range req.VarFiles {
-			args = append(args, "-var-file=/workspace/gen3-terraform/"+filepath.Base(varFile))
-		}
+		args = append(args, varFileArgs()...)
 	case OpOutput:
 		args = append(args, "-json")
 	case OpValidate:
 		// No additional args needed
 	}
 
-	fmt.Printf("[DEBUG] args: %#v\n", args)
+	return args
+}
 
+// buildBackendConfigArgs turns the request's state settings into -backend-config
+// flags. Without these Terraform keeps state inside the container, which is
+// discarded when the run ends, leaving nothing to destroy later.
+func buildBackendConfigArgs(req *TerraformRequest) []string {
+	if req.StateBucket == "" {
+		return nil
+	}
+	args := []string{"-backend-config=bucket=" + req.StateBucket}
+	if req.StateKey != "" {
+		args = append(args, "-backend-config=key="+req.StateKey)
+	}
+	if req.StateRegion != "" {
+		args = append(args, "-backend-config=region="+req.StateRegion)
+	}
 	return args
 }
 

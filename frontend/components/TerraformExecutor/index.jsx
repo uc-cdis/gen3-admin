@@ -474,6 +474,9 @@ export default function TerraformExecutor({
   config = null,                // Config object to build tfvars from
   workDir = '/tmp/gen3-terraform',
   dockerImage = 'gen3-terraform:latest',
+  // Module to copy into the work dir on init. Sent as its own field rather
+  // than folded into the operation string, which the API parses as a bare verb.
+  fromModule = null,
 
   // State configuration
   stateBucket = '',
@@ -670,9 +673,12 @@ export default function TerraformExecutor({
           namespace: namespace,
           pod_image: dockerImage,
           secret_name: secretName,
-          state_bucket: "", //finalStateBucket,
+          state_bucket: finalStateBucket,
           state_region: finalStateRegion,
           state_key: stateKey,
+          // Only init copies a module in; sending it on every operation would
+          // be ignored at best and rejected at worst.
+          from_module: operation === 'init' ? fromModule : undefined,
           tfvars: finalTfvars,
           tfvars_file_name: 'terraform.tfvars',
           // Pass AWS context for credential handling

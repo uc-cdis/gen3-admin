@@ -5,6 +5,12 @@ import CSOCDiagram from "@/components/CSOCDiagram";
 import { useAwsIdentity } from "@/hooks/aws";
 import TerraformExecutor, { buildTfvars } from '@/components/TerraformExecutor';
 
+// The CSOC stack module. Pinned by ref so a run is reproducible rather than
+// tracking whatever a branch happens to point at.
+const CSOC_MODULE_SOURCE =
+  process.env.NEXT_PUBLIC_CSOC_MODULE_SOURCE ||
+  "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=master";
+
 
 export default function Gen3BootstrapStepper() {
   const [active, setActive] = useState(0);
@@ -24,6 +30,9 @@ export default function Gen3BootstrapStepper() {
 
   // New configuration options
   const [csocName, setCsocName] = useState('');
+  // Terraform state bucket. Without a real bucket the run keeps state inside
+  // the container and the environment cannot be destroyed afterwards.
+  const [stateBucket, setStateBucket] = useState('');
   const [domainName, setDomainName] = useState('');
   const [validatingDomain, setValidatingDomain] = useState(false);
   const [domainValidation, setDomainValidation] = useState(true);
@@ -208,6 +217,15 @@ export default function Gen3BootstrapStepper() {
               description="A unique identifier for this CSOC deployment"
               value={csocName}
               onChange={(e) => setCsocName(e.target.value)}
+              required
+            />
+
+            <TextInput
+              label="Terraform State Bucket"
+              placeholder="my-org-gen3-terraform-state"
+              description="S3 bucket holding Terraform state. Required so this environment can be destroyed later."
+              value={stateBucket}
+              onChange={(e) => setStateBucket(e.target.value)}
               required
             />
 
@@ -607,10 +625,11 @@ export default function Gen3BootstrapStepper() {
             </Paper>
 
             {/* Warnings */}
-            {(!csocName || !domainName || !domainValidation || domainValidation.error) && (
+            {(!csocName || !stateBucket || !domainName || !domainValidation || domainValidation.error) && (
               <Alert color="yellow" title="Configuration Incomplete" icon={<IconAlertTriangle />}>
                 <Stack gap={4}>
                   {!csocName && <Text size="sm">• CSOC Name is required</Text>}
+                  {!stateBucket && <Text size="sm">• Terraform State Bucket is required</Text>}
                   {!domainName && <Text size="sm">• Domain Name is required</Text>}
                   {domainName && !domainValidation && <Text size="sm">• Domain has not been validated</Text>}
                   {domainValidation?.error && <Text size="sm">• Domain validation failed</Text>}
@@ -651,7 +670,8 @@ export default function Gen3BootstrapStepper() {
           <TerraformExecutor
             mode="embedded"
             autoExecute={true}
-            operations={["init -from-module='git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker'", 'plan', 'apply', 'destroy']}
+            operations={['init', 'plan', 'apply', 'destroy']}
+            fromModule={CSOC_MODULE_SOURCE}
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}
@@ -660,11 +680,14 @@ export default function Gen3BootstrapStepper() {
               credentials: credentialSource === 'manual' ? manualCredentials : null,
               profile: credentialSource === 'profile' ? selectedProfile : null,
               identity: identity,
-              stateBucket: 'my-csoc-terraform-state',
+              stateBucket: stateBucket,
               stateRegion: selectedRegion
             }}
             config={csocConfig}  // Pass config instead of tfvars
-            stateKey="csoc/terraform.tfstate"
+            // One state key and one work dir per environment, so two
+            // environments cannot overwrite each other's state.
+            stateKey={`csoc/${csocName}/terraform.tfstate`}
+            workDir={`csoc-${csocName}`}
             onComplete={(result) => {
               console.log('CSOC provisioning complete!', result);
               // setActive(4);
@@ -696,7 +719,7 @@ export default function Gen3BootstrapStepper() {
   // Disable next button if required fields are not filled
   const canProceed = () => {
     if (active === 1) {
-      return csocName && domainName && domainValidation && !domainValidation.error && identity;
+      return csocName && stateBucket && domainName && domainValidation && !domainValidation.error && identity;
     }
     return true;
   };
