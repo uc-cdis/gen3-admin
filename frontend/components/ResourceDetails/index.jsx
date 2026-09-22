@@ -7,7 +7,7 @@ import { useViewportSize } from '@mantine/hooks';
 import Overview from './Overview';
 import Logs from './Logs';
 
-import Editor from "@monaco-editor/react";
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 
 import YAML from 'yaml';
 import Events from './Events';

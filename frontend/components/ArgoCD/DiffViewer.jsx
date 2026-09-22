@@ -11,7 +11,7 @@ import {
   Text,
   useMantineColorScheme,
 } from '@mantine/core';
-import { DiffEditor } from '@monaco-editor/react';
+import { MonacoDiffEditor as DiffEditor } from '@/components/MonacoEditor';
 import YAML from 'yaml';
 
 import { EmptyState } from '@/components/ui';

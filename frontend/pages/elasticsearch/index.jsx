@@ -36,7 +36,7 @@ import {
 
 import { callGoApi } from '@/lib/k8s';
 import { useSession } from 'next-auth/react';
-import { Editor } from '@monaco-editor/react';
+import { MonacoEditor as Editor } from '@/components/MonacoEditor';
 
 import { useGlobalState } from '@/contexts/global';
 

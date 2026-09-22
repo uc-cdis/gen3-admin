@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react'
+import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react'
 import { getCookie, deleteCookie, setCookie } from 'cookies-next';
 
 
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }) => {
         loadUserFromCookies()
     }, [])
 
-    const login = async (apiKeyData) => {
+    const login = useCallback(async (apiKeyData) => {
         // Simulated error for dev
         // throw new Error("Fake error");
 
@@ -107,17 +107,22 @@ export const AuthProvider = ({ children }) => {
             deleteCookie('access_token');
             throw error; // Re-throw the error for the caller to handle
         }
-    };
+    }, []);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         console.log("Logging out user")
         deleteCookie('access_token')
         setUser(null)
-    }
+    }, [])
 
+
+    const value = useMemo(
+        () => ({ isAuthenticated: !!user, user, login, logout, loading, authorized, url, token: accessToken }),
+        [user, login, logout, loading, authorized, url, accessToken]
+    )
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated: !!user, user, login, logout, loading, authorized, url, token: accessToken }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     )
