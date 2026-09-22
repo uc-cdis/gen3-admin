@@ -570,6 +570,14 @@ func terraformRoot() string {
 
 // validWorkDirName matches a single path segment: no separators, no dots, so
 // neither traversal nor shell metacharacters can survive it.
+// defaultRunnerImage is built locally by scripts/build-terraform-image.sh and
+// is never pushed; docker resolves local images first.
+const defaultRunnerImage = "gen3-terraform:latest"
+
+// validImageRef allows a plain [registry/]name[:tag|@digest] reference and
+// nothing that could be read as another docker argument.
+var validImageRef = regexp.MustCompile(`^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$`)
+
 var validWorkDirName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // resolveWorkDir maps a requested working directory onto a single directory
@@ -619,6 +627,37 @@ func safeTFVarsName(name string) (string, error) {
 		return "", fmt.Errorf("tfvars_file_name must end in .tfvars or .tfvars.json")
 	}
 	return name, nil
+}
+
+// HandleCheckRunnerImage reports whether the runner image is present locally.
+// The image is built rather than pulled, so a missing one otherwise surfaces
+// mid-run as an opaque docker error; the wizard uses this to show the build
+// command up front instead.
+func HandleCheckRunnerImage() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		image := c.Query("image")
+		if image == "" {
+			image = defaultRunnerImage
+		}
+
+		// Reject anything that is not a plain image reference: the value is
+		// passed to docker, and the same care is taken with work dirs.
+		if !validImageRef.MatchString(image) {
+			c.JSON(400, gin.H{"error": "invalid image reference"})
+			return
+		}
+
+		cmd := exec.Command("docker", "image", "inspect", image)
+		if err := cmd.Run(); err != nil {
+			c.JSON(200, gin.H{
+				"image":         image,
+				"present":       false,
+				"build_command": "./scripts/build-terraform-image.sh",
+			})
+			return
+		}
+		c.JSON(200, gin.H{"image": image, "present": true})
+	}
 }
 
 func HandleTerraformExecute() gin.HandlerFunc {

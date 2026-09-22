@@ -190,6 +190,7 @@ func SetupHTTPServer() {
 	r.DELETE("/api/terraform/executions/:id", terraform.HandleTerminateTerraform())
 	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
 	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
+	r.GET("/api/terraform/runner-image", terraform.HandleCheckRunnerImage())
 
 	// AWS routes
 	r.GET("/api/aws/identity", aws.GetCallerIdentity)

@@ -1,0 +1,39 @@
+# Runner image for the bootstrap wizard's Terraform executions.
+#
+# This image is built locally and never pushed; the API defaults to the tag
+# gen3-terraform:latest and Docker resolves local images first.
+#
+# Terraform sources are not baked in. The runner fetches them with
+# `terraform init -from-module=...` and bind-mounts the work dir, so a copy
+# here would be shadowed by the mount anyway.
+FROM hashicorp/terraform:1.9.5
+
+# helm and kubectl are here so a single container can carry the run past
+# `apply` into installing CSOC onto the cluster it just created. git is needed
+# for -from-module against a git source; aws-cli backs the credential
+# validation step the runner performs before state-bucket operations.
+# expat is upgraded explicitly: the aws-cli package in this base image's
+# Alpine snapshot is linked against a newer expat than the image ships, and
+# without this the CLI dies with a pyexpat relocation error.
+RUN apk add --no-cache --upgrade \
+      expat \
+      bash \
+      git \
+      curl \
+      jq \
+      openssh-client \
+      ca-certificates \
+      kubectl \
+      helm \
+      aws-cli
+
+# The runner mounts sources here and sets this as the working directory.
+WORKDIR /workspace/tf
+
+# The base image's entrypoint is terraform itself. A shell entrypoint is used
+# instead so the runner can pass a full command line, which is what lets a
+# single execution chain terraform with helm/kubectl.
+#
+# The API detects this: images not named hashicorp/terraform* get the binary
+# named explicitly in the command (see imageProvidesTerraformEntrypoint).
+ENTRYPOINT ["/bin/sh", "-c"]

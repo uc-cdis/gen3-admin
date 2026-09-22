@@ -494,6 +494,7 @@ export default function TerraformExecutor({
   // ========== State ==========
   const [activeStep, setActiveStep] = useState(0);
   const [runtime, setRuntime] = useState('docker');
+  const [imageCheck, setImageCheck] = useState(null);
   const [localWorkDir, setLocalWorkDir] = useState(workDir);
 
   // AWS Credentials State (for guided mode)
@@ -542,12 +543,31 @@ export default function TerraformExecutor({
     }
   }, [executionLogs]);
 
-  // Auto-execute on mount if enabled
+  // The runner image is built locally rather than pulled, so check it exists
+  // before anything runs. Without this a missing image surfaces as an opaque
+  // docker failure part-way through the first operation.
   useEffect(() => {
-    if (autoExecute && operations.length > 0 && mode === 'embedded') {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/terraform/runner-image?image=${encodeURIComponent(dockerImage)}`);
+        const data = await res.json();
+        if (!cancelled) setImageCheck(data);
+      } catch {
+        // A failed check should not block the run; the operation itself will
+        // report the real problem if there is one.
+        if (!cancelled) setImageCheck({ present: true });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dockerImage]);
+
+  // Auto-execute on mount if enabled, once the image is known to be present.
+  useEffect(() => {
+    if (autoExecute && operations.length > 0 && mode === 'embedded' && imageCheck?.present) {
       executeTerraform(operations[0]);
     }
-  }, [autoExecute, mode]);
+  }, [autoExecute, mode, imageCheck]);
 
   // ========== Helpers ==========
   const awsRegions = [
@@ -811,6 +831,18 @@ export default function TerraformExecutor({
     return (
       <TerraformContext.Provider value={contextValue}>
         <Stack gap="md">
+          {imageCheck && !imageCheck.present && (
+            <Alert color="yellow" title="Terraform runner image not built">
+              <Stack gap="xs">
+                <Text size="sm">
+                  The image <Code>{imageCheck.image}</Code> is built locally and is not
+                  published to a registry. Build it, then reload this page:
+                </Text>
+                <Code block>{imageCheck.build_command}</Code>
+              </Stack>
+            </Alert>
+          )}
+
           {showConfig && (
             <TerraformConfigViewer
               tfvars={tfvars}
