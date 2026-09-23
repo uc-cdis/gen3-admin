@@ -1,0 +1,106 @@
+/* Every colour goes through light-dark() and Mantine's theme variables, so the
+   diagram follows the app's colour scheme instead of staying white in dark
+   mode. */
+
+.canvas {
+  width: 100%;
+  height: 360px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+}
+
+/* React Flow's own chrome is styled for a white page; bring it onto the theme. */
+.canvas :global(.react-flow__attribution) {
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+}
+
+.canvas :global(.react-flow__attribution a) {
+  color: inherit;
+}
+
+.canvas :global(.react-flow__edge-textbg) {
+  fill: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+}
+
+/* The AWS account boundary that the cloud-side nodes sit inside. */
+.account {
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+  border-radius: var(--mantine-radius-lg);
+  background: light-dark(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.02));
+  padding: 10px 14px;
+}
+
+.accountLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+.node {
+  width: 210px;
+  /* Equal heights keep handles level, so edges between cards run straight. */
+  min-height: 124px;
+  padding: 12px 14px;
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-xs);
+  color: var(--mantine-color-text);
+}
+
+/* Steps this wizard performs. */
+.active {
+  border-color: var(--mantine-color-gen3Blue-5);
+  background: light-dark(var(--mantine-color-gen3Blue-0), rgba(56, 126, 240, 0.12));
+  box-shadow: 0 0 0 3px light-dark(rgba(56, 126, 240, 0.12), rgba(56, 126, 240, 0.18));
+}
+
+/* Steps that come after the wizard: still shown, visibly not yet. */
+.upcoming {
+  border-style: dashed;
+  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-7));
+}
+
+.upcoming .title {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-weight: 700;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.25;
+}
+
+.items {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mantine-color-dimmed);
+}
+
+.handle {
+  width: 8px;
+  height: 8px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+}

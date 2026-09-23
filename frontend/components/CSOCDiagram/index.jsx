@@ -1,344 +1,201 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import ReactFlow, {
-  Background,
-  Controls,
-  Handle,
-  Position,
-  useNodesState,
-  useEdgesState,
-} from "reactflow";
+import ReactFlow, { Background, Handle, MarkerType, Position } from "reactflow";
 import "reactflow/dist/style.css";
 
 import {
+  IconBrandAws,
   IconBrandDocker,
+  IconHexagons,
   IconLayoutDashboard,
-  IconWorldWww,
-  IconTerminal2,
-  IconHierarchy3,
-  IconCloud,
-  IconChevronDown,
-  IconChevronUp,
+  IconServer2,
 } from "@tabler/icons-react";
+import { Badge, Group, ThemeIcon, useComputedColorScheme } from "@mantine/core";
 
-import {
-  Card,
-  Stack,
-  Text,
-  Center,
-  Group,
-  Collapse,
-  ActionIcon,
-  Box,
-  ThemeIcon,
-} from "@mantine/core";
+import classes from "./CSOCDiagram.module.css";
 
-// -------------------------------------------------------
-// Enhanced Card Node with Expandable Details
-// -------------------------------------------------------
+// What the bootstrap wizard does, and what follows it. Cards are marked by
+// stage so the diagram does not imply the wizard delivers everything shown:
+// today it provisions the network and cluster, and the CSOC and Gen3
+// environments are installed onto that cluster afterwards.
+const STAGE = {
+  active: { label: "This wizard", color: "gen3Blue", className: classes.active },
+  upcoming: { label: "Next", color: "gray", className: classes.upcoming },
+};
 
-function CardNode({ data }) {
-  const {
-    icons = [],
-    title,
-    subtitle,
-    highlight,
-    large,
-    details = [],
-    badge,
-  } = data;
-
-  const [expanded, setExpanded] = useState(false);
-
+function StepNode({ data }) {
+  const { icon: Icon, title, items, stage } = data;
+  const s = STAGE[stage];
   return (
-    <Card
-      shadow="md"
-      radius="md"
-      withBorder
-      className="card-node"
-      style={{
-        width: large ? 360 : 270,
-        textAlign: "center",
-        padding: large ? 26 : 20,
-        borderColor: highlight ? "#228be6" : "#dee2e6",
-        borderWidth: highlight ? 2 : 1,
-        background: highlight
-          ? "linear-gradient(135deg, #e8f3ff 0%, #f0f7ff 100%)"
-          : "white",
-        cursor: details.length > 0 ? "pointer" : "default",
-        transition: "all 0.3s ease",
-        boxShadow: highlight
-          ? "0 4px 12px rgba(34, 139, 230, 0.15)"
-          : "0 2px 8px rgba(0, 0, 0, 0.1)",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = highlight
-          ? "0 8px 20px rgba(34, 139, 230, 0.25)"
-          : "0 4px 12px rgba(0, 0, 0, 0.15)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
-        e.currentTarget.style.boxShadow = highlight
-          ? "0 4px 12px rgba(34, 139, 230, 0.15)"
-          : "0 2px 8px rgba(0, 0, 0, 0.1)";
-      }}
-      onClick={() => details.length > 0 && setExpanded(!expanded)}
-    >
-      {/* Icons */}
-      <Center style={{ gap: 12, marginBottom: 14 }}>
-        {icons.map((Icon, i) => (
-          <ThemeIcon
-            key={i}
-            size={large ? 52 : 46}
-            radius="md"
-            variant="light"
-            color={highlight ? "blue" : "gray"}
-          >
-            <Icon size={large ? 30 : 26} stroke={1.5} />
-          </ThemeIcon>
+    <div className={`${classes.node} ${s.className}`}>
+      <Handle id="left" type="target" position={Position.Left} className={classes.handle} isConnectable={false} />
+      <Handle id="top" type="target" position={Position.Top} className={classes.handle} isConnectable={false} />
+      <div className={classes.header}>
+        <ThemeIcon size={34} radius="md" variant={stage === "active" ? "filled" : "light"} color={s.color}>
+          <Icon size={20} stroke={1.6} />
+        </ThemeIcon>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={classes.title}>{title}</div>
+          <Badge size="xs" variant="light" color={s.color} mt={4}>
+            {s.label}
+          </Badge>
+        </div>
+      </div>
+      <ul className={classes.items}>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
         ))}
-      </Center>
-
-      {/* Title & Subtitle */}
-      <Stack gap={10}>
-        <Group justify="center" gap={8}>
-          <Text fw={700} size={large ? "xl" : "lg"}>
-            {title}
-          </Text>
-          {details.length > 0 && (
-            <ActionIcon size="sm" variant="subtle">
-              {expanded ? (
-                <IconChevronUp size={18} />
-              ) : (
-                <IconChevronDown size={18} />
-              )}
-            </ActionIcon>
-          )}
-        </Group>
-
-        {Array.isArray(subtitle) ? (
-          <Stack gap={6}>
-            {subtitle.map((line, i) => (
-              <Text key={i} size="sm" c="dimmed" lh={1.5} fw={500}>
-                {line}
-              </Text>
-            ))}
-          </Stack>
-        ) : (
-          <Text size="sm" c="dimmed" lh={1.5} fw={500}>
-            {subtitle}
-          </Text>
-        )}
-
-        {badge && (
-          <Text size="sm" c="blue" fw={600} fs="italic">
-            {badge}
-          </Text>
-        )}
-      </Stack>
-
-      {/* Expandable Details */}
-      {details.length > 0 && (
-        <Collapse expanded={expanded}>
-          <Box
-            mt="md"
-            pt="md"
-            style={{
-              borderTop: "1px solid #dee2e6",
-            }}
-          >
-            <Stack gap={10} align="flex-start">
-              {details.map((detail, i) => (
-                <Group key={i} gap={8} style={{ width: "100%" }}>
-                  <Text size="sm" c="dimmed" style={{ flex: 1 }} fw={500} lh={1.4}>
-                    • {detail}
-                  </Text>
-                </Group>
-              ))}
-            </Stack>
-          </Box>
-        </Collapse>
-      )}
-
-      {/* Connection Handles */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{
-          width: 12,
-          height: 12,
-          background: "#228be6",
-          border: "2px solid white",
-        }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          width: 12,
-          height: 12,
-          background: "#228be6",
-          border: "2px solid white",
-        }}
-      />
-    </Card>
+      </ul>
+      <Handle id="right" type="source" position={Position.Right} className={classes.handle} isConnectable={false} />
+      <Handle id="bottom" type="source" position={Position.Bottom} className={classes.handle} isConnectable={false} />
+    </div>
   );
 }
 
-const nodeTypes = {
-  card: CardNode,
-};
+function AccountNode({ data }) {
+  return (
+    <div className={classes.account}>
+      <Group gap={6} className={classes.accountLabel}>
+        <IconBrandAws size={16} stroke={1.6} />
+        {data.label}
+      </Group>
+    </div>
+  );
+}
 
-// -------------------------------------------------------
-// Enhanced Nodes with More Details
-// -------------------------------------------------------
+const nodeTypes = { step: StepNode, account: AccountNode };
 
-const initialNodes = [
+// An L-shaped layout: the flow turns down inside the account rather than
+// running as one long row, so it fits the wizard's content column at close to
+// 1:1 instead of being shrunk by fitView until the text is unreadable.
+const NODE_W = 210;
+const NODE_H = 124; // matches .node min-height, so edges between cards run straight
+const COL_GAP = 96; // room for an edge label between columns
+const ROW_GAP = 64;
+const PAD = 18;
+const LABEL_H = 34;
+const ACCOUNT_X = NODE_W + COL_GAP;
+
+const nodes = [
   {
-    id: "local-bootstrap",
-    type: "card",
-    position: { x: 50, y: 180 },
+    id: "machine",
+    type: "step",
+    position: { x: 0, y: LABEL_H },
     data: {
-      icons: [IconBrandDocker, IconTerminal2],
-      title: "Local Bootstrap",
-      subtitle: "Runs on your machine to initialize CSOC infrastructure in AWS",
-      highlight: true,
-      badge: "👈 You are here",
-      details: [
-        "Docker-based initialization scripts",
-        "Terraform/CDK infrastructure provisioning",
-        "AWS credential configuration",
-        "Network and security setup",
-      ],
+      icon: IconBrandDocker,
+      title: "Your machine",
+      stage: "active",
+      items: ["Runs this wizard", "Terraform in a container", "State in your S3 bucket"],
     },
   },
   {
-    id: "control-plane",
-    type: "card",
-    position: { x: 420, y: 130 },
+    id: "account",
+    type: "account",
+    position: { x: ACCOUNT_X, y: 0 },
+    data: { label: "Your AWS account" },
+    style: {
+      width: PAD * 2 + NODE_W * 2 + COL_GAP,
+      height: LABEL_H + NODE_H * 2 + ROW_GAP + PAD,
+    },
+    selectable: false,
+  },
+  {
+    id: "cluster",
+    type: "step",
+    parentNode: "account",
+    extent: "parent",
+    position: { x: PAD, y: LABEL_H },
     data: {
-      icons: [IconWorldWww, IconLayoutDashboard, IconCloud],
-      title: "CSOC Control Plane",
-      subtitle: [
-        "🌐 csoc.yourdomain.com",
-        "Central dashboard for managing Gen3 deployments and cluster operations",
-      ],
-      highlight: true,
-      large: true,
-      details: [
-        "Kubernetes cluster management",
-        "User authentication & RBAC",
-        "Deployment automation",
-        "Monitoring & alerting dashboard",
-        "Configuration management",
-        "Audit logs & compliance",
-      ],
+      icon: IconServer2,
+      title: "VPC and EKS cluster",
+      stage: "active",
+      items: ["Subnets, NAT, egress proxy", "EKS control plane and nodes"],
     },
   },
   {
-    id: "gen3-deployments",
-    type: "card",
-    position: { x: 880, y: 180 },
+    id: "csoc",
+    type: "step",
+    parentNode: "account",
+    extent: "parent",
+    position: { x: PAD, y: LABEL_H + NODE_H + ROW_GAP },
     data: {
-      icons: [IconHierarchy3],
-      title: "Gen3 Deployments",
-      subtitle: "Managed Gen3 data commons environments",
-      details: [
-        "Multiple isolated Gen3 instances",
-        "Data ingestion pipelines",
-        "API gateway & services",
-        "Object storage integration",
-        "Metadata services",
-      ],
+      icon: IconLayoutDashboard,
+      title: "CSOC control plane",
+      stage: "upcoming",
+      items: ["This dashboard, in-cluster", "Takes over from you"],
+    },
+  },
+  {
+    id: "gen3",
+    type: "step",
+    parentNode: "account",
+    extent: "parent",
+    position: { x: PAD + NODE_W + COL_GAP, y: LABEL_H + NODE_H + ROW_GAP },
+    data: {
+      icon: IconHexagons,
+      title: "Gen3 environments",
+      stage: "upcoming",
+      items: ["One namespace each", "Own hostname each"],
     },
   },
 ];
 
-const initialEdges = [
-  {
-    id: "e1",
-    source: "local-bootstrap",
-    target: "control-plane",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#228be6", strokeWidth: 2.5 },
-    label: "Initializes",
-    labelStyle: { fill: "#228be6", fontWeight: 600, fontSize: 13 },
-    labelBgStyle: { fill: "#e8f3ff", fillOpacity: 0.9 },
-  },
-  {
-    id: "e2",
-    source: "control-plane",
-    target: "gen3-deployments",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#40c057", strokeWidth: 2.5 },
-    label: "Manages",
-    labelStyle: { fill: "#40c057", fontWeight: 600, fontSize: 13 },
-    labelBgStyle: { fill: "#e8f7ed", fillOpacity: 0.9 },
-  },
-];
-
-// -------------------------------------------------------
-// Main Component
-// -------------------------------------------------------
+function edge(id, [source, sourceHandle], [target, targetHandle], label, active, colors) {
+  const color = active ? colors.active : colors.upcoming;
+  return {
+    id,
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+    label,
+    type: "straight",
+    animated: active,
+    style: { stroke: color, strokeWidth: 2, strokeDasharray: active ? undefined : "6 5" },
+    markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+    labelStyle: { fill: color, fontWeight: 600, fontSize: 12 },
+    labelBgPadding: [5, 2],
+    labelBgBorderRadius: 4,
+  };
+}
 
 export default function CSOCDiagram() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // Edge strokes are SVG attributes, which cannot take light-dark(), so they
+  // are picked from the resolved scheme here.
+  const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true });
+  const colors =
+    scheme === "dark"
+      ? { active: "var(--mantine-color-gen3Blue-4)", upcoming: "var(--mantine-color-gray-6)", grid: "var(--mantine-color-dark-5)" }
+      : { active: "var(--mantine-color-gen3Blue-6)", upcoming: "var(--mantine-color-gray-7)", grid: "var(--mantine-color-gray-3)" };
 
-  const onNodeClick = useCallback((event, node) => {
-    console.log("Node clicked:", node);
-  }, []);
+  const edges = [
+    edge("provision", ["machine", "right"], ["cluster", "left"], "provisions", true, colors),
+    edge("install", ["cluster", "bottom"], ["csoc", "top"], "hosts", false, colors),
+    edge("manage", ["csoc", "right"], ["gen3", "left"], "deploys", false, colors),
+  ];
 
   return (
-    <Box
-      style={{
-        width: "100%",
-        height: 520,
-        border: "1px solid #dee2e6",
-        borderRadius: 8,
-        overflow: "hidden",
-        background: "#fafafa",
-      }}
-    >
+    <div className={classes.canvas}>
+      {/* A picture of the flow, not an editor: nothing is draggable or
+          connectable, and scrolling the page does not zoom the diagram. */}
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        zoomOnScroll={false}
+        preventScrolling={false}
         fitView
-        fitViewOptions={{
-          padding: 0.15,
-          includeHiddenNodes: false,
-          minZoom: 0.5,
-          maxZoom: 1.2,
-        }}
-        minZoom={0.4}
-        maxZoom={1.5}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
-        attributionPosition="bottom-left"
+        fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
+        panOnDrag={false}
+        zoomOnPinch={false}
+        zoomOnDoubleClick={false}
+        attributionPosition="bottom-right"
       >
-        <Background
-          gap={16}
-          size={1}
-          color="#dee2e6"
-          style={{ backgroundColor: "#fafafa" }}
-        />
-        <Controls
-          style={{
-            button: {
-              backgroundColor: "white",
-              border: "1px solid #dee2e6",
-              borderRadius: 4,
-            },
-          }}
-        />
+        <Background gap={18} size={1} color={colors.grid} />
       </ReactFlow>
-    </Box>
+    </div>
   );
 }
