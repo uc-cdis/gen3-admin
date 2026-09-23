@@ -1,12 +1,21 @@
 #!/bin/bash
-# Start the full gen3-admin dev stack: Go API, agent, and Next.js frontend.
+# Start the gen3-admin dev stack: Go API and Next.js frontend, and optionally a
+# locally-run agent.
 #
-# All three run under nodemon (Go) / next dev (frontend) so they restart on file
+# Both run under nodemon (Go) / next dev (frontend) so they restart on file
 # changes. Logs stream to .dev-logs/ and Ctrl-C stops everything.
 #
-#   ./scripts/dev.sh                      # use current kubectl context
-#   ./scripts/dev.sh --context <name>     # pin a specific context
-#   ./scripts/dev.sh --agent-name mycluster
+# There are two ways to bootstrap, and neither starts an agent by hand:
+#
+#   ./scripts/dev.sh --bootstrap cloud    # wizard only: provision VPC + EKS in AWS
+#                                         # from scratch. No kube context needed.
+#   ./scripts/dev.sh --bootstrap local    # normal UI against the current kube
+#                                         # context; onboarding deploys the agent
+#                                         # into that cluster. (Also the default.)
+#
+#   ./scripts/dev.sh --context <name>     # pin a specific context (local)
+#   ./scripts/dev.sh --with-agent         # also run an agent process on this
+#                                         # machine, the previous default
 #   ./scripts/dev.sh --keycloak           # real auth instead of MOCK_AUTH
 #
 # Run --help for the full list.
@@ -35,21 +44,32 @@ GRPC_PORT="${GRPC_PORT:-50051}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 USE_KEYCLOAK=false
-SKIP_AGENT=false
+# The agent used to start by default. Bootstrapping now deploys it into the
+# target cluster (local) or provisions the cluster first (cloud), so a
+# host-run agent is opt-in.
+WITH_AGENT=false
 SKIP_FRONTEND=false
+BOOTSTRAP_TARGET="local"
+MODULES_DIR="${TERRAFORM_MODULES_DIR:-}"
+RUNNER_IMAGE="gen3-terraform:latest"
 
 usage() {
     cat <<EOF
 Usage: ./scripts/dev.sh [options]
 
 Options:
+  --bootstrap <target>  cloud: bootstrap wizard for a new AWS stack; no kube
+                        context needed. local: normal UI on the current
+                        context (default)
+  --modules-dir <path>  Local gen3-terraform checkout to run modules from,
+                        instead of GitHub (cloud; also TERRAFORM_MODULES_DIR)
+  --with-agent          Also run an agent on this machine (local only)
   --agent-name <name>   Agent name and cert basename (default: local)
   --context <name>      kubectl context to serve (default: current context)
   --api-port <port>     API HTTP port (default: 8002)
   --grpc-port <port>    Agent gRPC port (default: 50051)
   --frontend-port <p>   Frontend port (default: 3000, auto-bumps if taken)
   --keycloak            Use real Keycloak auth instead of MOCK_AUTH
-  --skip-agent          Do not start the agent
   --skip-frontend       Do not start the frontend
   -h, --help            Show this help
 
@@ -60,23 +80,51 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --bootstrap)     BOOTSTRAP_TARGET="$2"; shift 2 ;;
+        --modules-dir)   MODULES_DIR="$2"; shift 2 ;;
+        --with-agent)    WITH_AGENT=true; shift ;;
         --agent-name)    AGENT_NAME="$2"; shift 2 ;;
         --context)       KUBE_CONTEXT="$2"; shift 2 ;;
         --api-port)      API_PORT="$2"; shift 2 ;;
         --grpc-port)     GRPC_PORT="$2"; shift 2 ;;
         --frontend-port) FRONTEND_PORT="$2"; shift 2 ;;
         --keycloak)      USE_KEYCLOAK=true; shift ;;
-        --skip-agent)    SKIP_AGENT=true; shift ;;
+        --skip-agent)    WITH_AGENT=false; shift ;;  # kept for old invocations; now the default
         --skip-frontend) SKIP_FRONTEND=true; shift ;;
         -h|--help)       usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
 
+case "$BOOTSTRAP_TARGET" in
+    cloud|local) ;;
+    *) log_error "--bootstrap must be 'cloud' or 'local', got: $BOOTSTRAP_TARGET"; exit 1 ;;
+esac
+if [[ "$BOOTSTRAP_TARGET" == "cloud" && "$WITH_AGENT" == "true" ]]; then
+    log_error "--with-agent needs a cluster to serve; cloud bootstrap creates one. Drop one of the two."
+    exit 1
+fi
+if [[ -n "$MODULES_DIR" ]]; then
+    # The wizard runs examples/csoc; a checkout on a branch without it fails
+    # only at the first init, so check for the module itself.
+    if [[ ! -f "$MODULES_DIR/examples/csoc/main.tf" ]]; then
+        log_error "--modules-dir has no examples/csoc/main.tf: $MODULES_DIR"
+        branch="$(git -C "$MODULES_DIR" branch --show-current 2>/dev/null || true)"
+        [[ -n "$branch" ]] && log_info "That checkout is on branch '$branch'. Check out a branch with examples/csoc, or use a worktree:"
+        log_info "  git -C $MODULES_DIR worktree add /tmp/gen3-terraform-csoc <branch>"
+        exit 1
+    fi
+    MODULES_DIR="$(cd "$MODULES_DIR" && pwd)"
+fi
+
 # ── Pre-flight ───────────────────────────────────────────────────────────────
 check_prerequisites() {
     local missing=()
-    for cmd in go node npm kubectl; do
+    local required=(go node npm)
+    # Cloud bootstrap runs Terraform in docker and needs no cluster yet; local
+    # works against an existing cluster.
+    if [[ "$BOOTSTRAP_TARGET" == "cloud" ]]; then required+=(docker); else required+=(kubectl); fi
+    for cmd in "${required[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -152,7 +200,9 @@ setup_kubeconfig() {
 # client cert issued by the API's CA. The CA and server certs are created on
 # first boot; the per-agent pair is minted via POST /api/agents.
 ensure_certs() {
+    # The API creates its CA and server certs on first boot either way.
     mkdir -p "$REPO_ROOT/api/certs"
+    [[ "$WITH_AGENT" == "true" ]] || return 0
     if [[ -f "$REPO_ROOT/api/certs/${AGENT_NAME}.crt" ]]; then
         log_info "Agent cert present: ${AGENT_NAME}.crt"
         return
@@ -208,6 +258,36 @@ check_ports() {
             log_warning "Port $wanted in use; frontend will use $FRONTEND_PORT"
         fi
     fi
+}
+
+# Cloud bootstrap runs every Terraform operation in a locally-built image. A
+# missing image or stopped daemon otherwise shows up as a failed first init.
+ensure_runner_image() {
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Docker is not running. Start Docker Desktop / OrbStack and retry."
+        exit 1
+    fi
+    if docker image inspect "$RUNNER_IMAGE" >/dev/null 2>&1; then
+        log_info "Runner image present: $RUNNER_IMAGE"
+        return
+    fi
+    log_info "Runner image $RUNNER_IMAGE not built yet; building it (local only, not pushed)..."
+    "$REPO_ROOT/scripts/build-terraform-image.sh" --tag "$RUNNER_IMAGE"
+}
+
+# Next refuses a second `next dev` from the same directory, and then exits
+# after printing a message the readiness check would not recognise.
+check_existing_frontend() {
+    [[ "$SKIP_FRONTEND" == "false" ]] || return 0
+    local pid cwd
+    for pid in $(pgrep -f "next-server|next dev" 2>/dev/null); do
+        cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+        if [[ "$cwd" == "$REPO_ROOT/frontend" ]]; then
+            log_error "A next dev server is already running from frontend/ (PID $pid)."
+            log_info "Stop it (kill $pid), or pass --skip-frontend to keep using it."
+            exit 1
+        fi
+    done
 }
 
 # ── Process management ───────────────────────────────────────────────────────
@@ -276,7 +356,14 @@ start_api() {
     log_info "Starting API on :$API_PORT (gRPC :$GRPC_PORT)..."
 
     export PORT="$API_PORT"
+    export GRPC_PORT
     export LOG_FORMAT=console
+    if [[ -n "$MODULES_DIR" ]]; then
+        # Mounted read-only into the runner; the csoc module is then taken from
+        # this checkout instead of GitHub.
+        export TERRAFORM_MODULES_DIR="$MODULES_DIR"
+        log_info "Terraform modules from: $MODULES_DIR"
+    fi
     # Must match the frontend's real origin or browser calls are rejected.
     export CORS_ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT}"
 
@@ -360,6 +447,14 @@ start_frontend() {
     export NEXTAUTH_SECRET="${NEXTAUTH_SECRET:-dev-only-insecure-secret}"
     export NEXTAUTH_JWT_SECRET="${NEXTAUTH_JWT_SECRET:-dev-only-insecure-secret}"
     [[ "$USE_KEYCLOAK" == "true" ]] && export ENABLE_MOCK_AUTH=false || export ENABLE_MOCK_AUTH=true
+    # Bootstrap mode locks every route to /bootstrap and hides the app chrome.
+    # NEXT_PUBLIC_* is read when next dev starts, so it is fixed per run.
+    if [[ "$BOOTSTRAP_TARGET" == "cloud" ]]; then
+        export NEXT_PUBLIC_BOOTSTRAP_MODE=true
+        export MOCK_AUTH=true
+    else
+        unset NEXT_PUBLIC_BOOTSTRAP_MODE
+    fi
 
     start_bg "$LOG_DIR/frontend.log" npm run dev -- --port "$FRONTEND_PORT"
     cd "$REPO_ROOT"
@@ -370,26 +465,36 @@ start_frontend() {
 # ── Main ─────────────────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR"
 
-log_info "gen3-admin dev stack"
+log_info "gen3-admin dev stack (bootstrap: $BOOTSTRAP_TARGET)"
 check_prerequisites
-setup_kubeconfig
+if [[ "$BOOTSTRAP_TARGET" == "cloud" ]]; then
+    ensure_runner_image
+else
+    setup_kubeconfig
+fi
 check_ports
+check_existing_frontend
 ensure_certs
 
 start_api
 register_agent
-[[ "$SKIP_AGENT" == "false" ]] && start_agent
+[[ "$WITH_AGENT" == "true" ]] && start_agent
 [[ "$SKIP_FRONTEND" == "false" ]] && start_frontend
 
 echo
 log_success "Dev stack running"
 echo
 if [[ "$SKIP_FRONTEND" == "false" ]]; then
-    echo -e "  ${GREEN}UI:${NC}      http://localhost:${FRONTEND_PORT}"
+    if [[ "$BOOTSTRAP_TARGET" == "cloud" ]]; then
+        echo -e "  ${GREEN}Wizard:${NC}  http://localhost:${FRONTEND_PORT}/bootstrap"
+    else
+        echo -e "  ${GREEN}UI:${NC}      http://localhost:${FRONTEND_PORT}"
+        [[ "$WITH_AGENT" == "true" ]] || echo -e "           (onboarding on the home page deploys the agent into the cluster)"
+    fi
 fi
 echo -e "  ${GREEN}API:${NC}     http://localhost:${API_PORT}"
 echo -e "  ${GREEN}gRPC:${NC}    localhost:${GRPC_PORT}"
-echo -e "  ${GREEN}Logs:${NC}    $LOG_DIR/{api,agent,frontend}.log"
+echo -e "  ${GREEN}Logs:${NC}    $LOG_DIR/*.log"
 echo
 log_info "Tail everything:  tail -f $LOG_DIR/*.log"
 log_info "Press Ctrl-C to stop all services"

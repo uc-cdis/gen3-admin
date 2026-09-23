@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -121,13 +120,20 @@ func SetupGRCPServer() {
 		deadStreamIDs: make(map[string]time.Time),
 	})
 
-	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", 50051))
+	// GRPC_PORT lets a second API run beside another one; it was hardcoded,
+	// so scripts/dev.sh --grpc-port had no effect and the second API died on
+	// "address already in use".
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "50051"
+	}
+	lis, err := net.Listen("tcp", "0.0.0.0:"+grpcPort)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to listen on port")
+		log.Fatal().Err(err).Str("port", grpcPort).Msg("Failed to listen on port")
 	}
 	go s.Serve(lis)
 
-	log.Info().Msg("GRPC Server listening on :50051")
+	log.Info().Str("port", grpcPort).Msg("GRPC Server listening")
 }
 
 func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {

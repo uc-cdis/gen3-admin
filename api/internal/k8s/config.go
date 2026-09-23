@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -8,37 +9,31 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// GetConfig returns the in-cluster config when running in a pod, otherwise
+// the kubeconfig named by KUBECONFIG, otherwise ~/.kube/config.
+//
+// It returns an error rather than panicking. It used to panic when KUBECONFIG
+// was unset -- even with a valid ~/.kube/config -- or pointed at a missing
+// file, and SetupReverseProxy calls it at startup, so the API could not boot
+// on a machine with no cluster. That is exactly the machine the cloud
+// bootstrap wizard is for, since it creates the first cluster.
 func GetConfig() (*rest.Config, error) {
-	var config *rest.Config
-	var err error
+	if config, err := rest.InClusterConfig(); err == nil {
+		return config, nil
+	}
 
-	// Attempt to use in-cluster config
-	config, err = rest.InClusterConfig()
-	if err != nil {
-		// Check if KUBECONFIG env var is set, if so use the files from that
-		kubeconfig := os.Getenv("KUBECONFIG")
-		if kubeconfig != "" {
-			// Split the KUBECONFIG env var into a list of files with ':' as the delimiter
-			kubeconfigPaths := strings.Split(kubeconfig, ":")
-			// log.Debug().Msgf("Using KUBECONFIG files: %v", kubeconfigPaths)
-
-			// Set up the loading rules with the list of kubeconfig files
-			loadingRules := &clientcmd.ClientConfigLoadingRules{
-				Precedence: kubeconfigPaths,
-			}
-
-			// Create the client config
-			configOverrides := &clientcmd.ConfigOverrides{}
-			kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-
-			// Get the merged config
-			config, err = kubeConfig.ClientConfig()
-			if err != nil {
-				panic(err) // Handle error appropriately for your situation
-			}
-		} else {
-			panic("Could not get Kubernetes config: neither in-cluster config nor KUBECONFIG is available")
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
+		loadingRules = &clientcmd.ClientConfigLoadingRules{
+			Precedence: strings.Split(kubeconfig, string(os.PathListSeparator)),
 		}
+	}
+
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loadingRules, &clientcmd.ConfigOverrides{},
+	).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("no Kubernetes cluster configured (not in-cluster, and no usable kubeconfig): %w", err)
 	}
 	return config, nil
 }

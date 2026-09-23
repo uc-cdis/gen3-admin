@@ -134,10 +134,12 @@ func SetupHTTPServer() {
 	// External routes (from pkg package)
 	routes.Routes(r)
 
-	// Set up reverse proxy for k8s API
-	proxy, err := k8s.SetupReverseProxy()
-	if err != nil {
-		panic(err)
+	// Set up reverse proxy for k8s API. With no cluster configured the API
+	// still starts -- the cloud bootstrap wizard needs it to create the first
+	// cluster -- and the proxy answers 503 until one is available.
+	proxy, proxyErr := k8s.SetupReverseProxy()
+	if proxyErr != nil {
+		log.Warn().Err(proxyErr).Msg("Kubernetes proxy disabled")
 	}
 
 	protected := r.Group("/")
@@ -151,6 +153,10 @@ func SetupHTTPServer() {
 		protected.Any("/api/k8s/proxy/*path", func(c *gin.Context) {
 			requestPath := strings.TrimPrefix(c.Request.URL.Path, "/api/k8s/proxy")
 			c.Request.URL.Path = requestPath
+			if proxy == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no Kubernetes cluster configured"})
+				return
+			}
 			log.Info().Msgf("Proxying request to: %s", c.Request.URL.String())
 			proxy.ServeHTTP(c.Writer, c.Request)
 		})
@@ -210,8 +216,12 @@ func SetupHTTPServer() {
 
 	log.Info().Msg("Starting API server")
 
-	err = r.Run(":8002")
-	if err != nil {
+	// PORT was ignored here, so scripts/dev.sh --api-port never took effect.
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8002"
+	}
+	if err := r.Run(":" + port); err != nil {
 		log.Fatal().Err(err).Msg("Error starting HTTP server")
 	}
 }

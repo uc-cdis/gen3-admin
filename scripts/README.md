@@ -86,6 +86,9 @@ Keycloak credentials: `admin / admin` (superadmin), `devuser / dev` (csoc-role).
 | `setup-k3s.sh` | Alternative to Minikube — uses k3s instead |
 | `deploy-csoc.sh` | Deploy CSOC to an *already running* cluster |
 | `workshop-vm.sh` | Provision a workshop VM environment |
+| `dev.sh` | Local dev stack. `--bootstrap cloud` runs the AWS bootstrap wizard with no cluster needed; `--bootstrap local` (default) serves the current kube context. No agent unless `--with-agent` |
+| `build-terraform-image.sh` | Build the local `gen3-terraform:latest` runner image (never pushed) |
 | `test-e2e.sh` | End-to-end test runner |
+| `test-e2e-bootstrap.sh` | E2E of the cloud bootstrap API path up to `terraform plan` of `examples/csoc`; applies nothing |
 | `setup-docker-desktop.ps1` | Windows PowerShell script for Docker Desktop users |
 | `setup-minikube.ps1` | Windows PowerShell script for Minikube on Windows |
