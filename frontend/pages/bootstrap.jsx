@@ -1,9 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Stepper, Divider, Radio, TextInput, PasswordInput, Button, Text, Group, Paper, Container, Select, NumberInput, Stack, List, Loader, Box, Alert, Collapse, Checkbox, Badge, Table } from "@mantine/core";
 import { IconCheck, IconX, IconAlertTriangle, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import CSOCDiagram from "@/components/CSOCDiagram";
-import { useAwsIdentity } from "@/hooks/aws";
 import TerraformExecutor, { buildTfvars } from '@/components/TerraformExecutor';
+
+// The CSOC name becomes part of the work dir, the state key and S3 bucket
+// names, so it is held to the strictest of those rules.
+const CSOC_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+
+// POSTs a lookup to the API as the given AWS target and returns the body, or
+// throws with the API's error message.
+async function awsLookup(path, body) {
+  const res = await fetch(`/api/aws/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+  return data;
+}
 
 export default function Gen3BootstrapStepper() {
   const [active, setActive] = useState(0);
@@ -13,13 +29,11 @@ export default function Gen3BootstrapStepper() {
   const [availableProfiles, setAvailableProfiles] = useState([]);
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [profilesError, setProfilesError] = useState(null);
-  const [validatingProfile, setValidatingProfile] = useState(false);
   const [manualCredentials, setManualCredentials] = useState({
     accessKeyId: '',
     secretAccessKey: '',
     sessionToken: ''
   });
-  const [validatingManual, setValidatingManual] = useState(false);
 
   // New configuration options
   const [csocName, setCsocName] = useState('');
@@ -28,9 +42,17 @@ export default function Gen3BootstrapStepper() {
   const [stateBucket, setStateBucket] = useState('');
   const [domainName, setDomainName] = useState('');
   const [validatingDomain, setValidatingDomain] = useState(false);
-  const [domainValidation, setDomainValidation] = useState(true);
+  // null until checked; the old initial value of true showed "Domain
+  // Verified" before anything had been checked.
+  const [domainValidation, setDomainValidation] = useState(null);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [identity, setIdentity] = useState(null);
+  const [identityLoading, setIdentityLoading] = useState(false);
+  const [identityError, setIdentityError] = useState(null);
+  const [availabilityZones, setAvailabilityZones] = useState([]);
+  const [azError, setAzError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [vpcCidr, setVpcCidr] = useState('10.0.0.0/16');
+  const [vpcCidr, setVpcCidr] = useState('172.24.16.0/20');
 
   // Load profiles when switching to profile mode
   useEffect(() => {
@@ -69,23 +91,70 @@ export default function Gen3BootstrapStepper() {
   };
 
 
+  // The identity every AWS check runs as -- the same one Terraform will use.
+  // Each lookup sends it, so nothing depends on the server's own profile.
+  const awsTarget = useMemo(() => {
+    const target = { region: selectedRegion };
+    if (credentialSource === 'profile' && selectedProfile) target.profile = selectedProfile;
+    if (credentialSource === 'manual' && manualCredentials.accessKeyId) {
+      target.credentials = {
+        access_key_id: manualCredentials.accessKeyId,
+        secret_access_key: manualCredentials.secretAccessKey,
+        session_token: manualCredentials.sessionToken || undefined,
+      };
+    }
+    return target;
+  }, [selectedRegion, credentialSource, selectedProfile, manualCredentials]);
+
+  const checkIdentity = useCallback(async () => {
+    setIdentityLoading(true);
+    setIdentityError(null);
+    setIdentity(null);
+    try {
+      setIdentity(await awsLookup('identity', awsTarget));
+    } catch (err) {
+      setIdentityError(err.message);
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, [awsTarget]);
+
+  // Anything verified against one identity is void once the identity changes.
+  useEffect(() => {
+    setIdentity(null);
+    setIdentityError(null);
+    setDomainValidation(null);
+    // Auto and profile modes are checked straight away; manual keys wait for
+    // the Validate button so a half-typed key is not sent on every keystroke.
+    if (credentialSource === 'auto' || (credentialSource === 'profile' && selectedProfile)) {
+      checkIdentity();
+    }
+    // checkIdentity changes with awsTarget, which is what should re-run this.
+  }, [checkIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Zone letters are per account and some regions have fewer than three, so
+  // they are listed rather than guessed as <region>a/b/c.
+  useEffect(() => {
+    setAvailabilityZones([]);
+    setAzError(null);
+    if (!identity) return;
+    let cancelled = false;
+    awsLookup('azs', awsTarget)
+      .then((data) => { if (!cancelled) setAvailabilityZones(data.zones || []); })
+      .catch((err) => { if (!cancelled) setAzError(err.message); });
+    return () => { cancelled = true; };
+  }, [identity, awsTarget]);
+
   const handleValidateDomain = async () => {
     setValidatingDomain(true);
     setDomainValidation(null);
-
     try {
-      // Mock validation - will call real API
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Simulate validation result
-      const mockResult = {
-        exists: true,
-        isRoute53: true,
-        hostedZoneId: 'Z1234567890ABC',
-        nameServers: ['ns-123.awsdns-12.com', 'ns-456.awsdns-45.net']
-      };
-
-      setDomainValidation(mockResult);
+      const result = await awsLookup('route53/zone', { ...awsTarget, domain: domainName });
+      setDomainValidation(
+        result.found
+          ? result
+          : { error: `No public Route53 hosted zone serves ${result.domain} in account ${identity?.Account ?? 'this account'}.` },
+      );
     } catch (err) {
       setDomainValidation({ error: err.message || 'Domain validation failed' });
     } finally {
@@ -93,55 +162,10 @@ export default function Gen3BootstrapStepper() {
     }
   };
 
-  const handleValidateProfile = async () => {
-    setValidatingProfile(true);
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Mock - will call real API
-      const response = {
-        identity: {
-          Account: '123456789012',
-          Arn: 'arn:aws:iam::123456789012:user/admin'
-        }
-      };
-
-      setIdentity(response.identity);
-    } catch (err) {
-      setError(err.message || 'Invalid profile or insufficient permissions');
-      setIdentity(null);
-    } finally {
-      setValidatingProfile(false);
-      setLoading(false);
-    }
-  };
-
-  const handleValidateManualCredentials = async () => {
-    setValidatingManual(true);
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Mock - will call real API
-      const response = {
-        identity: {
-          Account: '123456789012',
-          Arn: 'arn:aws:iam::123456789012:user/admin'
-        }
-      };
-
-      setIdentity(response.identity);
-    } catch (err) {
-      setError(err.message || 'Invalid credentials');
-      setIdentity(null);
-    } finally {
-      setValidatingManual(false);
-      setLoading(false);
-    }
-  };
-
-  const { identity, selectProfile, selectedProfile, loading, error } = useAwsIdentity();
+  const csocNameError =
+    csocName && !CSOC_NAME_PATTERN.test(csocName)
+      ? 'Lowercase letters, digits and hyphens, up to 40 characters, not starting or ending with a hyphen'
+      : null;
 
   const nextStep = () => setActive((current) => (current < 3 ? current + 1 : current));
   const prevStep = () => setActive((current) => (current > 0 ? current - 1 : current));
@@ -150,7 +174,7 @@ export default function Gen3BootstrapStepper() {
   const calculateCost = () => {
     const costs = {
       eks: 73, // EKS cluster
-      fargate: 120, // Fargate for Karpenter
+      ec2: 120, // Worker nodes and Squid proxy
       vpc: 0, // VPC is free
       nat: 32.85, // NAT Gateway
       ebs: 40, // EBS volumes for cluster
@@ -179,11 +203,12 @@ export default function Gen3BootstrapStepper() {
             </Text>
 
             <List spacing="xs" size="sm">
-              <List.Item>Secure cloud networking and foundational infrastructure</List.Item>
-              <List.Item>Managed EKS cluster with Karpenter for auto-scaling</List.Item>
-              <List.Item>Observability stack (Grafana, Loki, Mimir, Tempo)</List.Item>
-              <List.Item>Cluster-level components (ALB Controller, EBS Controller)</List.Item>
-              <List.Item>Automated deployment of the CSOC dashboard and tooling</List.Item>
+              <List.Item>A VPC with public and private subnets, NAT, and a Squid egress proxy</List.Item>
+              <List.Item>A managed EKS cluster and its worker nodes</List.Item>
+              <List.Item>
+                The CSOC dashboard, observability and cluster add-ons are installed onto the
+                cluster once it exists, from the CSOC itself
+              </List.Item>
             </List>
 
             <Text size="sm" c="dimmed">
@@ -207,9 +232,10 @@ export default function Gen3BootstrapStepper() {
             <TextInput
               label="CSOC Name"
               placeholder="my-csoc"
-              description="A unique identifier for this CSOC deployment"
+              description="Names the work dir, state key and buckets for this deployment"
               value={csocName}
-              onChange={(e) => setCsocName(e.target.value)}
+              onChange={(e) => setCsocName(e.target.value.trim())}
+              error={csocNameError}
               required
             />
 
@@ -227,10 +253,13 @@ export default function Gen3BootstrapStepper() {
               placeholder="csoc.example.com"
               description="The domain where CSOC services will be accessible"
               value={domainName}
-              onChange={(e) => setDomainName(e.target.value)}
+              onChange={(e) => {
+                setDomainName(e.target.value.trim());
+                setDomainValidation(null);
+              }}
               required
               rightSection={
-                domainName && (
+                domainName && identity && (
                   <Button
                     size="xs"
                     compact
@@ -252,8 +281,8 @@ export default function Gen3BootstrapStepper() {
             {domainValidation && !domainValidation.error && (
               <Alert color="green" title="Domain Verified" icon={<IconCheck />}>
                 <Stack gap={4}>
-                  <Text size="sm">Route53 Hosted Zone found</Text>
-                  <Text size="xs" c="dimmed">Zone ID: {domainValidation.hostedZoneId}</Text>
+                  <Text size="sm">Served by Route53 hosted zone <b>{domainValidation.zone_name}</b></Text>
+                  <Text size="xs" c="dimmed">Zone ID: {domainValidation.hosted_zone_id}</Text>
                 </Stack>
               </Alert>
             )}
@@ -262,7 +291,8 @@ export default function Gen3BootstrapStepper() {
               <Alert color="red" title="Domain Validation Failed" icon={<IconX />}>
                 <Text size="sm">{domainValidation.error}</Text>
                 <Text size="xs" mt="xs">
-                  Please ensure the domain has a Route53 Hosted Zone in your AWS account.
+                  The domain, or a parent of it, needs a public Route53 hosted zone in the
+                  account you are deploying into.
                 </Text>
               </Alert>
             )}
@@ -319,18 +349,13 @@ export default function Gen3BootstrapStepper() {
                       placeholder="Select a profile"
                       data={availableProfiles}
                       value={selectedProfile}
-                      onChange={selectProfile}
+                      onChange={setSelectedProfile}
                       searchable
                       required
                     />
-                    {selectedProfile && (
-                      <Button
-                        variant="light"
-                        size="sm"
-                        onClick={handleValidateProfile}
-                        loading={validatingProfile}
-                      >
-                        Validate Profile
+                    {selectedProfile && identityError && (
+                      <Button variant="light" size="sm" onClick={checkIdentity} loading={identityLoading}>
+                        Retry
                       </Button>
                     )}
                   </>
@@ -373,8 +398,8 @@ export default function Gen3BootstrapStepper() {
                 <Button
                   variant="light"
                   size="sm"
-                  onClick={handleValidateManualCredentials}
-                  loading={validatingManual}
+                  onClick={checkIdentity}
+                  loading={identityLoading}
                   disabled={!manualCredentials.accessKeyId || !manualCredentials.secretAccessKey}
                 >
                   Validate Credentials
@@ -383,7 +408,7 @@ export default function Gen3BootstrapStepper() {
             )}
 
             {/* Loading */}
-            {loading && (
+            {identityLoading && (
               <div className="flex items-center gap-2">
                 <Loader size="sm" />
                 <Text>
@@ -397,9 +422,9 @@ export default function Gen3BootstrapStepper() {
             )}
 
             {/* Error */}
-            {error && (
+            {identityError && (
               <Alert color="red" title="Unable to detect AWS account" icon={<IconX />}>
-                {error}
+                {identityError}
                 {credentialSource === 'auto' && (
                   <Text size="sm" mt="xs">
                     Try selecting an AWS profile or providing credentials manually.
@@ -442,7 +467,7 @@ export default function Gen3BootstrapStepper() {
                 <Stack gap="sm" mt="md">
                   <TextInput
                     label="VPC CIDR Block"
-                    placeholder="10.0.0.0/16"
+                    placeholder="172.24.16.0/20"
                     description="The IP range for the VPC"
                     value={vpcCidr}
                     onChange={(e) => setVpcCidr(e.target.value)}
@@ -482,94 +507,38 @@ export default function Gen3BootstrapStepper() {
               <Text fw={600} mb="sm">Resources to be Created</Text>
 
               <Stack gap="xs">
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>Networking</strong>
-                  </Text>
-                </Group>
+                {/* Kept to what examples/csoc provisions; anything listed here that
+                    the module does not create is a promise the run will not keep. */}
+                <Text size="sm"><strong>Networking</strong></Text>
                 <List size="sm" spacing={4} ml="md">
-                  <List.Item>VPC ({vpcCidr})</List.Item>
-                  <List.Item>3 Public Subnets (across availability zones)</List.Item>
-                  <List.Item>3 Private Subnets (across availability zones)</List.Item>
-                  <List.Item>Internet Gateway</List.Item>
-                  <List.Item>NAT Gateway</List.Item>
-                  <List.Item>Route Tables & Security Groups</List.Item>
+                  <List.Item>VPC ({vpcCidr}) across {availabilityZones.slice(0, 3).join(', ') || 'three availability zones'}</List.Item>
+                  <List.Item>Public subnet, internet gateway and NAT gateway</List.Item>
+                  <List.Item>Squid egress proxy</List.Item>
+                  <List.Item>VPC flow logs</List.Item>
                 </List>
 
                 <Divider my="xs" />
 
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>EKS Cluster</strong>
-                  </Text>
-                </Group>
+                <Text size="sm"><strong>EKS Cluster</strong></Text>
                 <List size="sm" spacing={4} ml="md">
-                  <List.Item>EKS Control Plane (v1.28)</List.Item>
-                  <List.Item>Karpenter for node auto-scaling</List.Item>
-                  <List.Item>Fargate Profile for Karpenter pods</List.Item>
-                  <List.Item>OIDC Provider for IRSA</List.Item>
+                  <List.Item>EKS control plane (v1.33)</List.Item>
+                  <List.Item>Private worker subnets and worker nodes</List.Item>
+                  <List.Item>VPC endpoints for EC2, ECR, S3, STS, EBS and CloudWatch Logs</List.Item>
                 </List>
 
                 <Divider my="xs" />
 
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>Cluster Components</strong>
-                  </Text>
-                </Group>
-                <List size="sm" spacing={4} ml="md">
-                  <List.Item>AWS Load Balancer Controller</List.Item>
-                  <List.Item>EBS CSI Driver</List.Item>
-                  <List.Item>CoreDNS</List.Item>
-                  <List.Item>kube-proxy</List.Item>
-                </List>
-
-                <Divider my="xs" />
-
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>Observability Stack</strong>
-                  </Text>
-                </Group>
-                <List size="sm" spacing={4} ml="md">
-                  <List.Item>Grafana (dashboarding & visualization)</List.Item>
-                  <List.Item>Loki (log aggregation)</List.Item>
-                  <List.Item>Mimir (metrics storage)</List.Item>
-                  <List.Item>Tempo (distributed tracing)</List.Item>
-                  <List.Item>Prometheus (metrics collection)</List.Item>
-                </List>
-
-                <Divider my="xs" />
-
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>CSOC Services</strong>
-                  </Text>
-                </Group>
-                <List size="sm" spacing={4} ml="md">
-                  <List.Item>CSOC Dashboard</List.Item>
-                  <List.Item>Gen3 Cluster Operator</List.Item>
-                </List>
-
-                <Divider my="xs" />
-
-                <Group justify="space-between">
-                  <Text size="sm">
-                    <strong>DNS & Certificates</strong>
-                  </Text>
-                </Group>
-                <List size="sm" spacing={4} ml="md">
-                  <List.Item>Route53 records for {domainName}</List.Item>
-                  <List.Item>ACM Certificate for *.{domainName}</List.Item>
-                  <List.Item>cert-manager for cluster certificates</List.Item>
-                </List>
+                <Text size="sm" c="dimmed">
+                  Not provisioned by this step: the CSOC dashboard, observability stack,
+                  load balancer controller, certificates and DNS records for {domainName || 'your domain'}.
+                </Text>
               </Stack>
             </Paper>
 
             {/* Cost Estimate */}
             <Paper withBorder p="md" radius="md">
               <Group justify="space-between" mb="sm">
-                <Text fw={600}>Estimated Monthly Cost</Text>
+                <Text fw={600}>Rough Monthly Cost Estimate</Text>
                 <Badge size="lg" color="blue">${estimatedCost.toFixed(2)}/month</Badge>
               </Group>
 
@@ -586,7 +555,7 @@ export default function Gen3BootstrapStepper() {
                     <td style={{ textAlign: 'right' }}>$73.00</td>
                   </tr>
                   <tr>
-                    <td>Fargate (Karpenter)</td>
+                    <td>Worker nodes and Squid proxy (EC2)</td>
                     <td style={{ textAlign: 'right' }}>$120.00</td>
                   </tr>
                   <tr>
@@ -613,12 +582,13 @@ export default function Gen3BootstrapStepper() {
               </Table>
 
               <Text size="xs" c="dimmed" mt="sm">
-                * Additional costs may apply for workload compute (Karpenter-managed nodes), storage, and data transfer.
+                * A fixed us-east-1 ballpark, not a quote. Actual cost depends on region, node
+                count and traffic; check AWS Cost Explorer once the environment is running.
               </Text>
             </Paper>
 
             {/* Warnings */}
-            {(!csocName || !stateBucket || !domainName || !domainValidation || domainValidation.error) && (
+            {(!csocName || !stateBucket || !domainName || !domainValidation?.found || availabilityZones.length < 3) && (
               <Alert color="yellow" title="Configuration Incomplete" icon={<IconAlertTriangle />}>
                 <Stack gap={4}>
                   {!csocName && <Text size="sm">• CSOC Name is required</Text>}
@@ -626,6 +596,7 @@ export default function Gen3BootstrapStepper() {
                   {!domainName && <Text size="sm">• Domain Name is required</Text>}
                   {domainName && !domainValidation && <Text size="sm">• Domain has not been validated</Text>}
                   {domainValidation?.error && <Text size="sm">• Domain validation failed</Text>}
+                  {availabilityZones.length < 3 && <Text size="sm">• Region needs at least 3 availability zones</Text>}
                 </Stack>
               </Alert>
             )}
@@ -637,15 +608,13 @@ export default function Gen3BootstrapStepper() {
         );
 
       case 3:
-        const availability_zones = [
-          `${selectedRegion}a`,
-          `${selectedRegion}b`,
-          `${selectedRegion}c`
-        ];
         const csocConfig = {
-          vpc_name: csocName || 'csoc-vpc',
+          vpc_name: csocName,
           aws_region: selectedRegion,
-          availability_zones: availability_zones,
+          // The module requires exactly three, taken from the account's real
+          // zones for this region.
+          availability_zones: availabilityZones.slice(0, 3),
+          vpc_cidr_block: vpcCidr,
           hostname: domainName,
           revproxy_arn: '', // You'd need to collect this or create cert
           user_yaml_bucket_name: `${csocName}-user-yaml`,
@@ -712,7 +681,10 @@ export default function Gen3BootstrapStepper() {
   // Disable next button if required fields are not filled
   const canProceed = () => {
     if (active === 1) {
-      return csocName && stateBucket && domainName && domainValidation && !domainValidation.error && identity;
+      return (
+        csocName && !csocNameError && stateBucket && identity &&
+        domainValidation?.found && availabilityZones.length >= 3
+      );
     }
     return true;
   };

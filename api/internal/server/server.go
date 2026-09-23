@@ -194,6 +194,11 @@ func SetupHTTPServer() {
 
 	// AWS routes
 	r.GET("/api/aws/identity", aws.GetCallerIdentity)
+	// Per-request lookups: each takes the profile or credentials to run as,
+	// so the wizard checks the identity Terraform will actually use.
+	r.POST("/api/aws/identity", aws.IdentityHandler)
+	r.POST("/api/aws/route53/zone", aws.HostedZoneHandler)
+	r.POST("/api/aws/azs", aws.AvailabilityZonesHandler)
 	r.GET("/api/aws/profiles", aws.ListAWSProfilesHandler)
 	r.POST("/api/aws/set-profile", aws.SetAWSProfileHandler)
 	r.GET("/api/aws/instances", aws.ListEC2Instances)

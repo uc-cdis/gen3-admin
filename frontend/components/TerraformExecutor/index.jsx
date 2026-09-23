@@ -412,42 +412,39 @@ function ExecutionHistory({ onViewLogs }) {
 // Helper Functions
 // ============================================================================
 
+// HCL string literal. JSON escaping covers quotes, backslashes and control
+// characters; HCL additionally treats ${ and %{ as template syntax, which
+// would let a value such as a tag interpolate expressions.
+function hclString(value) {
+  return JSON.stringify(value).replace(/\$\{/g, '$$${').replace(/%\{/g, '%%{');
+}
+
+function hclValue(value, indent = '') {
+  if (typeof value === 'string') return hclString(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  const inner = `${indent}  `;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    return `[\n${value.map(v => `${inner}${hclValue(v, inner)}`).join(',\n')}\n${indent}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, v]) => v !== undefined && v !== null);
+    if (entries.length === 0) return '{}';
+    // Keys are quoted so tag keys like "aws:foo" or "Cost Center" stay valid.
+    return `{\n${entries.map(([k, v]) => `${inner}${hclString(k)} = ${hclValue(v, inner)}`).join('\n')}\n${indent}}`;
+  }
+  return 'null';
+}
+
+// Serializes every key of config as a tfvars assignment. It used to write a
+// fixed list of eleven keys, silently dropping anything else -- which is why
+// the wizard's VPC CIDR field never reached Terraform.
 function buildTfvars(config) {
   if (!config) return '';
-
-  const formatValue = (value) => {
-    if (typeof value === 'string') return `"${value}"`;
-    if (typeof value === 'boolean') return value.toString();
-    if (Array.isArray(value)) {
-      if (value.length === 0) return '[]';
-      return `[\n  ${value.map(v => `"${v}"`).join(',\n  ')}\n]`;
-    }
-    if (typeof value === 'object' && value !== null) {
-      const entries = Object.entries(value);
-      if (entries.length === 0) return '{}';
-      return `{\n  ${entries.map(([k, v]) => `${k} = "${v}"`).join('\n  ')}\n}`;
-    }
-    return String(value);
-  };
-
-  let output = '# Required Variables\n';
-  output += `vpc_name = ${formatValue(config.vpc_name)}\n`;
-  output += `aws_region = ${formatValue(config.aws_region)}\n`;
-  output += `availability_zones = ${formatValue(config.availability_zones)}\n`;
-  output += `hostname = ${formatValue(config.hostname)}\n`;
-  output += `revproxy_arn = ${formatValue(config.revproxy_arn)}\n`;
-  output += `user_yaml_bucket_name = ${formatValue(config.user_yaml_bucket_name)}\n`;
-
-  output += '\n# Optional Variables\n';
-  output += `kubernetes_namespace = ${formatValue(config.kubernetes_namespace)}\n`;
-  output += `es_linked_role = ${formatValue(config.es_linked_role)}\n`;
-  output += `create_gitops_infra = ${formatValue(config.create_gitops_infra)}\n`;
-  output += `deploy_cognito = ${formatValue(config.deploy_cognito)}\n`;
-
-  output += '\n# Default Tags\n';
-  output += `default_tags = ${formatValue(config.default_tags)}`;
-
-  return output;
+  return Object.entries(config)
+    .filter(([name, value]) => /^[A-Za-z_][A-Za-z0-9_-]*$/.test(name) && value !== undefined && value !== null)
+    .map(([name, value]) => `${name} = ${hclValue(value)}`)
+    .join('\n') + '\n';
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -57,6 +58,11 @@ func GetAwsProfiles() ([]string, error) {
 		}
 
 		for _, s := range iniFile.SectionStrings() {
+			// go-ini always reports a DEFAULT section, and ~/.aws/config also
+			// holds non-profile sections such as sso-session and services.
+			if s == ini.DefaultSection || strings.HasPrefix(s, "sso-session ") || strings.HasPrefix(s, "services ") {
+				continue
+			}
 			name, _ := strings.CutPrefix(s, "profile ")
 			profilesMap[name] = struct{}{}
 		}
@@ -66,6 +72,7 @@ func GetAwsProfiles() ([]string, error) {
 	for p := range profilesMap {
 		profiles = append(profiles, p)
 	}
+	sort.Strings(profiles)
 
 	return profiles, nil
 }
@@ -76,11 +83,6 @@ func ListAWSProfilesHandler(c *gin.Context) {
 	if err != nil {
 		log.Printf("Error reading AWS profiles: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read AWS profiles"})
-		return
-	}
-
-	if len(profiles) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No AWS profiles found"})
 		return
 	}
 
