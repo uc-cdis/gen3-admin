@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -68,10 +71,13 @@ type TerraformRequest struct {
 	StateBucket string `json:"state_bucket,omitempty"`
 	StateRegion string `json:"state_region,omitempty"`
 
-	// FromModule, when set on an init, copies a module into the work dir
-	// before initialising it (terraform init -from-module=...). It is kept
-	// separate from Operation so Operation stays a bare enum.
-	FromModule string `json:"from_module,omitempty"`
+	// Module names the module to copy into a fresh work dir on init. Clients
+	// choose a name; the server maps it to a source (see moduleSources), so a
+	// request cannot point the runner at arbitrary Terraform.
+	Module string `json:"module,omitempty"`
+
+	// FromModule is the resolved source for Module. Server-side only.
+	FromModule string `json:"-"`
 
 	// AWS credentials. Docker mode previously relied solely on the server's
 	// mounted ~/.aws, which does not exist when CSOC itself runs in-cluster.
@@ -147,138 +153,6 @@ func ensureTerraformNamespace(namespace string) error {
 	return nil
 }
 
-// shellQuote wraps a value in single quotes for safe interpolation into the
-// generated docker shell script. Credentials and ARNs can contain characters
-// the shell would otherwise treat as syntax.
-func shellQuote(v string) string {
-	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
-}
-
-// buildAWSEnvFlags renders the per-request AWS settings as docker -e flags.
-// Explicit credentials are what allow a CSOC running in-cluster, with no
-// ~/.aws to mount, to provision into a target account.
-func buildAWSEnvFlags(req *TerraformRequest) string {
-	flags := ""
-	if req.AWSRegion != "" {
-		flags += fmt.Sprintf("-e AWS_REGION=%s -e AWS_DEFAULT_REGION=%s ",
-			shellQuote(req.AWSRegion), shellQuote(req.AWSRegion))
-	}
-	if req.AWSProfile != "" {
-		flags += fmt.Sprintf("-e AWS_PROFILE=%s ", shellQuote(req.AWSProfile))
-	}
-	if c := req.AWSCredentials; c != nil && c.AccessKeyID != "" {
-		flags += fmt.Sprintf("-e AWS_ACCESS_KEY_ID=%s -e AWS_SECRET_ACCESS_KEY=%s ",
-			shellQuote(c.AccessKeyID), shellQuote(c.SecretAccessKey))
-		if c.SessionToken != "" {
-			flags += fmt.Sprintf("-e AWS_SESSION_TOKEN=%s ", shellQuote(c.SessionToken))
-		}
-	}
-	return flags
-}
-
-func buildDockerCommand(req *TerraformRequest, executionID string) (string, []string) {
-	op := strings.Split(string(req.Operation), " ")[0]
-	containerName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(op)), executionID[:8])
-	homeDir, _ := os.UserHomeDir()
-
-	// Get AWS_PROFILE from environment
-	awsProfile := os.Getenv("AWS_PROFILE")
-	awsProfileFlag := ""
-	if awsProfile != "" {
-		awsProfileFlag = fmt.Sprintf("-e AWS_PROFILE=%s", awsProfile)
-	}
-
-	// Validation command
-	validationCmd := ""
-	if req.StateBucket != "" {
-		validationCmd = fmt.Sprintf(`
-echo "=== Running credential validation ==="
-docker run --rm \
-  -v %s/.aws:/root/.aws:ro \
-  %s \
-  -e TF_STATE_BUCKET=%s \
-  -e TF_STATE_REGION=%s \
-  amazon/aws-cli:latest \
-  sh -c '%s' || exit $?
-
-echo "=== Validation passed ==="
-`, homeDir, awsProfileFlag, req.StateBucket, req.StateRegion, buildValidationScript(req.StateBucket, req.StateRegion))
-	}
-
-	tfArgs := buildTerraformArgs(req)
-	// The official image's entrypoint is terraform itself, so the args are
-	// passed through directly. Images built on a shell entrypoint instead
-	// need the whole command as a single quoted string.
-	tfCommand := strings.Join(tfArgs, " ")
-	if !imageProvidesTerraformEntrypoint(req.DockerImage) {
-		tfCommand = shellQuote(tfCommand)
-	}
-
-	// Build environment flags for main Terraform container
-	envFlags := ""
-	if req.StateBucket != "" {
-		envFlags += fmt.Sprintf("-e TF_STATE_BUCKET=%s -e TF_STATE_REGION=%s ", req.StateBucket, req.StateRegion)
-	}
-	for key, value := range req.Vars {
-		envFlags += fmt.Sprintf("-e TF_VAR_%s=%s ", key, value)
-	}
-
-	// Pass AWS_PROFILE if set
-	if awsProfile != "" {
-		envFlags += fmt.Sprintf("-e AWS_PROFILE=%s ", awsProfile)
-	}
-
-	// Per-request AWS settings take precedence over the server's own
-	// environment, so two runs targeting different accounts cannot pick up
-	// each other's credentials.
-	envFlags += buildAWSEnvFlags(req)
-
-	networkFlag := ""
-	if req.DockerNetwork != "" {
-		networkFlag = fmt.Sprintf("--network %s", req.DockerNetwork)
-	}
-
-	image := req.DockerImage
-	if image == "" {
-		image = "hashicorp/terraform:latest"
-	}
-
-	script := fmt.Sprintf(`%s
-docker run \
-  --name %s \
-  --label %s=%s \
-  --label %s=%s \
-  --label %s=%s \
-  --label %s=%s \
-  -v %s/.aws:/root/.aws:ro \
-  -v %s:%s:rw \
-  -v %s-vars:%s:rw \
-  -w %s \
-  %s \
-  %s \
-  %s \
-  %s
-  `,
-		validationCmd,
-		containerName,
-		LabelManagedBy, ManagedByValue,
-		LabelComponent, ComponentValue,
-		LabelOperation, string(op),
-		LabelExecutionID, executionID,
-		homeDir,
-		req.WorkDir, containerWorkDir,
-		req.WorkDir, containerVarsDir,
-		containerWorkDir,
-		envFlags,
-		networkFlag,
-		image,
-		tfCommand,
-	)
-
-	print(script)
-	return "sh", []string{"-c", script}
-}
-
 func buildKubectlCommand(req *TerraformRequest, executionID string) (*exec.Cmd, []byte, error) {
 	podName := fmt.Sprintf("tf-%s-%s", strings.ToLower(string(req.Operation)), executionID[:8])
 	image := req.PodImage
@@ -322,38 +196,11 @@ func buildKubectlCommand(req *TerraformRequest, executionID string) (*exec.Cmd, 
 	return cmd, podSpecJSON, nil
 }
 
-// Paths inside the runner container. The work dir holds the Terraform sources
-// and is where every command runs; the vars dir is mounted separately so the
-// tfvars file can be replaced per run without touching the sources.
-const (
-	containerWorkDir = "/workspace/tf"
-	containerVarsDir = "/workspace/tf-vars"
-	containerPlanOut = containerWorkDir + "/tfplan"
-)
-
-// imageProvidesTerraformEntrypoint reports whether the image's entrypoint is
-// already terraform, in which case the binary name must not be repeated in the
-// args. The official image behaves this way; custom images built on a shell
-// entrypoint do not.
-func imageProvidesTerraformEntrypoint(image string) bool {
-	if image == "" {
-		// Empty means the caller gets the default, which is the official image.
-		return true
-	}
-	return strings.HasPrefix(image, "hashicorp/terraform")
-}
-
 func buildTerraformArgs(req *TerraformRequest) []string {
-	var args []string
-
-	// Only name the binary when the image will not supply it itself. The old
-	// check compared against the literal default, so an empty DockerImage --
-	// the common case -- wrongly took the prepend branch.
-	if !imageProvidesTerraformEntrypoint(req.DockerImage) {
-		args = append(args, "terraform")
-	}
-
-	args = append(args, string(req.Operation))
+	// The binary is never named here: docker runs it via runnerPrelude's
+	// `exec terraform "$@"`, and the pod spec sets command: ["terraform"].
+	// Naming it in the args as well is what produced "terraform terraform".
+	args := []string{string(req.Operation)}
 
 	varFileArgs := func() []string {
 		var out []string
@@ -365,13 +212,16 @@ func buildTerraformArgs(req *TerraformRequest) []string {
 
 	switch req.Operation {
 	case OpInit:
-		if req.FromModule != "" {
-			args = append(args, "-from-module="+req.FromModule)
-		}
+		// The module itself is copied in by runnerPrelude, which skips the copy
+		// when the work dir is already populated.
+		//
 		// Backend settings are supplied as -backend-config so the same sources
 		// can be initialised against a different state key per environment.
-		for _, kv := range buildBackendConfigArgs(req) {
-			args = append(args, kv)
+		// -reconfigure makes a re-run adopt the current settings instead of
+		// stopping to ask whether to migrate state from the previous ones.
+		if backend := buildBackendConfigArgs(req); len(backend) > 0 {
+			args = append(args, "-reconfigure")
+			args = append(args, backend...)
 		}
 	case OpPlan:
 		args = append(args, varFileArgs()...)
@@ -466,6 +316,7 @@ func queryDockerExecutions() ([]*TerraformExecution, error) {
 		executions = append(executions, &TerraformExecution{
 			ID:            executionID,
 			Operation:     operation,
+			WorkDir:       labels[LabelWorkDir],
 			Runtime:       RuntimeDocker,
 			Status:        status,
 			ContainerName: container.Names,
@@ -575,8 +426,9 @@ func terraformRoot() string {
 const defaultRunnerImage = "gen3-terraform:latest"
 
 // validImageRef allows a plain [registry/]name[:tag|@digest] reference and
-// nothing that could be read as another docker argument.
-var validImageRef = regexp.MustCompile(`^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$`)
+// nothing that could be read as another docker argument -- in particular it
+// may not start with "-", or docker would parse it as a flag.
+var validImageRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$`)
 
 var validWorkDirName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
@@ -667,10 +519,17 @@ func HandleTerraformExecute() gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
+		if err := validateRequest(&req); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+		if req.Module != "" {
+			req.FromModule = moduleSources()[req.Module]
+		}
 
-		// WorkDir comes from the request body and is both written to and
-		// interpolated into the docker shell script, so it is confined to a
-		// single directory under the runtime root rather than taken as given.
+		// WorkDir comes from the request body and becomes a host bind mount,
+		// so it is confined to a single directory under the runtime root
+		// rather than taken as given.
 		workDir, err := resolveWorkDir(req.WorkDir)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
@@ -711,116 +570,102 @@ func HandleTerraformExecute() gin.HandlerFunc {
 
 		executionID := uuid.New().String()
 
-		var cmd *exec.Cmd
 		switch req.Runtime {
 		case RuntimeDocker:
-			command, args := buildDockerCommand(&req, executionID)
-			cmd = exec.Command(command, args...)
-
+			startDockerExecution(c, &req, executionID)
 		case RuntimePod:
-			if err := checkAWSSecretExists(req.Namespace, req.SecretName); err != nil {
-				c.JSON(400, gin.H{"error": err.Error()})
-				return
-			}
-
-			var err error
-			cmd, _, err = buildKubectlCommand(&req, executionID)
-			if err != nil {
-				c.JSON(500, gin.H{"error": err.Error()})
-				return
-			}
-
+			startPodExecution(c, &req, executionID)
 		default:
 			c.JSON(400, gin.H{"error": "Invalid runtime type"})
-			return
 		}
-
-		type ExecResult struct {
-			Err    error
-			Stdout string
-			Stderr string
-		}
-
-		errCh := make(chan ExecResult, 1)
-
-		// Prepare output buffers
-		var stdoutBuf, stderrBuf bytes.Buffer
-		cmd.Stdout = &stdoutBuf
-		cmd.Stderr = &stderrBuf
-
-		go func() {
-			err := cmd.Run()
-			errCh <- ExecResult{
-				Err:    err,
-				Stdout: stdoutBuf.String(),
-				Stderr: stderrBuf.String(),
-			}
-		}()
-
-		// Wait for execution to be visible or early failure
-		for i := 0; i < 10; i++ {
-			select {
-			case res := <-errCh:
-				if res.Err != nil {
-					log.Error().
-						Err(res.Err).
-						Str("execution_id", executionID).
-						Str("stderr", res.Stderr).
-						Msg("Execution failed early")
-
-					c.JSON(500, gin.H{
-						"id":      executionID,
-						"message": "Terraform execution failed to start",
-						"error":   res.Err.Error(),
-						"stderr":  res.Stderr,
-					})
-					return
-				}
-			default:
-				// keep waiting
-			}
-
-			time.Sleep(500 * time.Millisecond)
-
-			var execs []*TerraformExecution
-			if req.Runtime == RuntimeDocker {
-				execs, _ = queryDockerExecutions()
-			} else {
-				execs, _ = queryKubernetesPods(req.Namespace)
-			}
-
-			for _, exec := range execs {
-				if exec.ID == executionID {
-					c.JSON(202, gin.H{
-						"id":      executionID,
-						"message": fmt.Sprintf("Terraform %s execution started", req.Operation),
-						"runtime": req.Runtime,
-					})
-					return
-				}
-			}
-		}
-
-		// timeout or late failure
-		res := <-errCh
-		if res.Err != nil {
-			log.Error().
-				Err(res.Err).
-				Str("stderr", res.Stderr).
-				Str("execution_id", executionID).
-				Msg("Execution failed")
-
-			c.JSON(500, gin.H{
-				"error":   res.Err.Error(),
-				"stderr":  res.Stderr,
-				"stdout":  res.Stdout,
-				"runtime": req.Runtime,
-			})
-		} else {
-			c.JSON(504, gin.H{"error": "Execution not visible after timeout"})
-		}
-
 	}
+}
+
+// startDockerExecution starts the run detached and responds as soon as the
+// container exists. It used to block the request until the whole run
+// finished, which for an apply meant holding the HTTP request open for the
+// better part of an hour with no execution ID for the UI to follow.
+func startDockerExecution(c *gin.Context, req *TerraformRequest, executionID string) {
+	credsPath, err := prepareRunFiles(req, executionID)
+	if err != nil {
+		log.Error().Err(err).Str("execution_id", executionID).Msg("failed to prepare run files")
+		c.JSON(500, gin.H{"error": "failed to prepare run"})
+		return
+	}
+
+	// The argv is never logged: it is safe to print today, but a future flag
+	// carrying a secret would leak silently. Log what identifies the run.
+	log.Info().
+		Str("execution_id", executionID).
+		Str("operation", string(req.Operation)).
+		Str("work_dir", filepath.Base(req.WorkDir)).
+		Msg("starting terraform execution")
+
+	out, err := exec.Command("docker", buildDockerRunArgs(req, executionID, credsPath)...).CombinedOutput()
+	if err != nil {
+		removeCredentials(credsPath)
+		log.Error().Err(err).Str("execution_id", executionID).Str("output", string(out)).
+			Msg("terraform container failed to start")
+		c.JSON(500, gin.H{
+			"id":      executionID,
+			"message": "Terraform execution failed to start",
+			"error":   strings.TrimSpace(string(out)),
+		})
+		return
+	}
+
+	// The credentials file must outlive the container's start, since
+	// terraform reads it throughout the run, but not the run itself.
+	if credsPath != "" {
+		name := containerName(req, executionID)
+		go func() {
+			_ = exec.Command("docker", "wait", name).Run()
+			removeCredentials(credsPath)
+		}()
+	}
+
+	c.JSON(202, gin.H{
+		"id":      executionID,
+		"message": fmt.Sprintf("Terraform %s execution started", req.Operation),
+		"runtime": req.Runtime,
+	})
+}
+
+func removeCredentials(path string) {
+	if path == "" {
+		return
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Error().Err(err).Msg("failed to remove run credentials file")
+	}
+}
+
+// startPodExecution applies the pod spec and waits briefly for it to appear.
+func startPodExecution(c *gin.Context, req *TerraformRequest, executionID string) {
+	if err := checkAWSSecretExists(req.Namespace, req.SecretName); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	cmd, _, err := buildKubectlCommand(req, executionID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		c.JSON(500, gin.H{
+			"id":      executionID,
+			"message": "Terraform execution failed to start",
+			"error":   strings.TrimSpace(string(out)),
+		})
+		return
+	}
+
+	c.JSON(202, gin.H{
+		"id":      executionID,
+		"message": fmt.Sprintf("Terraform %s execution started", req.Operation),
+		"runtime": req.Runtime,
+	})
 }
 
 func HandleGetTerraformExecution() gin.HandlerFunc {
@@ -860,6 +705,19 @@ func HandleListTerraformExecutions() gin.HandlerFunc {
 		}
 
 		allExecs := append(dockerExecs, k8sExecs...)
+
+		// Scope to one environment when asked, so the wizard shows that
+		// environment's runs rather than every run on the host.
+		if wd := c.Query("work_dir"); wd != "" {
+			scoped := allExecs[:0]
+			for _, e := range allExecs {
+				if e.WorkDir == wd {
+					scoped = append(scoped, e)
+				}
+			}
+			allExecs = scoped
+		}
+
 		sort.Slice(allExecs, func(i, j int) bool {
 			return allExecs[i].StartTime.After(allExecs[j].StartTime)
 		})
@@ -974,7 +832,7 @@ func HandleStreamTerraformExecution() gin.HandlerFunc {
 			c.Writer.Flush()
 
 			if err := waitForPodReady(ctx, execution.PodName, execution.Namespace); err != nil {
-				c.SSEvent("error", fmt.Sprintf("Pod failed to become ready: %v", err))
+				c.SSEvent("failed", fmt.Sprintf("Pod failed to become ready: %v", err))
 				c.Writer.Flush()
 				return
 			}
@@ -992,74 +850,91 @@ func HandleStreamTerraformExecution() gin.HandlerFunc {
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			c.SSEvent("error", err.Error())
+			c.SSEvent("failed", err.Error())
 			c.Writer.Flush()
 			return
 		}
-
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
-			c.SSEvent("error", err.Error())
+			c.SSEvent("failed", err.Error())
 			c.Writer.Flush()
 			return
 		}
-
 		if err := cmd.Start(); err != nil {
-			c.SSEvent("error", err.Error())
+			c.SSEvent("failed", err.Error())
 			c.Writer.Flush()
 			return
 		}
 
-		done := make(chan bool, 2)
-
-		go func() {
-			defer func() { done <- true }()
-
-			buf := make([]byte, 1024)
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					n, err := stdout.Read(buf)
-					if n > 0 {
-						c.SSEvent("message", string(buf[:n]))
-						c.Writer.Flush()
-					}
-					if err != nil {
-						return
-					}
+		// Both pipes feed one channel so only this goroutine writes to the
+		// response; two goroutines writing SSE concurrently was a data race.
+		//
+		// Terraform writes warnings and progress to stderr, so stderr lines are
+		// ordinary log lines. Ending the run on the first one is what made the
+		// UI report failure while the run was still going.
+		lines := make(chan string, 256)
+		var readers sync.WaitGroup
+		for _, pipe := range []io.Reader{stdout, stderr} {
+			readers.Add(1)
+			go func(r io.Reader) {
+				defer readers.Done()
+				scanner := bufio.NewScanner(r)
+				scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+				for scanner.Scan() {
+					lines <- scanner.Text()
 				}
-			}
+			}(pipe)
+		}
+		go func() {
+			readers.Wait()
+			close(lines)
 		}()
 
-		go func() {
-			defer func() { done <- true }()
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					c.SSEvent("error", scanner.Text())
-					c.Writer.Flush()
-				}
+		for line := range lines {
+			if ctx.Err() != nil {
+				continue // drain so the readers can exit
 			}
-		}()
-
-		<-done
-		<-done
-
-		cmd.Wait()
-
-		select {
-		case <-ctx.Done():
-		default:
-			c.SSEvent("done", "completed")
+			c.SSEvent("message", line)
 			c.Writer.Flush()
 		}
+		_ = cmd.Wait()
+
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Report how the run actually ended. "done" used to be sent whatever
+		// the exit code, so a failed apply showed as a success.
+		exitCode, err := executionExitCode(execution)
+		if err != nil {
+			c.SSEvent("failed", fmt.Sprintf("could not determine exit status: %v", err))
+			c.Writer.Flush()
+			return
+		}
+		payload, _ := json.Marshal(gin.H{"exit_code": exitCode})
+		c.SSEvent("done", string(payload))
+		c.Writer.Flush()
 	}
+}
+
+// executionExitCode reads the exit code of a finished run.
+func executionExitCode(e *TerraformExecution) (int, error) {
+	var cmd *exec.Cmd
+	if e.Runtime == RuntimeDocker {
+		cmd = exec.Command("docker", "inspect", "-f", "{{.State.ExitCode}}", e.ContainerName)
+	} else {
+		cmd = exec.Command("kubectl", "get", "pod", e.PodName, "-n", e.Namespace, "-o",
+			`jsonpath={.status.containerStatuses[?(@.name=="terraform")].state.terminated.exitCode}`)
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+	code, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("unexpected exit status %q", strings.TrimSpace(string(out)))
+	}
+	return code, nil
 }
 
 func HandleTerminateTerraform() gin.HandlerFunc {

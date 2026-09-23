@@ -5,13 +5,6 @@ import CSOCDiagram from "@/components/CSOCDiagram";
 import { useAwsIdentity } from "@/hooks/aws";
 import TerraformExecutor, { buildTfvars } from '@/components/TerraformExecutor';
 
-// The CSOC stack module. Pinned by ref so a run is reproducible rather than
-// tracking whatever a branch happens to point at.
-const CSOC_MODULE_SOURCE =
-  process.env.NEXT_PUBLIC_CSOC_MODULE_SOURCE ||
-  "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=master";
-
-
 export default function Gen3BootstrapStepper() {
   const [active, setActive] = useState(0);
 
@@ -671,7 +664,7 @@ export default function Gen3BootstrapStepper() {
             mode="embedded"
             autoExecute={true}
             operations={['init', 'plan', 'apply', 'destroy']}
-            fromModule={CSOC_MODULE_SOURCE}
+            moduleName="csoc"
             showOperationButtons={true}
             showConfig={true}
             showHistory={true}

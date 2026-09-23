@@ -30,10 +30,6 @@ RUN apk add --no-cache --upgrade \
 # The runner mounts sources here and sets this as the working directory.
 WORKDIR /workspace/tf
 
-# The base image's entrypoint is terraform itself. A shell entrypoint is used
-# instead so the runner can pass a full command line, which is what lets a
-# single execution chain terraform with helm/kubectl.
-#
-# The API detects this: images not named hashicorp/terraform* get the binary
-# named explicitly in the command (see imageProvidesTerraformEntrypoint).
+# The API always overrides the entrypoint (docker run --entrypoint /bin/sh)
+# and runs a fixed prelude, so this default only matters for manual use.
 ENTRYPOINT ["/bin/sh", "-c"]

@@ -2,6 +2,8 @@ package terraform
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,31 +12,6 @@ import (
 // look for whole flags rather than picking through slice indices.
 func joined(req *TerraformRequest) string {
 	return strings.Join(buildTerraformArgs(req), " ")
-}
-
-func TestInitCopiesFromModule(t *testing.T) {
-	// The module reference used to be smuggled inside Operation, where it
-	// matched no switch case and was silently never fetched.
-	req := &TerraformRequest{
-		Operation:  OpInit,
-		FromModule: "git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=main",
-	}
-
-	got := joined(req)
-	want := "-from-module=git::github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=main"
-	if !strings.Contains(got, want) {
-		t.Errorf("init args = %q, want it to contain %q", got, want)
-	}
-	if !strings.HasPrefix(got, "init") {
-		t.Errorf("init args = %q, want operation to stay a bare %q", got, "init")
-	}
-}
-
-func TestInitOmitsFromModuleWhenUnset(t *testing.T) {
-	got := joined(&TerraformRequest{Operation: OpInit})
-	if strings.Contains(got, "-from-module") {
-		t.Errorf("init args = %q, want no -from-module when none requested", got)
-	}
 }
 
 func TestInitPassesBackendConfig(t *testing.T) {
@@ -124,91 +101,232 @@ func TestApplyWithoutSavedPlanStillPassesVarFiles(t *testing.T) {
 	}
 }
 
-func TestTerraformBinaryIsNamedOnlyForShellEntrypointImages(t *testing.T) {
-	// The old check compared against the literal default, so an empty image --
-	// the common case -- wrongly took the prepend branch and produced
-	// "terraform terraform plan".
-	cases := []struct {
-		name       string
-		image      string
-		wantPrefix string
-	}{
-		{"default image", "", "plan"},
-		{"official image", "hashicorp/terraform:latest", "plan"},
-		{"official pinned", "hashicorp/terraform:1.9.5", "plan"},
-		{"local custom image", "gen3-terraform:latest", "terraform plan"},
+func TestTerraformArgsNeverNameTheBinary(t *testing.T) {
+	// docker runs `exec terraform "$@"` and the pod spec sets command:
+	// ["terraform"]; naming it in the args too produced "terraform terraform".
+	for _, op := range []TerraformOperation{OpInit, OpPlan, OpApply, OpDestroy} {
+		args := buildTerraformArgs(&TerraformRequest{Operation: op})
+		if args[0] != string(op) {
+			t.Errorf("%s args = %q, want them to start with the operation", op, args)
+		}
 	}
+}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := joined(&TerraformRequest{Operation: OpPlan, DockerImage: tc.image})
-			if !strings.HasPrefix(got, tc.wantPrefix) {
-				t.Errorf("args for image %q = %q, want prefix %q", tc.image, got, tc.wantPrefix)
-			}
-			if strings.HasPrefix(got, "terraform terraform") {
-				t.Errorf("args for image %q = %q, want the binary named at most once", tc.image, got)
+func TestInitReconfiguresWhenBackendIsSet(t *testing.T) {
+	// Without -reconfigure a second init with different backend settings stops
+	// to ask about migrating state, which a non-interactive run cannot answer.
+	got := joined(&TerraformRequest{Operation: OpInit, StateBucket: "gen3-tf-state"})
+	if !strings.Contains(got, "-reconfigure") {
+		t.Errorf("init args = %q, want -reconfigure alongside backend config", got)
+	}
+}
+
+// --- request validation -----------------------------------------------------
+
+func validReq() *TerraformRequest {
+	return &TerraformRequest{
+		Operation:   OpInit,
+		WorkDir:     "csoc-dev",
+		Runtime:     RuntimeDocker,
+		StateBucket: "elise-tftest",
+		StateRegion: "us-east-1",
+		StateKey:    "csoc/dev/terraform.tfstate",
+		AWSRegion:   "us-east-1",
+		Module:      "csoc",
+	}
+}
+
+func TestValidateAcceptsTheWizardPayload(t *testing.T) {
+	if err := validateRequest(validReq()); err != nil {
+		t.Fatalf("validateRequest = %v, want the wizard's normal request accepted", err)
+	}
+}
+
+func TestValidateRejectsHostileValues(t *testing.T) {
+	// Each of these reached the host shell unquoted before the runner stopped
+	// using one. Validation now rejects them before anything runs.
+	cases := map[string]func(r *TerraformRequest){
+		"bucket with shell syntax": func(r *TerraformRequest) { r.StateBucket = "x;id" },
+		"bucket with quote":        func(r *TerraformRequest) { r.StateBucket = "x'y" },
+		"region with shell syntax": func(r *TerraformRequest) { r.StateRegion = "us-east-1;id" },
+		"aws region with space":    func(r *TerraformRequest) { r.AWSRegion = "us east 1" },
+		"state key traversal":      func(r *TerraformRequest) { r.StateKey = "../other/terraform.tfstate" },
+		"state key with space":     func(r *TerraformRequest) { r.StateKey = "csoc/my env/state" },
+		"profile with shell":       func(r *TerraformRequest) { r.AWSProfile = "dev$(id)" },
+		"var name with =":          func(r *TerraformRequest) { r.Vars = map[string]string{"a=b": "c"} },
+		"unknown operation":        func(r *TerraformRequest) { r.Operation = "init -from-module=/etc" },
+		"unknown module":           func(r *TerraformRequest) { r.Module = "git::https://evil.example/tf" },
+		"plan file outside work":   func(r *TerraformRequest) { r.PlanFile = "/etc/passwd" },
+		"image with flag":          func(r *TerraformRequest) { r.DockerImage = "--privileged" },
+		"key without secret": func(r *TerraformRequest) {
+			r.AWSCredentials = &AWSCredentials{AccessKeyID: "AKIA"}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := validReq()
+			mutate(r)
+			if err := validateRequest(r); err == nil {
+				t.Errorf("validateRequest accepted %+v, want it rejected", r)
 			}
 		})
 	}
 }
 
-func TestAWSCredentialsBecomeContainerEnv(t *testing.T) {
-	// An in-cluster CSOC has no ~/.aws to mount, so explicit credentials are
-	// the only way it can reach a target account.
-	got := buildAWSEnvFlags(&TerraformRequest{
-		AWSRegion: "us-west-2",
-		AWSCredentials: &AWSCredentials{
-			AccessKeyID:     "AKIAEXAMPLE",
-			SecretAccessKey: "secret",
-			SessionToken:    "token",
-		},
-	})
+func TestModuleSourceIsChosenByTheServer(t *testing.T) {
+	t.Setenv("CSOC_MODULE_SOURCE", "")
+	t.Setenv("TERRAFORM_MODULES_DIR", "")
+	if got := moduleSources()["csoc"]; !strings.Contains(got, "//examples/csoc?ref=terraform-docker") {
+		t.Errorf("default csoc source = %q, want the published terraform-docker ref", got)
+	}
 
-	for _, want := range []string{
-		"-e AWS_REGION='us-west-2'",
-		"-e AWS_ACCESS_KEY_ID='AKIAEXAMPLE'",
-		"-e AWS_SECRET_ACCESS_KEY='secret'",
-		"-e AWS_SESSION_TOKEN='token'",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("env flags = %q, want them to contain %q", got, want)
+	// A local checkout is mounted read-only; the source becomes a path in it.
+	t.Setenv("TERRAFORM_MODULES_DIR", "/Users/me/gen3-terraform")
+	if got := moduleSources()["csoc"]; got != containerModulesDir+"/examples/csoc" {
+		t.Errorf("csoc source with TERRAFORM_MODULES_DIR = %q, want the mounted path", got)
+	}
+
+	t.Setenv("CSOC_MODULE_SOURCE", "git::https://example.org/tf.git//csoc?ref=v1")
+	if got := moduleSources()["csoc"]; got != "git::https://example.org/tf.git//csoc?ref=v1" {
+		t.Errorf("csoc source with CSOC_MODULE_SOURCE = %q, want the override", got)
+	}
+}
+
+// --- docker argv ------------------------------------------------------------
+
+func dockerArgs(t *testing.T, req *TerraformRequest, credsPath string) []string {
+	t.Helper()
+	if req.WorkDir == "csoc-dev" {
+		req.WorkDir = t.TempDir()
+	}
+	return buildDockerRunArgs(req, "0123456789abcdef", credsPath)
+}
+
+func TestDockerRunsOnlyTheConstantPrelude(t *testing.T) {
+	// No request value may appear inside the script the container's shell
+	// parses; they travel as env vars or positional args instead.
+	req := validReq()
+	req.StateBucket = "bucket-with-odd.name"
+	req.FromModule = "/src/examples/csoc"
+	args := dockerArgs(t, req, "")
+
+	i := indexOf(args, "-c")
+	if i < 0 || args[i+1] != runnerPrelude {
+		t.Fatalf("args = %q, want -c followed by the constant prelude", args)
+	}
+	if args[i+2] != "gen3-runner" || args[i+3] != "init" {
+		t.Errorf("args after prelude = %q, want $0 then the terraform operation", args[i+2:])
+	}
+	if !contains(args, "GEN3_FROM_MODULE=/src/examples/csoc") {
+		t.Errorf("args = %q, want the module source passed as env", args)
+	}
+	if !contains(args, "-backend-config=bucket=bucket-with-odd.name") {
+		t.Errorf("args = %q, want the bucket as its own argv element", args)
+	}
+}
+
+func TestDockerRunIsDetached(t *testing.T) {
+	// The handler used to block until the whole run finished.
+	args := dockerArgs(t, validReq(), "")
+	if args[0] != "run" || args[1] != "-d" {
+		t.Errorf("args = %q, want `run -d`", args[:2])
+	}
+}
+
+func TestDockerLabelsTheEnvironment(t *testing.T) {
+	req := validReq()
+	req.WorkDir = filepath.Join(t.TempDir(), "csoc-workshop")
+	args := buildDockerRunArgs(req, "0123456789abcdef", "")
+	if !contains(args, LabelWorkDir+"=csoc-workshop") {
+		t.Errorf("args = %q, want the work dir label so history can be scoped", args)
+	}
+}
+
+func TestCredentialsNeverAppearInDockerArgs(t *testing.T) {
+	// Command-line values show in the host process list and in docker inspect.
+	req := validReq()
+	req.AWSCredentials = &AWSCredentials{AccessKeyID: "AKIAEXAMPLE", SecretAccessKey: "s3cr3t", SessionToken: "t0ken"}
+	args := strings.Join(dockerArgs(t, req, "/tmp/x/aws-credentials-0123"), " ")
+	for _, secret := range []string{"AKIAEXAMPLE", "s3cr3t", "t0ken"} {
+		if strings.Contains(args, secret) {
+			t.Errorf("docker args contain %q; credentials must only be in the 0600 file", secret)
 		}
 	}
-}
-
-func TestAWSEnvOmitsSessionTokenWhenAbsent(t *testing.T) {
-	got := buildAWSEnvFlags(&TerraformRequest{
-		AWSCredentials: &AWSCredentials{AccessKeyID: "AKIAEXAMPLE", SecretAccessKey: "secret"},
-	})
-	if strings.Contains(got, "AWS_SESSION_TOKEN") {
-		t.Errorf("env flags = %q, want no empty session token for long-lived keys", got)
+	if !strings.Contains(args, "AWS_SHARED_CREDENTIALS_FILE="+containerVarsDir+"/aws-credentials-0123") {
+		t.Errorf("args = %q, want the credentials file referenced by path", args)
+	}
+	if !strings.Contains(args, "AWS_PROFILE="+runProfile) {
+		t.Errorf("args = %q, want the run profile selected", args)
 	}
 }
 
-func TestAWSEnvIsEmptyWithoutPerRequestSettings(t *testing.T) {
-	// With nothing set the run falls back to the mounted ~/.aws, which is the
-	// local-compose path.
-	if got := buildAWSEnvFlags(&TerraformRequest{}); got != "" {
-		t.Errorf("env flags = %q, want empty so the mounted profile is used", got)
+func TestExplicitProfileBeatsServerProfile(t *testing.T) {
+	t.Setenv("AWS_PROFILE", "server-default")
+	req := validReq()
+	req.AWSProfile = "csoc"
+	args := dockerArgs(t, req, "")
+	if !contains(args, "AWS_PROFILE=csoc") || contains(args, "AWS_PROFILE=server-default") {
+		t.Errorf("args = %q, want exactly the requested profile", args)
 	}
 }
 
-func TestCredentialsAreQuotedForTheGeneratedShellScript(t *testing.T) {
-	// The flags are interpolated into a shell script, so a value containing
-	// shell syntax must not be able to break out of it.
-	got := buildAWSEnvFlags(&TerraformRequest{
-		AWSCredentials: &AWSCredentials{
-			AccessKeyID:     "AKIAEXAMPLE",
-			SecretAccessKey: "sec'; touch /tmp/pwned; '",
-		},
-	})
-	if strings.Contains(got, "; touch /tmp/pwned") && !strings.Contains(got, `'\''`) {
-		t.Errorf("env flags = %q, want the quote in the secret to be escaped", got)
+func TestPrepareRunFilesWritesBackendOverrideAndCreds(t *testing.T) {
+	req := validReq()
+	req.WorkDir = filepath.Join(t.TempDir(), "csoc-dev")
+	if err := os.MkdirAll(req.WorkDir+"-vars", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	req.AWSCredentials = &AWSCredentials{AccessKeyID: "AKIA", SecretAccessKey: "sec\nret\n[evil]"}
+
+	creds, err := prepareRunFiles(req, "exec1234")
+	if err != nil {
+		t.Fatalf("prepareRunFiles: %v", err)
+	}
+
+	override, err := os.ReadFile(filepath.Join(req.WorkDir+"-vars", backendOverrideName))
+	if err != nil || !strings.Contains(string(override), `backend "s3"`) {
+		t.Errorf("backend override = %q (%v), want an s3 backend block", override, err)
+	}
+
+	info, err := os.Stat(creds)
+	if err != nil {
+		t.Fatalf("stat creds: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("creds mode = %v, want 0600", info.Mode().Perm())
+	}
+	body, _ := os.ReadFile(creds)
+	for _, line := range strings.Split(string(body), "\n")[1:] {
+		if strings.HasPrefix(line, "[") {
+			t.Errorf("creds file = %q, want a newline in a value unable to start a new section", body)
+		}
+	}
+
+	// Without a bucket the override is removed so state stays local on purpose.
+	req.StateBucket = ""
+	req.AWSCredentials = nil
+	if _, err := prepareRunFiles(req, "exec5678"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(req.WorkDir+"-vars", backendOverrideName)); !os.IsNotExist(err) {
+		t.Errorf("backend override still present without a bucket (err=%v)", err)
 	}
 }
 
-// The frontend sends these fields today; before this change Gin silently
-// dropped every one of them.
+func contains(xs []string, want string) bool { return indexOf(xs, want) >= 0 }
+
+func indexOf(xs []string, want string) int {
+	for i, x := range xs {
+		if x == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// This is the body TerraformExecutor sends. Credentials used to arrive in
+// camelCase and decode to empty strings, so manual credentials were silently
+// replaced by the server's own.
 func TestRequestDecodesFrontendPayload(t *testing.T) {
 	payload := `{
 	  "operation": "init",
@@ -218,7 +336,7 @@ func TestRequestDecodesFrontendPayload(t *testing.T) {
 	  "state_bucket": "my-state",
 	  "state_region": "us-east-1",
 	  "state_key": "csoc/dev/terraform.tfstate",
-	  "from_module": "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=master",
+	  "module": "csoc",
 	  "aws_region": "us-east-1",
 	  "aws_profile": "dev",
 	  "aws_credentials": {"access_key_id":"AKIA","secret_access_key":"s","session_token":"t"}
@@ -228,16 +346,21 @@ func TestRequestDecodesFrontendPayload(t *testing.T) {
 	if err := json.Unmarshal([]byte(payload), &req); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if req.StateKey != "csoc/dev/terraform.tfstate" {
-		t.Errorf("StateKey = %q, want the per-environment key", req.StateKey)
-	}
-	if req.FromModule == "" {
-		t.Error("FromModule is empty, want the module source")
+	if req.StateKey != "csoc/dev/terraform.tfstate" || req.Module != "csoc" {
+		t.Errorf("StateKey/Module = %q/%q, want them populated", req.StateKey, req.Module)
 	}
 	if req.AWSRegion != "us-east-1" || req.AWSProfile != "dev" {
 		t.Errorf("AWSRegion/AWSProfile = %q/%q, want them populated", req.AWSRegion, req.AWSProfile)
 	}
-	if req.AWSCredentials == nil || req.AWSCredentials.SessionToken != "t" {
-		t.Fatalf("AWSCredentials = %+v, want the session token carried through", req.AWSCredentials)
+	if req.AWSCredentials == nil || req.AWSCredentials.AccessKeyID != "AKIA" || req.AWSCredentials.SessionToken != "t" {
+		t.Fatalf("AWSCredentials = %+v, want every field carried through", req.AWSCredentials)
+	}
+}
+
+func TestClientCannotSupplyAModuleURL(t *testing.T) {
+	var req TerraformRequest
+	_ = json.Unmarshal([]byte(`{"from_module":"git::https://evil.example/tf"}`), &req)
+	if req.FromModule != "" {
+		t.Errorf("FromModule = %q, want it settable only by the server", req.FromModule)
 	}
 }

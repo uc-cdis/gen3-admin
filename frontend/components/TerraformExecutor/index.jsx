@@ -454,6 +454,21 @@ function buildTfvars(config) {
 // Main TerraformExecutor Component
 // ============================================================================
 
+// Where the runner saves the plan written by `plan`, inside its work dir.
+const SAVED_PLAN_PATH = '/workspace/tf/tfplan';
+
+// The wizard holds credentials in camelCase; the API decodes snake_case. The
+// mismatch used to make every field decode empty, so manual credentials were
+// silently replaced by the server's own.
+function toApiCredentials(credentials) {
+  if (!credentials?.accessKeyId) return undefined;
+  return {
+    access_key_id: credentials.accessKeyId,
+    secret_access_key: credentials.secretAccessKey,
+    session_token: credentials.sessionToken || undefined,
+  };
+}
+
 export default function TerraformExecutor({
   // Mode configuration
   mode = 'guided',              // 'guided' | 'embedded'
@@ -474,9 +489,9 @@ export default function TerraformExecutor({
   config = null,                // Config object to build tfvars from
   workDir = '/tmp/gen3-terraform',
   dockerImage = 'gen3-terraform:latest',
-  // Module to copy into the work dir on init. Sent as its own field rather
-  // than folded into the operation string, which the API parses as a bare verb.
-  fromModule = null,
+  // Name of the module to copy into a fresh work dir on init. The API maps
+  // the name to a source, so the browser never chooses what Terraform runs.
+  moduleName = null,
 
   // State configuration
   stateBucket = '',
@@ -495,6 +510,9 @@ export default function TerraformExecutor({
   const [activeStep, setActiveStep] = useState(0);
   const [runtime, setRuntime] = useState('docker');
   const [imageCheck, setImageCheck] = useState(null);
+  // True once a plan has succeeded and not yet been applied; apply then runs
+  // that saved plan instead of planning again.
+  const [reviewedPlan, setReviewedPlan] = useState(false);
   const [localWorkDir, setLocalWorkDir] = useState(workDir);
 
   // AWS Credentials State (for guided mode)
@@ -696,15 +714,15 @@ export default function TerraformExecutor({
           state_bucket: finalStateBucket,
           state_region: finalStateRegion,
           state_key: stateKey,
-          // Only init copies a module in; sending it on every operation would
-          // be ignored at best and rejected at worst.
-          from_module: operation === 'init' ? fromModule : undefined,
+          module: operation === 'init' ? moduleName : undefined,
+          // Apply the plan the operator just reviewed rather than re-planning.
+          plan_file: operation === 'apply' && reviewedPlan ? SAVED_PLAN_PATH : undefined,
           tfvars: finalTfvars,
           tfvars_file_name: 'terraform.tfvars',
           // Pass AWS context for credential handling
           aws_region: awsContext.region,
           aws_profile: awsContext.profile,
-          aws_credentials: awsContext.credentials,
+          aws_credentials: toApiCredentials(awsContext.credentials),
         }),
       });
 
@@ -712,9 +730,9 @@ export default function TerraformExecutor({
 
       if (response.ok) {
         setExecution({ id: data.id, operation });
-        streamLogs(data.id);
+        streamLogs(data.id, operation);
       } else {
-        const errorMsg = `Error: ${data.error}.\n\nDetails: \n${data.stderr}`;
+        const errorMsg = `Error: ${data.error}`;
         setExecutionLogs([errorMsg]);
         setIsExecuting(false);
         onError(new Error(data.error));
@@ -726,18 +744,37 @@ export default function TerraformExecutor({
     }
   };
 
-  const streamLogs = async (executionId) => {
+  const streamLogs = async (executionId, operation) => {
+    const finish = (ok, message) => {
+      setIsExecuting(false);
+      setExecutionLogs(prev => [...prev, message]);
+      if (operation === 'plan') setReviewedPlan(ok);
+      // A saved plan is spent once applied, whether or not the apply worked.
+      if (operation === 'apply') setReviewedPlan(false);
+      if (ok) {
+        onComplete({ executionId, operation });
+      } else {
+        onError(new Error(message));
+      }
+    };
+
     try {
       const isDevelopment =
         process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === "true" || process.env.NODE_ENV !== "production";
       const baseUrl = isDevelopment ? "http://localhost:8002/api" : "/api";
 
-
       const response = await fetch(`${baseUrl}/terraform/executions/${executionId}/stream`);
+      if (!response.ok || !response.body) {
+        // Without this a 401/404 body was read as an empty stream and the run
+        // showed as "running" forever.
+        finish(false, `\n✗ Could not stream logs (HTTP ${response.status})`);
+        return;
+      }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let currentEvent = '';
+      let finished = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -748,36 +785,47 @@ export default function TerraformExecutor({
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.trim()) continue;
-
           if (line.startsWith('event:')) {
             currentEvent = line.substring(6).trim();
-          } else if (line.startsWith('data:')) {
-            const data = line.substring(5).trim();
+            continue;
+          }
+          if (!line.startsWith('data:')) continue;
+          // Not trimmed: plan output relies on its indentation.
+          const data = line.substring(5);
 
-            if (currentEvent === 'done') {
-              setIsExecuting(false);
-              setExecutionLogs(prev => [...prev, '\n✓ Execution completed successfully']);
-              onComplete({ executionId, logs: executionLogs });
-            } else if (currentEvent === 'error') {
-              setIsExecuting(false);
-              setExecutionLogs(prev => [...prev, `\n✗ Error: ${data}`]);
-              onError(new Error(data));
-            } else if (currentEvent === 'message' && data) {
-              setExecutionLogs(prev => {
-                const newLogs = [...prev, data];
-                onProgress(newLogs);
-                return newLogs;
-              });
-            }
+          if (currentEvent === 'done') {
+            // The server reports the real exit code; "done" alone no longer
+            // means success.
+            let exitCode = 1;
+            try { exitCode = JSON.parse(data).exit_code; } catch { /* treat as failure */ }
+            finished = true;
+            finish(
+              exitCode === 0,
+              exitCode === 0
+                ? '\n✓ Execution completed successfully'
+                : `\n✗ Execution failed (exit code ${exitCode})`,
+            );
+          } else if (currentEvent === 'failed') {
+            finished = true;
+            finish(false, `\n✗ Error: ${data}`);
+          } else if (currentEvent === 'message') {
+            // Terraform writes warnings and progress to stderr; those arrive
+            // here as ordinary lines rather than ending the run.
+            setExecutionLogs(prev => {
+              const newLogs = [...prev, data];
+              onProgress(newLogs);
+              return newLogs;
+            });
           }
         }
       }
+
+      if (!finished) {
+        finish(false, '\n✗ Log stream ended before the run reported an exit status');
+      }
     } catch (error) {
       console.error('Stream error:', error);
-      setExecutionLogs(prev => [...prev, `\nStream error: ${error.message}`]);
-      setIsExecuting(false);
-      onError(error);
+      finish(false, `\nStream error: ${error.message}`);
     }
   };
 
