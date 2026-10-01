@@ -175,16 +175,23 @@ export function OnboardingStepper({ accessToken, onComplete }) {
           setAlloyReady(true);
         }
 
-        let targetStep = 0;
-        if (status.alloy?.ready || (!status.alloy && status.apps?.ready)) {
-          targetStep = 7;
-        } else if (status.apps?.ready) {
-          targetStep = 5;
-        } else if (status.argocd?.ready) {
-          targetStep = 4;
-        } else if (status.agent?.ready) {
-          targetStep = 3;
-        }
+        // Resume at the first step that is not done, in order. This used to
+        // jump to Done whenever Alloy looked healthy, without checking the
+        // agent at all -- and ArgoCD, monitoring and Alloy are read from the
+        // API's own kubeconfig, not through an agent, so a cluster that already
+        // ran them landed on "Agent aws is connected" with no agent anywhere
+        // ("aws" being only the provider-detected default name). minStep then
+        // blocked Back, so the agent could not be installed at all.
+        //
+        // Steps found already done further along still show as done (their
+        // state is set above) and pass straight through when reached.
+        const alloyDone = status.alloy?.ready || (!status.alloy && status.apps?.ready);
+        let targetStep;
+        if (!status.agent?.ready) targetStep = 0;
+        else if (!status.argocd?.ready) targetStep = 3;
+        else if (!status.apps?.ready) targetStep = 4;
+        else if (!alloyDone) targetStep = 5;
+        else targetStep = 7;
         setActive(targetStep);
         setMinStep(targetStep);
       })
