@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -51,9 +52,46 @@ type AgentConnection struct {
 	sqlResponses map[string]chan *pb.SqlQueryResponse
 }
 
+// errAgentNotConnected is returned for an agent that is known -- from a cert
+// on disk, or minted through POST /api/agents -- but has no live gRPC stream.
+var errAgentNotConnected = errors.New("agent is registered but not connected")
+
+// newAgentConnection returns a connection with every map initialised.
+//
+// Entries used to be built as bare struct literals in four places, and the two
+// for agents that had not connected yet left the maps nil. Any request routed
+// to such an agent -- the k8s proxy, helm, SQL, terminals, tunnels -- then
+// panicked writing into a nil map. That became routine once scripts/dev.sh
+// stopped starting an agent by default: the API loads one from api/certs at
+// boot, and it never connects.
+func newAgentConnection(stream pb.TunnelService_ConnectServer, agent Agent) *AgentConnection {
+	return &AgentConnection{
+		stream:          stream,
+		requestChannels: make(map[string]chan *pb.ProxyResponse),
+		cancelFuncs:     make(map[string]context.CancelFunc),
+		contexts:        make(map[string]context.Context),
+		terminalStreams: make(map[string]*websocket.Conn),
+		tunnelConns:     make(map[string]net.Conn),
+		tunnelOpened:    make(map[string]chan *pb.TunnelOpened),
+		sqlResponses:    make(map[string]chan *pb.SqlQueryResponse),
+		agent:           agent,
+	}
+}
+
+// connected reports whether the agent has a live stream to send on.
+func (a *AgentConnection) connected() bool {
+	a.sendMutex.Lock()
+	defer a.sendMutex.Unlock()
+	return a.stream != nil
+}
+
 func (a *AgentConnection) sendMessage(msg *pb.ServerMessage) error {
 	a.sendMutex.Lock()
 	defer a.sendMutex.Unlock()
+	// Calling Send on a nil stream panicked; callers already handle an error.
+	if a.stream == nil {
+		return errAgentNotConnected
+	}
 	return a.stream.Send(msg)
 }
 
@@ -281,26 +319,21 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 		}
 	}
 
-	agent := &AgentConnection{
-		stream:          stream,
-		requestChannels: preservedChannels,
-		contexts:        preservedContexts,
-		cancelFuncs:     preservedCancelFuncs,
-		terminalStreams: make(map[string]*websocket.Conn),
-		tunnelConns:     make(map[string]net.Conn),
-		tunnelOpened:    make(map[string]chan *pb.TunnelOpened),
-		sqlResponses:    make(map[string]chan *pb.SqlQueryResponse),
-		agent: Agent{
-			Id:              cert.Subject.SerialNumber,
-			Name:            agentName,
-			Connected:       true,
-			LastSeen:        time.Now(),
-			RoleARN:         roleArn,
-			AssumeMethod:    assumeMethod,
-			AccessKey:       accessKey,
-			SecretAccessKey: secretAccessKey,
-		},
-	}
+	agent := newAgentConnection(stream, Agent{
+		Id:              cert.Subject.SerialNumber,
+		Name:            agentName,
+		Connected:       true,
+		LastSeen:        time.Now(),
+		RoleARN:         roleArn,
+		AssumeMethod:    assumeMethod,
+		AccessKey:       accessKey,
+		SecretAccessKey: secretAccessKey,
+	})
+	// Requests that were waiting while the agent was disconnected are kept,
+	// so they can still be answered on this stream.
+	agent.requestChannels = preservedChannels
+	agent.contexts = preservedContexts
+	agent.cancelFuncs = preservedCancelFuncs
 
 	AgentConnections[agentName] = agent
 	agentsMutex.Unlock()
@@ -320,14 +353,20 @@ func (s *AgentServer) Connect(stream pb.TunnelService_ConnectServer) error {
 			// Preserve the request channels so pending requests can still receive responses
 			// when the agent reconnects
 			agentsMutex.Lock()
-			AgentConnections[agentName] = &AgentConnection{
-				requestChannels: agent.requestChannels,
-				cancelFuncs:     agent.cancelFuncs,
-				contexts:        agent.contexts,
-				agent: Agent{
-					Connected: false,
-				},
-			}
+			// Keep pending requests so they can be answered after a
+			// reconnect. The placeholder used to carry nil maps for terminals,
+			// tunnels and SQL, and an empty name; both are fixed here.
+			placeholder := newAgentConnection(nil, Agent{
+				Id:          agent.agent.Id,
+				Name:        agentName,
+				Certificate: agent.agent.Certificate,
+				RoleARN:     agent.agent.RoleARN,
+				Connected:   false,
+			})
+			placeholder.requestChannels = agent.requestChannels
+			placeholder.cancelFuncs = agent.cancelFuncs
+			placeholder.contexts = agent.contexts
+			AgentConnections[agentName] = placeholder
 			agentsMutex.Unlock()
 
 			// Don't cancel pending requests - they'll be fulfilled when agent reconnects

@@ -120,16 +120,13 @@ func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMetho
 
 	log.Debug().Msgf("Certificate and key for agent %s dumped to file", agentName)
 
-	AgentConnections[agentName] = &AgentConnection{
-		stream: nil,
-		agent: Agent{
-			Name:        agentName,
-			Id:          id,
-			Certificate: string(agentCertPEM),
-			Connected:   false,
-			RoleARN:     roleArn,
-		},
-	}
+	AgentConnections[agentName] = newAgentConnection(nil, Agent{
+		Name:        agentName,
+		Id:          id,
+		Certificate: string(agentCertPEM),
+		Connected:   false,
+		RoleARN:     roleArn,
+	})
 
 	config := fmt.Sprintf(`
 ---
@@ -576,15 +573,12 @@ func InitializeAgentsFromCerts() error {
 		agentName := strings.TrimSuffix(file.Name(), ".crt")
 		agentCert := string(certFile)
 
-		AgentConnections[agentName] = &AgentConnection{
-			stream: nil,
-			agent: Agent{
-				Id:          cert.Subject.SerialNumber,
-				Name:        agentName,
-				Certificate: agentCert,
-				Connected:   false,
-			},
-		}
+		AgentConnections[agentName] = newAgentConnection(nil, Agent{
+			Id:          cert.Subject.SerialNumber,
+			Name:        agentName,
+			Certificate: agentCert,
+			Connected:   false,
+		})
 	}
 	return nil
 }

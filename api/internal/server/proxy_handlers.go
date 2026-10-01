@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -27,6 +28,12 @@ func HandleK8sProxyRequest(c *gin.Context) {
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
 		log.Warn().Msgf("Agent not found: %s", agentID)
+		return
+	}
+	// A known agent with no live stream cannot answer; say so instead of
+	// queueing a request that would wait for its full timeout.
+	if !agent.connected() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": fmt.Sprintf("agent %s is registered but not connected", agentID)})
 		return
 	}
 
@@ -228,6 +235,12 @@ func HandleAgentHTTPProxyRequest(c *gin.Context) {
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
 		log.Warn().Msgf("Agent not found: %s", agentID)
+		return
+	}
+	// A known agent with no live stream cannot answer; say so instead of
+	// queueing a request that would wait for its full timeout.
+	if !agent.connected() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": fmt.Sprintf("agent %s is registered but not connected", agentID)})
 		return
 	}
 
