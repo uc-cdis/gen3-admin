@@ -7,7 +7,10 @@ import { useGlobalState } from '@/contexts/global';
 import { useEnvironments } from '@/hooks/useEnvironments';
 import { useGoApi } from '@/hooks/useK8s';
 import { parseEnvKey } from '@/lib/envKey';
-import { LoadingState } from '@/components/ui';
+import { Button, Group } from '@mantine/core';
+import { IconRocket, IconServer2 } from '@tabler/icons-react';
+import Link from 'next/link';
+import { EmptyState, LoadingState } from '@/components/ui';
 import { useFocusedLayout } from '@/contexts/focusedLayout';
 
 import { Welcome } from '@/components/Welcome/Welcome';
@@ -93,6 +96,31 @@ export default function HomePage() {
     // flashing setup at someone who does not need it.
     if (agents.isLoading) {
       return <LoadingState label="Checking for connected clusters" />;
+    }
+
+    // The agent list was fetched for exactly this check but never read, so a
+    // fully onboarded cluster with no Gen3 release yet was sent back into the
+    // setup wizard on every visit.
+    const connected = (Array.isArray(agents.data) ? agents.data : []).filter((a) => a.connected);
+    if (connected.length > 0) {
+      const names = connected.map((a) => a.name).join(', ');
+      return (
+        <EmptyState
+          icon={<IconServer2 size={36} opacity={0.6} />}
+          title="Your cluster is ready"
+          description={`${names} ${connected.length === 1 ? 'is' : 'are'} connected, with no Gen3 environment deployed yet.`}
+          action={
+            <Group mt="md">
+              <Button component={Link} href="/helm/gen3/deploy" leftSection={<IconRocket size={16} />}>
+                Deploy Gen3
+              </Button>
+              <Button component={Link} href={`/clusters/${encodeURIComponent(connected[0].name)}`} variant="default">
+                Open {connected[0].name}
+              </Button>
+            </Group>
+          }
+        />
+      );
     }
 
     return <Welcome />;

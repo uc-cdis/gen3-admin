@@ -1,3 +1,4 @@
+import { useRouter } from "next/router";
 import { useSession } from "next-auth/react"
 
 import { useGlobalState } from '@/contexts/global';
@@ -12,6 +13,7 @@ export function Welcome() {
   const { setActiveCluster } = useGlobalState();
   const { environments, refresh } = useEnvironments();
   const selectEnvironment = useSelectEnvironment(environments);
+  const router = useRouter();
 
   return (
     <OnboardingStepper
@@ -19,16 +21,21 @@ export function Welcome() {
       onComplete={async (agentName) => {
         setActiveCluster(agentName);
 
-        // Finishing setup used to set only `activeCluster`, while the landing
-        // page branches on `activeGlobalEnv` -- so "Go to Dashboard" left the
-        // user looking at the wizard they had just completed. Re-read the
-        // environment list (the release was created during the wizard, so the
-        // cached list predates it) and select the one on this agent.
+        // If the cluster already runs a Gen3 environment, open it. Re-read the
+        // list first: the cached one predates anything installed meanwhile.
         const fresh = (await refresh())?.environments ?? [];
         const match = fresh.find((env) => env.value.startsWith(`${agentName}/`));
-        // Pass the item: it was created during the wizard, so it is not in the
-        // list the hook captured on mount.
-        if (match) selectEnvironment(match.value, { item: match });
+        if (match) {
+          // Pass the item: it may not be in the list the hook captured on mount.
+          selectEnvironment(match.value, { item: match });
+          return;
+        }
+
+        // The wizard installs the agent, ArgoCD and monitoring -- not Gen3 --
+        // so usually there is no environment yet. "Go to Dashboard" used to
+        // stop here and leave the user on the wizard they had just finished.
+        // The cluster itself is the useful place to land.
+        router.push(`/clusters/${encodeURIComponent(agentName)}`);
       }}
     />
   );
