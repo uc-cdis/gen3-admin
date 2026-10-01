@@ -2,27 +2,14 @@ import '@mantine/core/styles.css';
 // import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import Link from 'next/link';
-import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text } from '@mantine/core';
+import { AppShell, Select, Box, Switch, Burger, Group, MantineProvider, Container, Center, Text, Alert, Button, Stack } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { datadogRum } from '@datadog/browser-rum';
-import { nextjsPlugin } from '@datadog/browser-rum-nextjs';
-
-datadogRum.init({
-  applicationId: 'aec8849d-4032-46ad-8492-a0a91148df3a',
-  clientToken: 'pub1ae338dfcf906e3b187c40ea3391986c',
-  site: 'ddog-gov.com',
-  service: 'csoc',
-  env: process.env.NEXT_PUBLIC_ENV ?? 'production',
-  version: '1.0.0',
-  sessionSampleRate: 100,
-  sessionReplaySampleRate: 20,
-  trackResources: true,
-  trackUserInteractions: true,
-  trackLongTasks: true,
-  plugins: [nextjsPlugin()],
-});
-
-export { onRouterTransitionStart } from '@datadog/browser-rum-nextjs';
+// RUM is initialised in instrumentation-client.js. Here the app only reports
+// Pages Router navigations as views and React render errors. The
+// onRouterTransitionStart export that used to sit here is for the App Router
+// and did nothing in a Pages Router app.
+import { DatadogPagesRouter, ErrorBoundary } from '@datadog/browser-rum-nextjs';
+import { datadogEnabled } from '@/lib/datadog';
 
 import SpotLight from '@/components/Spotlight/Spotlight';
 
@@ -109,6 +96,19 @@ function BootstrapAuthGate({ children }) {
 }
 
 
+// Shown in place of a page that throws while rendering. The ErrorBoundary also
+// reports the error to Datadog RUM.
+function PageErrorFallback({ error, resetError }) {
+  return (
+    <Alert color="statusError" title="This page failed to render" mt="md">
+      <Stack gap="sm" align="flex-start">
+        <Text size="sm">{error?.message || 'An unexpected error occurred.'}</Text>
+        <Button size="xs" variant="light" onClick={resetError}>Try again</Button>
+      </Stack>
+    </Alert>
+  );
+}
+
 function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
@@ -185,7 +185,9 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
           {/* <Alert mt="md" color="red" withCloseButton={false}>
             <b>You are currently connected to {url?.hostname}</b>
           </Alert> */}
-          <Component {...pageProps} />
+          <ErrorBoundary fallback={PageErrorFallback}>
+            <Component {...pageProps} />
+          </ErrorBoundary>
 
         </Container>
 
@@ -244,6 +246,7 @@ export default function App({
                 <link rel="shortcut icon" href="/favicon.svg" />
               </Head>
               <SpotLight />
+              {datadogEnabled && <DatadogPagesRouter />}
 
               <AppContent Component={Component} pageProps={pageProps} />
               {/* <Component {...pageProps} /> */}
