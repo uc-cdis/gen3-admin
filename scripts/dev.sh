@@ -40,7 +40,7 @@ LOG_DIR="$REPO_ROOT/.dev-logs"
 # ── Configuration ────────────────────────────────────────────────────────────
 AGENT_NAME="${AGENT_NAME:-local}"
 API_PORT="${API_PORT:-8002}"
-GRPC_PORT="${GRPC_PORT:-50051}"
+GRPC_PORT="${GRPC_PORT:-9090}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 USE_KEYCLOAK=false
@@ -67,7 +67,7 @@ Options:
   --agent-name <name>   Agent name and cert basename (default: local)
   --context <name>      kubectl context to serve (default: current context)
   --api-port <port>     API HTTP port (default: 8002)
-  --grpc-port <port>    Agent gRPC port (default: 50051)
+  --grpc-port <port>    Agent gRPC port (default: 9090)
   --frontend-port <p>   Frontend port (default: 3000, auto-bumps if taken)
   --keycloak            Use real Keycloak auth instead of MOCK_AUTH
   --skip-frontend       Do not start the frontend
@@ -247,6 +247,21 @@ check_ports() {
             log_error "$name port $port is already in use:"
             lsof -iTCP:"$port" -sTCP:LISTEN -P 2>/dev/null | tail -n +2 | sed 's/^/    /'
             log_info "Stop it, or pass --api-port / --grpc-port."
+            exit 1
+        fi
+        # No listener, but the port can still be held as the local end of
+        # someone else's outbound connection. macOS hands out ephemeral source
+        # ports from 49152-65535, so a port in that range gets claimed at
+        # random; bind() fails while -sTCP:LISTEN shows nothing at all.
+        if netstat -an -p tcp 2>/dev/null | grep -qE "\.$port[[:space:]]+.*ESTABLISHED"; then
+            log_error "$name port $port is tied up by an existing connection:"
+            netstat -an -p tcp 2>/dev/null | grep -E "\.$port[[:space:]]" | sed 's/^/    /'
+            if [[ "$port" -ge 49152 ]]; then
+                log_warning "Port $port is in the macOS ephemeral range (49152-65535),"
+                log_warning "so it gets handed out to outbound connections at random."
+                log_info "Pick a port below 49152 to stop this recurring."
+            fi
+            log_info "Retry in a moment, or pass --api-port / --grpc-port."
             exit 1
         fi
     done
