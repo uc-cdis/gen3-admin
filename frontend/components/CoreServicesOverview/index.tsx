@@ -53,6 +53,7 @@ import {
 } from "@/lib/rolloutState";
 import { resolveStatus } from "@/lib/status";
 import ScaleControl from "@/components/ScaleControl";
+import RestartControl from "@/components/RestartControl";
 import LogWindow from "@/components/Logs/LogWindowAgent";
 import dynamic from 'next/dynamic'
 
@@ -113,6 +114,11 @@ type Pod = {
   name: string;
   phase: string;
   containers: ContainerStatus[];
+  /**
+   * When kubelet admitted the pod. Absent while a pod is still Pending, so
+   * the row falls back to showing nothing rather than "Unknown".
+   */
+  startTime?: string;
 };
 
 type PodEvent = {
@@ -235,13 +241,23 @@ function WorkloadDetail({
               </Text>
             </Stack>
 
-            <ScaleControl
-              kind={service.kind}
-              namespace={namespace}
-              name={service.name}
-              cluster={cluster}
-              current={service.desired}
-            />
+            <Stack gap="xs" align="flex-end" style={{ flexShrink: 0 }}>
+              <ScaleControl
+                kind={service.kind}
+                namespace={namespace}
+                name={service.name}
+                cluster={cluster}
+                current={service.desired}
+              />
+
+              <RestartControl
+                kind={service.kind}
+                namespace={namespace}
+                name={service.name}
+                cluster={cluster}
+                desired={service.desired}
+              />
+            </Stack>
           </Group>
 
           {service.podMessage && rollout.phase === "failing" && (
@@ -396,6 +412,20 @@ function PodRow({
           <Text size="xs" c="dimmed">
             {ready}/{main.length}
           </Text>
+          {/* Age of this pod, which is not the deployment's age shown above:
+              a rolling restart leaves the workload old and its pods minutes
+              young, and that gap is the evidence the restart happened. */}
+          {pod.startTime && (
+            <Tooltip
+              label={`Started ${new Date(pod.startTime).toLocaleString()}`}
+              openDelay={400}
+              withArrow
+            >
+              <Text size="xs" c="dimmed" style={{ cursor: "help" }}>
+                {formatAge(pod.startTime)}
+              </Text>
+            </Tooltip>
+          )}
           {restarts > 0 && (
             <Text size="xs" c={restarts > 5 ? "statusError" : "statusWarn"} fw={600}>
               {restarts}↺
@@ -1067,6 +1097,10 @@ export default function CoreServicesOverview({
             name: p.metadata.name,
             phase: p.status.phase,
             containers: [...initStatuses, ...mainStatuses],
+            // Pod age reads from startTime, not the pod's creationTimestamp:
+            // after a restart the replacement pod is what is running, and
+            // its start is the number that tells you the restart landed.
+            startTime: p.status?.startTime || p.metadata?.creationTimestamp,
           };
         }) ?? [];
 
@@ -1294,6 +1328,15 @@ export default function CoreServicesOverview({
                       name={svc.name}
                       cluster={env}
                       current={svc.desired}
+                    />
+
+                    <RestartControl
+                      compact
+                      kind={svc.kind}
+                      namespace={namespace}
+                      name={svc.name}
+                      cluster={env}
+                      desired={svc.desired}
                     />
                   </Group>
 
