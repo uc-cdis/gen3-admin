@@ -80,14 +80,17 @@ func startRecording(ctx context.Context, req *TerraformRequest, executionID stri
 	if err := store.PutRun(ctx, r.env, r.run); err != nil {
 		log.Warn().Err(err).Str("environment", r.env).Msg("failed to record run start")
 	}
-	r.updateEnvironment(ctx, environments.StatusDuring(r.run.Operation), nil)
+	// The status stays what it was: a run in progress shows in last_run.
+	r.updateEnvironment(ctx, false, nil)
 	return r
 }
 
-func (r *runRecorder) updateEnvironment(ctx context.Context, status environments.Status, outputs map[string]json.RawMessage, more ...func(*environments.Environment)) {
+// updateEnvironment records the run as the environment's last, and when it
+// has ended, the status it settles.
+func (r *runRecorder) updateEnvironment(ctx context.Context, ended bool, outputs map[string]json.RawMessage, more ...func(*environments.Environment)) {
 	_, err := r.store.Update(ctx, r.env, func(e *environments.Environment) {
-		if status != "" {
-			e.Status = status
+		if ended {
+			e.Status = environments.StatusAfter(r.run.Operation, r.run.Status, e.Status)
 		}
 		e.LastRun = r.run
 		if outputs != nil {
@@ -116,9 +119,12 @@ func (r *runRecorder) finish(exitCode int, logText []byte) {
 	r.run.EndedAt = &now
 	r.run.ExitCode = &exitCode
 	ok := exitCode == 0
-	if ok {
+	switch {
+	case ok:
 		r.run.Status = environments.RunSucceeded
-	} else {
+	case wasStopped(r.run.ID):
+		r.run.Status = environments.RunStopped
+	default:
 		r.run.Status = environments.RunFailed
 	}
 	if r.run.Operation == string(OpPlan) && ok {
@@ -148,12 +154,12 @@ func (r *runRecorder) finish(exitCode int, logText []byte) {
 		outputs = r.takeOutputs()
 	}
 	var more []func(*environments.Environment)
-	if r.run.Operation == string(OpInstallCSOC) && ok {
+	if (r.run.Operation == string(OpInstallCSOC) || r.run.Operation == string(OpFinishCSOC)) && ok {
 		more = append(more, r.installResult())
 	}
 	// One write, so whoever sees the new status also sees the egress IP: the
 	// wizard opens the configuration PR as soon as the status moves.
-	r.updateEnvironment(ctx, environments.StatusAfter(r.run.Operation, ok), outputs, more...)
+	r.updateEnvironment(ctx, true, outputs, more...)
 }
 
 // installResult keeps the egress IP install-csoc found, which the CSOC's
@@ -161,13 +167,18 @@ func (r *runRecorder) finish(exitCode int, logText []byte) {
 func (r *runRecorder) installResult() func(*environments.Environment) {
 	res := takeInstallResult(r.varsDir)
 	return func(e *environments.Environment) {
-		if res == nil || res.EgressIP == "" {
+		if res == nil || (res.EgressIP == "" && res.LoadBalancer == "") {
 			return
 		}
 		if e.Install == nil {
 			e.Install = &environments.Install{}
 		}
-		e.Install.EgressIP = res.EgressIP
+		if res.EgressIP != "" {
+			e.Install.EgressIP = res.EgressIP
+		}
+		if res.LoadBalancer != "" {
+			e.Install.LoadBalancer = res.LoadBalancer
+		}
 	}
 }
 
@@ -238,6 +249,10 @@ func (r *runRecorder) takeOutputs() map[string]json.RawMessage {
 // the Docker socket proxy closes the connection after 10 minutes, so it is
 // asked again until the container has really stopped.
 func awaitDockerRun(name string, rec *runRecorder, secretFiles ...string) {
+	if rec != nil {
+		awaiting.Store(rec.run.ID, true)
+		defer awaiting.Delete(rec.run.ID)
+	}
 	for {
 		err := exec.Command("docker", "wait", name).Run()
 		running, ierr := executionRunning(&TerraformExecution{Runtime: RuntimeDocker, ContainerName: name})

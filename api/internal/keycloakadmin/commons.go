@@ -222,3 +222,38 @@ func ensureCommonsClient(ctx context.Context, admin *Admin, host, namespace stri
 		Name:         "CSOC login",
 	}, nil
 }
+
+// User is a realm user, as the admin API lists it.
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// FindUser returns the realm user with exactly this username.
+func (a *Admin) FindUser(ctx context.Context, username string) (*User, error) {
+	token, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	if err := a.call(ctx, token, http.MethodGet, "/users?exact=true&username="+url.QueryEscape(username), nil, &users); err != nil {
+		return nil, err
+	}
+	for i := range users {
+		if strings.EqualFold(users[i].Username, username) {
+			return &users[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no user %q in realm %s", username, a.Realm)
+}
+
+// ResetPassword sets a user's password, not to be changed at next sign-in.
+func (a *Admin) ResetPassword(ctx context.Context, userID, password string) error {
+	token, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"type": "password", "value": password, "temporary": false}
+	return a.call(ctx, token, http.MethodPut, "/users/"+url.PathEscape(userID)+"/reset-password", body, nil)
+}

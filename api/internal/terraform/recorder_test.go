@@ -63,8 +63,24 @@ func TestRecorderMarksFailure(t *testing.T) {
 	rec, store := newTestRecorder(t, OpApply)
 	rec.finish(1, []byte("Error: boom"))
 	e, _ := store.Get(context.Background(), "dev")
-	if e.Status != environments.StatusFailed || e.LastRun.Status != environments.RunFailed || *e.LastRun.ExitCode != 1 {
+	// A first apply that fails may have created some of the infrastructure.
+	if e.Status != environments.StatusPartial || e.LastRun.Status != environments.RunFailed || *e.LastRun.ExitCode != 1 {
 		t.Errorf("environment after failed apply = %+v", e)
+	}
+}
+
+func TestRecorderKeepsStatusWhenAStoppedRunEnds(t *testing.T) {
+	rec, store := newTestRecorder(t, OpFinishCSOC)
+	if _, err := store.Update(context.Background(), "dev", func(e *environments.Environment) {
+		e.Status = environments.StatusBootstrapped
+	}); err != nil {
+		t.Fatal(err)
+	}
+	markStopped(rec.run.ID)
+	rec.finish(143, nil)
+	e, _ := store.Get(context.Background(), "dev")
+	if e.Status != environments.StatusBootstrapped || e.LastRun.Status != environments.RunStopped {
+		t.Errorf("environment after a stopped finish = %s, last run %s", e.Status, e.LastRun.Status)
 	}
 }
 

@@ -166,11 +166,19 @@ func IdentityHandler(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, identityError(t.Profile, err))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	res := gin.H{
 		"Account": awssdk.ToString(out.Account),
 		"Arn":     awssdk.ToString(out.Arn),
 		"UserId":  awssdk.ToString(out.UserId),
-	})
+	}
+	// When the SSO sign-in behind these credentials ends: a long run must
+	// finish before it does.
+	if t.Credentials == nil {
+		if exp, ok := ssoSessionExpiry(t.Profile); ok {
+			res["session_expires_at"] = exp.UTC().Format(time.RFC3339)
+		}
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // HostedZoneHandler finds the public Route53 hosted zone that would serve a
@@ -276,7 +284,11 @@ func AvailabilityZonesHandler(c *gin.Context) {
 // identityError explains a failed identity check. An expired SSO session is
 // by far the most common cause and the fix is a command the operator runs
 // themselves, so it gets a code the UI can turn into that instruction.
-func identityError(profile string, err error) gin.H {
+func identityError(profile string, err error) gin.H { return ErrorBody(profile, err) }
+
+// ErrorBody is the JSON error for any call that failed on AWS credentials,
+// with code "sso_expired" and the login command when that is the cause.
+func ErrorBody(profile string, err error) gin.H {
 	h := gin.H{"error": awsErrorMessage(err)}
 	if isSSOExpired(err) {
 		h["code"] = "sso_expired"

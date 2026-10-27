@@ -116,7 +116,7 @@ func SummarizePlan(planJSON []byte) (*PlanDetail, error) {
 	if err := json.Unmarshal(planJSON, &plan); err != nil {
 		return nil, fmt.Errorf("plan JSON: %w", err)
 	}
-	d := &PlanDetail{Format: plan.TerraformVersion}
+	d := &PlanDetail{Format: plan.TerraformVersion, Groups: []PlanGroup{}}
 	for _, rc := range plan.ResourceChanges {
 		if rc.Mode != "managed" {
 			continue

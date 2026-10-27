@@ -3,6 +3,7 @@ package keycloakadmin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -51,6 +52,17 @@ func (f *fakeKeycloak) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&c)
 		f.clients[c.ID] = c
 		f.writes = append(f.writes, "update "+c.ClientID)
+		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/realms/csoc-realm/users":
+		if r.URL.Query().Get("username") == "admin" {
+			json.NewEncoder(w).Encode([]User{{ID: "u1", Username: "admin", Email: "admin@portal.example.org"}})
+			return
+		}
+		json.NewEncoder(w).Encode([]User{})
+	case r.Method == http.MethodPut && r.URL.Path == "/admin/realms/csoc-realm/users/u1/reset-password":
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.writes = append(f.writes, fmt.Sprintf("reset %v temporary=%v", body["value"], body["temporary"]))
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/client-secret"):
 		json.NewEncoder(w).Encode(map[string]string{"value": "s3cret"})
@@ -114,5 +126,22 @@ func TestFromEnvNeedsTheAdminLogin(t *testing.T) {
 	a, err := FromEnv()
 	if err != nil || a.BaseURL != "https://auth.example.org" {
 		t.Errorf("FromEnv = %+v, %v; the admin URL defaults to the public one", a, err)
+	}
+}
+
+func TestFindUserAndResetPassword(t *testing.T) {
+	admin, fake := newAdmin(t)
+	u, err := admin.FindUser(context.Background(), "admin")
+	if err != nil || u.Email != "admin@portal.example.org" {
+		t.Fatalf("user = %+v, %v", u, err)
+	}
+	if err := admin.ResetPassword(context.Background(), u.ID, "a-new-password-123"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.writes) != 1 || fake.writes[0] != "reset a-new-password-123 temporary=false" {
+		t.Errorf("writes = %v", fake.writes)
+	}
+	if _, err := admin.FindUser(context.Background(), "nobody"); err == nil {
+		t.Error("a missing user was found")
 	}
 }

@@ -200,6 +200,7 @@ func SetupHTTPServer() {
 	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
 	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
 	r.GET("/api/terraform/runner-image", terraform.HandleCheckRunnerImage())
+	environments.ReconcileRun = terraform.ReconcileRun
 	environments.RegisterRoutes(r)
 	gitops.RegisterRoutes(r)
 
@@ -210,8 +211,15 @@ func SetupHTTPServer() {
 	r.POST("/api/aws/identity", aws.IdentityHandler)
 	r.POST("/api/aws/route53/zone", aws.HostedZoneHandler)
 	r.POST("/api/aws/route53/setup", aws.HostedZoneSetupHandler)
+	r.POST("/api/aws/route53/teardown", aws.HostedZoneTeardownHandler)
 	r.POST("/api/aws/acm/certificate", aws.CertificateRequestHandler)
 	r.POST("/api/aws/acm/certificate/status", aws.CertificateStatusHandler)
+	r.POST("/api/aws/acm/request", aws.ACMRequestHandler)
+	r.POST("/api/aws/acm/describe", aws.ACMDescribeHandler)
+	r.POST("/api/aws/acm/ensure-validation", aws.ACMEnsureValidationHandler)
+	r.POST("/api/aws/acm/validation-records", aws.ACMRecordsHandler)
+	r.POST("/api/aws/acm/import", aws.ACMImportHandler)
+	r.POST("/api/aws/acm/list", aws.ACMListHandler)
 	r.POST("/api/keycloak/commons-client", keycloakadmin.CommonsClientHandler)
 	r.POST("/api/aws/azs", aws.AvailabilityZonesHandler)
 	r.GET("/api/aws/profiles", aws.ListAWSProfilesHandler)

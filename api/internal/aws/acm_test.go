@@ -37,15 +37,19 @@ func (f *fakeACM) DescribeCertificate(_ context.Context, in *acm.DescribeCertifi
 		if awssdk.ToString(c.CertificateArn) != arn {
 			continue
 		}
-		d := &acmtypes.CertificateDetail{CertificateArn: c.CertificateArn, DomainName: c.DomainName, Status: c.Status}
-		if f.describes[arn] > 1 {
-			d.DomainValidationOptions = []acmtypes.DomainValidation{{
-				DomainName: c.DomainName,
-				ResourceRecord: &acmtypes.ResourceRecord{
-					Name: awssdk.String("_abc." + awssdk.ToString(c.DomainName) + "."), Type: acmtypes.RecordTypeCname,
-					Value: awssdk.String("_xyz.acm-validations.aws."),
-				},
-			}}
+		d := &acmtypes.CertificateDetail{CertificateArn: c.CertificateArn, DomainName: c.DomainName, Status: c.Status, Type: c.Type}
+		names := append([]string{awssdk.ToString(c.DomainName)}, c.SubjectAlternativeNameSummaries...)
+		d.SubjectAlternativeNames = names
+		if f.describes[arn] > 1 && c.Type != acmtypes.CertificateTypeImported {
+			for _, n := range names {
+				d.DomainValidationOptions = append(d.DomainValidationOptions, acmtypes.DomainValidation{
+					DomainName: awssdk.String(n), ValidationStatus: acmtypes.DomainStatusPendingValidation,
+					ResourceRecord: &acmtypes.ResourceRecord{
+						Name: awssdk.String("_abc." + n + "."), Type: acmtypes.RecordTypeCname,
+						Value: awssdk.String("_xyz.acm-validations.aws."),
+					},
+				})
+			}
 		}
 		return &acm.DescribeCertificateOutput{Certificate: d}, nil
 	}
@@ -57,8 +61,18 @@ func (f *fakeACM) RequestCertificate(_ context.Context, in *acm.RequestCertifica
 	arn := "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-00000000000" + string(rune('0'+len(f.requested)))
 	f.certs = append(f.certs, acmtypes.CertificateSummary{
 		CertificateArn: awssdk.String(arn), DomainName: in.DomainName, Status: acmtypes.CertificateStatusPendingValidation,
+		SubjectAlternativeNameSummaries: in.SubjectAlternativeNames, Type: acmtypes.CertificateTypeAmazonIssued,
 	})
 	return &acm.RequestCertificateOutput{CertificateArn: awssdk.String(arn)}, nil
+}
+
+func (f *fakeACM) ImportCertificate(_ context.Context, in *acm.ImportCertificateInput, _ ...func(*acm.Options)) (*acm.ImportCertificateOutput, error) {
+	arn := "arn:aws:acm:us-east-1:123456789012:certificate/11111111-0000-0000-0000-000000000001"
+	f.certs = append(f.certs, acmtypes.CertificateSummary{
+		CertificateArn: awssdk.String(arn), DomainName: awssdk.String("imported.example.org"),
+		Status: acmtypes.CertificateStatusIssued, Type: acmtypes.CertificateTypeImported,
+	})
+	return &acm.ImportCertificateOutput{CertificateArn: awssdk.String(arn)}, nil
 }
 
 func newFakeACM(certs ...acmtypes.CertificateSummary) *fakeACM {

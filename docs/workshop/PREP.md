@@ -125,9 +125,68 @@ brings it onto master.
 - [ ] The squid lambda's VPC network interface takes AWS ~20 minutes to
       release after the lambda is deleted, holding the int_services subnet
       and eks_nodes_sg; the destroy waits. Expect a 25-30 minute destroy.
+- [x] Rebuilding the stack without `TERRAFORM_MODULES_DIR` dropped the local
+      gen3-terraform mount, and the next destroy failed with "Module not
+      installed". It is now in the (gitignored) `.env`, and a teardown runs
+      `init` before `destroy`.
 - [ ] A Karpenter node would not drain (graceful uninstall waits 15 min, the
       NodePool allows 48h): look at PDBs and terminationGracePeriod for a CSOC.
-- [ ] No wizard teardown for the zone, its delegation and the state bucket.
+- [x] The wizard tears down the zone, its delegation and the state bucket
+      (opt-in boxes on the Tear down panel; the bucket goes last, and only
+      when every environment in it is destroyed and it holds nothing else).
+
+## Wizard states (troubleshooting: "if you see X, do Y")
+
+The wizard reads one record per environment from the state bucket: a
+settled status (`new`, `planned`, `applied`, `bootstrapped`, `installed`,
+`partial`, `destroyed`) and the last run (`running`, `succeeded`, `failed`,
+`stopped`, `lost`). `frontend/lib/wizardState.ts` turns the two into the
+banner under the stepper. A failed or stopped run never forgets what was
+settled before it, so every failure can be retried from where it stopped.
+
+| Banner | Means | Main button | Also |
+|---|---|---|---|
+| Nothing created yet | saved, never planned | Plan | Edit configuration |
+| Plan ready | planned, nothing applied | Apply | Plan again |
+| *X* in progress | a run is going (any step) | Stop this run | |
+| The plan failed | nothing in AWS changed | Retry plan | Edit configuration |
+| The apply failed / Part of the infrastructure exists | `partial` | Plan again | Tear down |
+| Infrastructure up; the CSOC needs a certificate | `applied`, none chosen | (choose on the Certificate step: request, import, existing) | Tear down |
+| Certificate pending validation | chosen, ACM `PENDING_VALIDATION` | Create records in Route 53 (or Check again, DNS elsewhere) | Use a different certificate |
+| The certificate is failed / expired | ACM will not issue it | Use a different certificate | Tear down |
+| The certificate does not cover *host* | the hostnames were edited after it was chosen | Use a different certificate | Tear down |
+| Cluster up, CSOC not installed (certificate issued) | `applied` | Bootstrap CSOC (needs the form) | Tear down |
+| The bootstrap failed | still `applied` | Bootstrap again | Tear down |
+| Waiting for pull request #N | GitOps, PR open | Open the pull request | |
+| Bootstrapped; ready to finish | `bootstrapped` | Finish install | Bootstrap again |
+| The finish failed | still `bootstrapped` | Finish again | Bootstrap again |
+| CSOC is ready (admin username and email shown; **Reset admin password…** sets a new one through Keycloak's master admin, whose login is in Secrets Manager) | `installed` | Open the CSOC | Tear down |
+| The uninstall failed | CSOC still recorded | Retry teardown with Force | Destroy anyway |
+| The destroy failed | `partial` | Retry teardown | |
+| Torn down | `destroyed` | Provision again | zone and bucket boxes |
+| ... was stopped | someone pressed Stop | retry that step | |
+| ...'s result is unknown | the API restarted mid-run and the container is gone | retry that step | |
+
+Screen rules:
+- **Next action:** the banner holds it; the page below shows the situation.
+- **Stepper:** it ticks what exists, so after a teardown Provisioning and Install are open again.
+- **Run log:** open while a run goes or right after one failed (with its `Error:` lines pulled out above it), and folded otherwise.
+- **Teardown:** the panel shows the form before it starts and the live step list while it runs or where it stopped. Once it is done, it shows only **What is left**, checked against AWS on load: the zone, then the bucket, each with its own Delete.
+
+The certificate is not Terraform's: the wizard sets `create_certificate = false`, and the Certificate step gets it after the apply, the way the ACM console does. DNS is a choice on Setup: a Route 53 zone in this account (created and delegated by the wizard), or "I manage DNS myself" (the validation records, and after the finish the two CNAMEs to the load balancer, are shown to copy). A Route 53 zone that is missing or not delegated is fixed from the banner (**X3**), on whatever step you are on.
+
+Guards before anything runs:
+- **Applying destructively:** an apply whose plan destroys or replaces existing infrastructure asks for the environment name. So does **Destroy anyway** after a failed uninstall, which first warns what may be left behind.
+- **Short SSO sign-in:** an apply, a teardown (under 45 minutes left) or a bootstrap or finish (under 15 minutes left) first asks you to sign in again, and shows the `aws sso login` command.
+- **One run per environment:** the API refuses a second run while one is recorded as running, from any tab, person or machine.
+- **Failed plan while the CSOC is further along:** a failed plan or init there stays a note beside the real next step.
+
+`frontend/lib/wizardState.audit.test.ts` runs every combination of status, last run, certificate, blocker and pull request through these rules.
+
+Over any of these, a yellow **AWS session expired** box with the
+`aws sso login --profile …` command disables every button until **Check
+again** succeeds. A run that cannot start (that same expired session, a
+role that cannot be assumed) says so in a red box and changes nothing.
 
 ## Overriding Terraform variables from the wizard
 

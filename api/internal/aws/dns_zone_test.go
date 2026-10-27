@@ -18,6 +18,8 @@ type fakeRoute53 struct {
 	records map[string][]r53types.ResourceRecordSet // id -> records
 	created []string
 	changes []r53types.Change
+	tagged  map[string]bool // zone id -> ManagedBy=gen3-csoc
+	deleted []string
 }
 
 func newFake() *fakeRoute53 {
@@ -62,8 +64,31 @@ func (f *fakeRoute53) CreateHostedZone(_ context.Context, in *route53.CreateHost
 	}, nil
 }
 
-func (f *fakeRoute53) ChangeTagsForResource(context.Context, *route53.ChangeTagsForResourceInput, ...func(*route53.Options)) (*route53.ChangeTagsForResourceOutput, error) {
+func (f *fakeRoute53) ChangeTagsForResource(_ context.Context, in *route53.ChangeTagsForResourceInput, _ ...func(*route53.Options)) (*route53.ChangeTagsForResourceOutput, error) {
+	if f.tagged == nil {
+		f.tagged = map[string]bool{}
+	}
+	f.tagged[awssdk.ToString(in.ResourceId)] = true
 	return &route53.ChangeTagsForResourceOutput{}, nil
+}
+
+func (f *fakeRoute53) ListTagsForResource(_ context.Context, in *route53.ListTagsForResourceInput, _ ...func(*route53.Options)) (*route53.ListTagsForResourceOutput, error) {
+	set := &r53types.ResourceTagSet{}
+	if f.tagged[awssdk.ToString(in.ResourceId)] {
+		set.Tags = []r53types.Tag{{Key: awssdk.String("ManagedBy"), Value: awssdk.String("gen3-csoc")}}
+	}
+	return &route53.ListTagsForResourceOutput{ResourceTagSet: set}, nil
+}
+
+func (f *fakeRoute53) DeleteHostedZone(_ context.Context, in *route53.DeleteHostedZoneInput, _ ...func(*route53.Options)) (*route53.DeleteHostedZoneOutput, error) {
+	id := strings.TrimPrefix(awssdk.ToString(in.Id), "/hostedzone/")
+	for name, zid := range f.zones {
+		if zid == id {
+			delete(f.zones, name)
+		}
+	}
+	f.deleted = append(f.deleted, id)
+	return &route53.DeleteHostedZoneOutput{}, nil
 }
 
 // reversed sorts names the way Route53 lists them: by reversed labels.
@@ -92,8 +117,19 @@ func (f *fakeRoute53) ListResourceRecordSets(_ context.Context, in *route53.List
 
 func (f *fakeRoute53) ChangeResourceRecordSets(_ context.Context, in *route53.ChangeResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error) {
 	f.changes = append(f.changes, in.ChangeBatch.Changes...)
+	id := awssdk.ToString(in.HostedZoneId)
 	for _, ch := range in.ChangeBatch.Changes {
-		f.records[awssdk.ToString(in.HostedZoneId)] = append(f.records[awssdk.ToString(in.HostedZoneId)], *ch.ResourceRecordSet)
+		if ch.Action == r53types.ChangeActionDelete {
+			kept := f.records[id][:0]
+			for _, rr := range f.records[id] {
+				if awssdk.ToString(rr.Name) != awssdk.ToString(ch.ResourceRecordSet.Name) || rr.Type != ch.ResourceRecordSet.Type {
+					kept = append(kept, rr)
+				}
+			}
+			f.records[id] = kept
+			continue
+		}
+		f.records[id] = append(f.records[id], *ch.ResourceRecordSet)
 	}
 	return &route53.ChangeResourceRecordSetsOutput{}, nil
 }

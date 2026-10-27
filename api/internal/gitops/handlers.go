@@ -390,4 +390,6 @@ func RegisterRoutes(r gin.IRouter) {
 	r.POST("/api/gitops/connect", HandleConnect)
 	r.POST("/api/gitops/status", HandleStatus)
 	r.POST("/api/gitops/propose-csoc", HandleProposeCSOC)
+	r.POST("/api/gitops/csoc-admin", HandleCSOCAdmin)
+	r.POST("/api/gitops/csoc-admin/reset", HandleCSOCAdminReset)
 }

@@ -57,18 +57,29 @@ func open(c *gin.Context, r *request) (*Store, context.Context, context.CancelFu
 	store, err := OpenStore(ctx, r.bucket(), r.Target)
 	if err != nil {
 		cancel()
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, awslookup.ErrorBody(r.Profile, err))
 		return nil, nil, nil, false
 	}
 	return store, ctx, cancel, true
 }
 
-func fail(c *gin.Context, err error) {
+func fail(c *gin.Context, r *request, err error) {
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+	c.JSON(http.StatusBadGateway, awslookup.ErrorBody(r.Profile, err))
+}
+
+// ReconcileRun, when set, settles an environment whose last run says it is
+// still running, against the runner that made it. The terraform package
+// sets it; it cannot be called directly from here without an import cycle.
+var ReconcileRun func(ctx context.Context, s *Store, e *Environment)
+
+func reconcile(ctx context.Context, s *Store, e *Environment) {
+	if ReconcileRun != nil {
+		ReconcileRun(ctx, s, e)
+	}
 }
 
 // POST /api/environments/list  {bucket, profile | credentials | role_arn}
@@ -84,8 +95,11 @@ func HandleList(c *gin.Context) {
 	defer cancel()
 	envs, err := store.List(ctx)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r, err)
 		return
+	}
+	for _, e := range envs {
+		reconcile(ctx, store, e)
 	}
 	c.JSON(http.StatusOK, gin.H{"bucket": r.bucket(), "environments": envs})
 }
@@ -106,9 +120,10 @@ func HandleGet(c *gin.Context) {
 	defer cancel()
 	e, err := store.Get(ctx, r.Name)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r.request, err)
 		return
 	}
+	reconcile(ctx, store, e)
 	c.JSON(http.StatusOK, e)
 }
 
@@ -134,7 +149,7 @@ func HandleSave(c *gin.Context) {
 	e, err := store.Save(ctx, &in)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			fail(c, err)
+			fail(c, &r.request, err)
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -159,7 +174,7 @@ func HandleRuns(c *gin.Context) {
 	defer cancel()
 	runs, err := store.Runs(ctx, r.Name)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r.request, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"runs": runs})
@@ -182,7 +197,7 @@ func HandleLog(c *gin.Context) {
 	defer cancel()
 	b, err := store.GetLog(ctx, r.Name, r.RunID)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r.request, err)
 		return
 	}
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", b)
@@ -206,7 +221,7 @@ func HandlePlan(c *gin.Context) {
 	defer cancel()
 	d, err := store.GetPlan(ctx, r.Name, r.RunID)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r.request, err)
 		return
 	}
 	c.JSON(http.StatusOK, d)
@@ -230,7 +245,7 @@ func HandlePlanDiagram(c *gin.Context) {
 	defer cancel()
 	g, err := store.GetDiagram(ctx, r.Name, r.RunID)
 	if err != nil {
-		fail(c, err)
+		fail(c, &r.request, err)
 		return
 	}
 	c.JSON(http.StatusOK, g)
@@ -244,4 +259,5 @@ func RegisterRoutes(r gin.IRouter) {
 	r.POST("/api/environments/save", HandleSave)
 	r.POST("/api/environments/runs", HandleRuns)
 	r.POST("/api/environments/log", HandleLog)
+	r.POST("/api/environments/delete-bucket", HandleDeleteBucket)
 }

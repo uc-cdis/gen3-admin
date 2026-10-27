@@ -107,6 +107,8 @@ for _ in $(seq 1 60); do
 done
 [[ -n "$alb" ]] || die "the ALB was not provisioned; see: kubectl -n kube-system logs deploy/aws-load-balancer-controller"
 echo "ALB: $alb"
+# The wizard shows it beside the hostnames when DNS is not in Route 53.
+[[ -n "${RESULT_FILE:-}" ]] && printf '{"load_balancer":"%s"}\n' "$alb" >"$RESULT_FILE"
 
 if [[ -n "${HOSTED_ZONE_ID:-}" ]]; then
   step "DNS"

@@ -44,7 +44,7 @@ export function displayName(n) {
 }
 
 // Icons are shown as images, never inlined, so an SVG cannot run anything.
-const iconSrc = (svg) => (svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : null);
+export const iconSrc = (svg) => (svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : null);
 
 const hidden = { opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 0 };
 const handles = (

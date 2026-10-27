@@ -827,12 +827,16 @@ export default function TerraformExecutor({
         setExecution({ id: data.id, operation });
         streamLogs(data.id, operation);
       } else {
+        // Nothing started, so nothing may follow it: a destroy left armed
+        // here used to start after the next run that succeeded.
+        nextOperation.current = null;
         const errorMsg = `Error: ${data.error}`;
         setExecutionLogs([errorMsg]);
         setIsExecuting(false);
         onError(new Error(data.error));
       }
     } catch (error) {
+      nextOperation.current = null;
       setExecutionLogs([`Error: ${error.message}`]);
       setIsExecuting(false);
       onError(error);

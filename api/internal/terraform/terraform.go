@@ -564,9 +564,30 @@ func HandleTerraformExecute() gin.HandlerFunc {
 		}
 		if req.AWSRoleARN != "" {
 			if err := assumeRunRole(c.Request.Context(), &req); err != nil {
-				c.JSON(400, gin.H{"error": err.Error()})
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
 				return
 			}
+		}
+		if req.Environment != "" && req.Runtime == RuntimeDocker {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+			store, err := environments.OpenStore(ctx, req.StateBucket, runTarget(&req))
+			if err != nil {
+				cancel()
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
+			release, err := claimEnvironment(ctx, store, req.Environment)
+			cancel()
+			var busy *busyError
+			if errors.As(err, &busy) {
+				c.JSON(409, gin.H{"error": err.Error(), "code": "busy", "run_id": busy.run.ID})
+				return
+			}
+			if err != nil {
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
+			defer release()
 		}
 		if isScriptOp(req.Operation) {
 			if req.Runtime != RuntimeDocker {
@@ -574,7 +595,7 @@ func HandleTerraformExecute() gin.HandlerFunc {
 				return
 			}
 			if err := prepareScript(c.Request.Context(), &req); err != nil {
-				c.JSON(400, gin.H{"error": err.Error()})
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
 				return
 			}
 		}
@@ -1126,7 +1147,11 @@ func HandleTerminateTerraform() gin.HandlerFunc {
 			cmd = exec.Command("kubectl", "delete", "pod", execution.PodName, "-n", execution.Namespace)
 		}
 
+		// Marked before the stop, so the run's end is recorded as stopped
+		// rather than failed.
+		markStopped(execID)
 		if err := cmd.Run(); err != nil {
+			wasStopped(execID)
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}

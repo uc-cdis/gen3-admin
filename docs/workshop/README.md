@@ -283,3 +283,24 @@ password you saved.
 
 "Connected to AWS" means the portal is using its own IAM role (IRSA) in your
 account. From here on, the CSOC is what you manage Gen3 with.
+
+### Step 11. Tear down (afterwards, 25–30 minutes)
+
+On **Done** (or from the banner on any step), **Tear down** opens the
+teardown panel. It runs, in order, each step only once the one before it
+succeeded:
+
+1. **Uninstall the CSOC**: the load balancers, volumes, Karpenter nodes,
+   DNS records and secrets the install added outside Terraform. Leave
+   **Force** ticked for a workshop environment: it terminates the nodes
+   rather than draining them.
+2. **Destroy the infrastructure**: `terraform destroy`. Most of the time is
+   AWS releasing the Squid lambda's network interface.
+3. Optionally **delete the hosted zone** and its NS records in the parent
+   zone (pick the profile that reaches the parent, as in Step 4).
+4. Optionally **empty and delete the state bucket**, which takes the
+   registry with it: back to a blank account.
+
+Type the environment name and press **Tear down**. If a step fails, the
+panel stops there with its log, and the banner offers the retry.
+

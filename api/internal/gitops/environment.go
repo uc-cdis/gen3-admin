@@ -39,7 +39,13 @@ func CSOCInputsFor(e *environments.Environment, bucket string) (CSOCInputs, erro
 		return s
 	}
 	required := []string{"cluster_name", "aws_region", "vpc_id", "lb_controller_role_arn",
-		"external_secrets_role_arn", "csoc_api_role_arn", "certificate_arn", "csoc_hostname", "keycloak_hostname"}
+		"external_secrets_role_arn", "csoc_api_role_arn", "csoc_hostname", "keycloak_hostname"}
+	// The certificate is chosen after the apply; Terraform made one only for
+	// environments planned before that.
+	cert := e.Install.CertificateARN
+	if cert == "" {
+		cert = str("certificate_arn")
+	}
 	var missing []string
 	for _, name := range required {
 		if str(name) == "" {
@@ -49,6 +55,9 @@ func CSOCInputsFor(e *environments.Environment, bucket string) (CSOCInputs, erro
 	if len(missing) > 0 {
 		return CSOCInputs{}, fmt.Errorf("environment %s is missing terraform outputs %s; apply it with a module version that has them",
 			e.Name, strings.Join(missing, ", "))
+	}
+	if cert == "" {
+		return CSOCInputs{}, fmt.Errorf("environment %s has no certificate; choose one on the Certificate step", e.Name)
 	}
 	cidrs := append([]string{}, e.Install.AllowedCIDRs...)
 	if e.Install.EgressIP != "" {
@@ -67,7 +76,7 @@ func CSOCInputsFor(e *environments.Environment, bucket string) (CSOCInputs, erro
 		LBRoleARN:     str("lb_controller_role_arn"),
 		ESORoleARN:    str("external_secrets_role_arn"),
 		APIRoleARN:    str("csoc_api_role_arn"),
-		CertARN:       str("certificate_arn"),
+		CertARN:       cert,
 		CSOCHost:      str("csoc_hostname"),
 		KeycloakHost:  str("keycloak_hostname"),
 		StateBucket:   bucket,

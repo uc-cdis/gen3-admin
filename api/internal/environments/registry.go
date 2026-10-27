@@ -39,22 +39,30 @@ const (
 	KindCommons Kind = "commons"
 )
 
-// Status is where an environment stands after its most recent run.
+// Status is what is settled about an environment: what its infrastructure
+// and CSOC are, not what was last tried. A run in progress, or one that
+// failed or was stopped, shows in LastRun, so a failed finish does not
+// forget that the CSOC was bootstrapped.
 type Status string
 
 const (
-	StatusNew         Status = "new"
-	StatusInitialized Status = "initialized"
-	StatusPlanned     Status = "planned"
-	StatusApplying    Status = "applying"
-	StatusApplied     Status = "applied"
+	StatusNew     Status = "new"
+	StatusPlanned Status = "planned"
+	StatusApplied Status = "applied"
 	// StatusBootstrapped: ArgoCD and ESO are on the cluster, and the
 	// configuration PR is waiting to be merged.
 	StatusBootstrapped Status = "bootstrapped"
 	StatusInstalled    Status = "installed"
-	StatusDestroying   Status = "destroying"
-	StatusDestroyed    Status = "destroyed"
-	StatusFailed       Status = "failed"
+	// StatusPartial: an apply or destroy stopped midway, so some of the
+	// infrastructure may exist.
+	StatusPartial   Status = "partial"
+	StatusDestroyed Status = "destroyed"
+
+	// Older records used these; Settle maps them onto the statuses above.
+	legacyInitialized Status = "initialized"
+	legacyApplying    Status = "applying"
+	legacyDestroying  Status = "destroying"
+	legacyFailed      Status = "failed"
 )
 
 type Environment struct {
@@ -81,10 +89,13 @@ type Environment struct {
 	// password, so the repo can be re-rendered without asking again.
 	Install *Install `json:"install,omitempty"`
 
-	Status    Status    `json:"status"`
-	LastRun   *Run      `json:"last_run,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Status Status `json:"status"`
+	// StatusVersion is the set of rules Status was written under; Settle
+	// migrates records from before the current one.
+	StatusVersion int       `json:"status_version,omitempty"`
+	LastRun       *Run      `json:"last_run,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // GitOps identifies the repo and the GitHub App installation that writes to
@@ -123,6 +134,12 @@ type Install struct {
 	// EgressIP is the cluster's outbound address, which the install found
 	// and the allowlist always includes.
 	EgressIP string `json:"egress_ip,omitempty"`
+	// CertificateARN is the certificate the load balancer serves, chosen
+	// after the infrastructure was applied.
+	CertificateARN string `json:"certificate_arn,omitempty"`
+	// LoadBalancer is the ALB's DNS name, as the finish found it: what the
+	// hostnames point at.
+	LoadBalancer string `json:"load_balancer,omitempty"`
 }
 
 const (
@@ -139,6 +156,11 @@ const (
 	RunRunning   RunStatus = "running"
 	RunSucceeded RunStatus = "succeeded"
 	RunFailed    RunStatus = "failed"
+	// RunStopped: someone stopped it.
+	RunStopped RunStatus = "stopped"
+	// RunLost: the record says running, but the run is gone and its result
+	// was never recorded.
+	RunLost RunStatus = "lost"
 )
 
 type PlanSummary struct {
@@ -239,6 +261,7 @@ func (s *Store) Get(ctx context.Context, name string) (*Environment, error) {
 	if err := s.getJSON(ctx, s.envKey(name), &e); err != nil {
 		return nil, err
 	}
+	Settle(&e)
 	return &e, nil
 }
 
@@ -260,13 +283,13 @@ func (s *Store) Save(ctx context.Context, e *Environment) (*Environment, error) 
 	prev, err := s.Get(ctx, e.Name)
 	switch {
 	case err == nil:
-		e.CreatedAt, e.Status, e.LastRun = prev.CreatedAt, prev.Status, prev.LastRun
+		e.CreatedAt, e.Status, e.StatusVersion, e.LastRun = prev.CreatedAt, prev.Status, prev.StatusVersion, prev.LastRun
 		e.GitOps, e.Install = prev.GitOps, prev.Install
 		if e.Outputs == nil {
 			e.Outputs = prev.Outputs
 		}
 	case errors.Is(err, ErrNotFound):
-		e.CreatedAt, e.Status = now, StatusNew
+		e.CreatedAt, e.Status, e.StatusVersion = now, StatusNew, statusVersion
 	default:
 		return nil, err
 	}
@@ -408,18 +431,30 @@ func PublicOutputs(raw []byte) (map[string]json.RawMessage, error) {
 	return out, nil
 }
 
-// StatusAfter is the environment status a finished run leaves behind.
-func StatusAfter(operation string, ok bool) Status {
-	if !ok {
-		return StatusFailed
+// StatusAfter is the status a finished run leaves an environment in, given
+// the status it had before. Only what a run settles changes it: a failed
+// plan, or a failed or stopped install, leaves the environment as it was.
+// An apply or destroy that did not finish leaves StatusPartial, since
+// Terraform may have created or deleted some of it, unless the environment
+// already had its infrastructure and a re-apply failed.
+func StatusAfter(operation string, outcome RunStatus, prev Status) Status {
+	infra := prev == StatusApplied || prev == StatusBootstrapped || prev == StatusInstalled
+	if outcome != RunSucceeded {
+		switch {
+		case operation == "destroy", operation == "apply" && !infra:
+			return StatusPartial
+		}
+		return prev
 	}
 	switch operation {
-	case "init":
-		return StatusInitialized
 	case "plan":
-		return StatusPlanned
+		if prev == StatusNew || prev == StatusDestroyed || prev == "" {
+			return StatusPlanned
+		}
 	case "apply":
-		return StatusApplied
+		if !infra {
+			return StatusApplied
+		}
 	case "destroy":
 		return StatusDestroyed
 	case "install-csoc":
@@ -427,20 +462,63 @@ func StatusAfter(operation string, ok bool) Status {
 	case "finish-csoc":
 		return StatusInstalled
 	case "uninstall-csoc":
-		// The cluster is still there; what ran on it is gone.
-		return StatusApplied
+		// The cluster is still there; what ran on it is gone. Run again on
+		// half-destroyed infrastructure, it changes nothing settled.
+		if prev == StatusBootstrapped || prev == StatusInstalled {
+			return StatusApplied
+		}
 	}
-	return ""
+	return prev
 }
 
-// StatusDuring is the status shown while a run is in progress, for the
-// operations that change infrastructure.
-func StatusDuring(operation string) Status {
-	switch operation {
-	case "apply", "install-csoc", "finish-csoc":
-		return StatusApplying
-	case "destroy", "uninstall-csoc":
-		return StatusDestroying
+// statusVersion 2: Status holds only settled facts (see StatusAfter).
+const statusVersion = 2
+
+// Settle maps a status written under the old rules onto the current set,
+// using the last run and the outputs to recover what was settled. Under
+// the old rules any run overwrote the status, so a plan after an apply left
+// "planned" on an environment whose cluster was up.
+func Settle(e *Environment) {
+	if e.StatusVersion >= statusVersion {
+		return
 	}
-	return ""
+	e.StatusVersion = statusVersion
+	switch e.Status {
+	case legacyInitialized:
+		e.Status = StatusNew
+	case StatusPlanned:
+		if len(e.Outputs) > 0 {
+			e.Status = StatusApplied
+			if e.Install != nil && e.Install.EgressIP != "" {
+				// The bootstrap succeeded at least once; whether the
+				// finish did is not known, and finishing again is safe.
+				e.Status = StatusBootstrapped
+			}
+		}
+	case legacyApplying, legacyDestroying, legacyFailed:
+		e.Status = settledBefore(e)
+		if e.LastRun != nil && e.LastRun.Status != RunRunning {
+			e.Status = StatusAfter(e.LastRun.Operation, RunFailed, e.Status)
+		}
+	}
+}
+
+// settledBefore guesses the status an environment had before its last run,
+// for a record that only says that run failed.
+func settledBefore(e *Environment) Status {
+	op := ""
+	if e.LastRun != nil {
+		op = e.LastRun.Operation
+	}
+	switch {
+	case op == "finish-csoc":
+		return StatusBootstrapped
+	case op == "uninstall-csoc" && e.Install != nil:
+		return StatusInstalled
+	case op == "install-csoc" || op == "uninstall-csoc":
+		return StatusApplied
+	case len(e.Outputs) > 0:
+		return StatusApplied
+	}
+	return StatusNew
 }

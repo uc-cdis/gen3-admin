@@ -94,6 +94,26 @@ else
 fi
 [[ "$FORCE" == 1 ]] && echo "FORCE: not waiting for anything graceful"
 
+step "Squid route lambda"
+# First, for two reasons. Left running, it writes cloud-proxy.internal.io
+# back after the step below deletes it, and the destroy then cannot delete
+# the private zone. And its VPC network interface takes AWS about 20 minutes
+# to release once the lambda leaves the VPC, holding a subnet and the node
+# security group: taking it out now overlaps that wait with everything
+# else, instead of the destroy waiting on it at the end. The default route
+# it last set stays, so the nodes keep their egress meanwhile.
+lambda="${CLUSTER_NAME}-gw-checks-lambda"
+if aws lambda get-function --function-name "$lambda" --region "$AWS_REGION" >/dev/null 2>&1; then
+  aws lambda put-function-concurrency --function-name "$lambda" --region "$AWS_REGION" \
+    --reserved-concurrent-executions 0 >/dev/null
+  echo "$lambda: stopped"
+  aws lambda update-function-configuration --function-name "$lambda" --region "$AWS_REGION" \
+    --vpc-config SubnetIds=[],SecurityGroupIds=[] >/dev/null
+  echo "$lambda: out of the VPC; AWS now releases its network interface"
+else
+  echo "no $lambda"
+fi
+
 if [[ -z "$CLUSTER_GONE" ]]; then
 # The EBS volumes behind this cluster's PVs, noted now: a forced uninstall
 # deletes exactly these once nothing is attached to them.

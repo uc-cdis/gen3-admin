@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, Alert, Badge, Code, Group, Loader, Paper, Progress, SegmentedControl, Stack, Table, Text } from '@mantine/core';
-import { PlanDiagramLoader } from '@/components/PlanDiagram';
+import { PlanDiagramLoader, displayName, iconSrc } from '@/components/PlanDiagram';
 import { IconAlertTriangle, IconX } from '@tabler/icons-react';
-import ApplyState from '@/components/ApplyState';
+import { ChangeChip, ChangeLegend } from '@/components/ApplyState';
 import { STATE_COLOR } from '@/lib/applyProgress';
 
 const ACTIONS = {
-  create: { color: 'green', label: 'create', sign: '+' },
-  update: { color: 'yellow', label: 'update', sign: '~' },
-  replace: { color: 'red', label: 'replace', sign: '±' },
-  delete: { color: 'red', label: 'destroy', sign: '−' },
+  create: { color: 'green', label: 'to create', sign: '+' },
+  update: { color: 'yellow', label: 'to update', sign: '~' },
+  replace: { color: 'orange', label: 'to replace', sign: '±' },
+  delete: { color: 'red', label: 'to destroy', sign: '−' },
 };
 
 const countBy = (changes) =>
@@ -20,7 +20,7 @@ function ActionBadges({ counts }) {
     <Group gap={6}>
       {Object.entries(ACTIONS).map(([action, a]) =>
         counts[action] ? (
-          <Badge key={action} color={a.color} variant="light" size="sm">{a.sign}{counts[action]} {a.label}</Badge>
+          <Badge key={action} color={a.color} variant="outline" size="sm" radius="sm" style={{ textTransform: 'none' }}>{a.sign}{counts[action]} {a.label}</Badge>
         ) : null,
       )}
     </Group>
@@ -51,6 +51,44 @@ export default function PlanReview({ target, environment, runId, progress = null
   // The run shown, once resolved from runId or the registry's latest plan.
   const [shownRunId, setShownRunId] = useState(null);
   const [view, setView] = useState('list');
+  // Open groups. During an apply a group opens by itself the first time
+  // something in it starts or fails; closing it again is the operator's call.
+  const [opened, setOpened] = useState([]);
+  const autoOpened = useRef(new Set());
+  // Readable names for the list, from the plan's diagram: a resource's Name
+  // tag, or its address shortened, with the service it belongs to.
+  const [diagram, setDiagram] = useState(null);
+  useEffect(() => {
+    if (!shownRunId) return;
+    let cancelled = false;
+    post('/api/environments/plan-diagram', { ...target, name: environment, run_id: shownRunId })
+      .then((d) => { if (!cancelled) setDiagram(d); })
+      .catch(() => {}); // the list falls back to addresses
+    return () => { cancelled = true; };
+  }, [shownRunId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const names = useMemo(() => {
+    const m = new Map();
+    if (!diagram) return m;
+    const icons = diagram.icons || {};
+    for (const n of diagram.nodes || []) {
+      const icon = n.icon && icons[n.icon] ? iconSrc(icons[n.icon]) : null;
+      m.set(n.address, { name: displayName(n), service: n.service, icon });
+      for (const f of n.folded || []) {
+        m.set(f.address, { name: displayName(f), service: `part of ${displayName(n)}`, icon });
+      }
+    }
+    return m;
+  }, [diagram]);
+  useEffect(() => {
+    if (!progress || !plan) return;
+    const fresh = (plan.groups || []).filter((g) => !autoOpened.current.has(g.name) && g.changes.some((c) => {
+      const st = progress.get(c.address)?.state;
+      return st === 'running' || st === 'failed';
+    })).map((g) => g.name);
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => autoOpened.current.add(n));
+    setOpened((o) => Array.from(new Set([...o, ...fresh])));
+  }, [progress, plan]);
 
   useEffect(() => {
     if (!environment || !target?.bucket) return;
@@ -85,7 +123,7 @@ export default function PlanReview({ target, environment, runId, progress = null
   if (error) return <Text size="sm" c="red">Could not load the plan: {error}</Text>;
   if (!plan) return null;
 
-  const all = plan.groups.flatMap((g) => g.changes);
+  const all = (plan.groups || []).flatMap((g) => g.changes || []);
   const counts = countBy(all);
   const risky = all.filter((c) => c.action === 'delete' || c.action === 'replace');
   const applying = progress !== null;
@@ -112,7 +150,10 @@ export default function PlanReview({ target, environment, runId, progress = null
             data={[{ label: 'List', value: 'list' }, { label: 'Diagram', value: 'diagram' }]} />
         </Group>
 
-        <ActionBadges counts={counts} />
+        <Group justify="space-between">
+          <ActionBadges counts={counts} />
+          <ChangeLegend applying={applying} />
+        </Group>
 
         {applying && all.length > 0 && (
           <Progress.Root size="lg">
@@ -137,7 +178,7 @@ export default function PlanReview({ target, environment, runId, progress = null
         )}
 
         {risky.length > 0 && !applying && (
-          <Alert color="red" icon={<IconAlertTriangle />} title={`${risky.length} resources will be destroyed or replaced`}>
+          <Alert color="red" icon={<IconAlertTriangle />} title={`${risky.length} resource${risky.length === 1 ? '' : 's'} will be destroyed or replaced`}>
             <Stack gap={2}>
               {risky.map((c) => (
                 <Text size="xs" key={c.address}>
@@ -150,8 +191,8 @@ export default function PlanReview({ target, environment, runId, progress = null
 
         {view === 'diagram' && <PlanDiagramLoader target={target} environment={environment} runId={shownRunId} progress={progress} />}
 
-        {view === 'list' && <Accordion variant="separated" multiple>
-          {plan.groups.map((g) => (
+        {view === 'list' && <Accordion variant="separated" multiple value={opened} onChange={setOpened}>
+          {(plan.groups || []).map((g) => (
             <Accordion.Item key={g.name} value={g.name}>
               <Accordion.Control>
                 <Group gap="sm">
@@ -161,16 +202,28 @@ export default function PlanReview({ target, environment, runId, progress = null
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
-                <Table fz="xs" verticalSpacing={4} striped>
+                <Table fz="xs" verticalSpacing={4} highlightOnHover>
                   <Table.Tbody>
-                    {g.changes.map((c) => (
-                      <Table.Tr key={c.address}>
-                        <Table.Td w={80}><Badge size="xs" variant="light" color={ACTIONS[c.action].color}>{ACTIONS[c.action].label}</Badge></Table.Td>
-                        <Table.Td><Code>{c.address}</Code></Table.Td>
-                        <Table.Td c="dimmed">{c.type}</Table.Td>
-                        {applying && <Table.Td w={130}><ApplyState state={progress.get(c.address)} /></Table.Td>}
-                      </Table.Tr>
-                    ))}
+                    {g.changes.map((c) => {
+                      const st = applying ? progress.get(c.address) : null;
+                      const bg = st?.state === 'running' ? 'var(--mantine-color-blue-light)'
+                        : st?.state === 'failed' ? 'var(--mantine-color-red-light)' : undefined;
+                      return (
+                        <Table.Tr key={c.address} style={bg ? { background: bg } : undefined}>
+                          <Table.Td w={170} style={{ whiteSpace: "nowrap" }}><ChangeChip action={c.action} state={st} applying={applying} /></Table.Td>
+                          <Table.Td>
+                            <Group gap={8} wrap="nowrap">
+                              {names.get(c.address)?.icon && <img src={names.get(c.address).icon} alt="" width={18} height={18} />}
+                              <div style={{ minWidth: 0 }}>
+                                <Text size="sm" fw={500} truncate>{names.get(c.address)?.name || displayName({ address: c.address, type: c.type })}</Text>
+                                <Text size="xs" c="dimmed" ff="monospace" truncate title={c.address}>{c.address}</Text>
+                              </div>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td c="dimmed">{names.get(c.address)?.service || c.type}</Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
                   </Table.Tbody>
                 </Table>
               </Accordion.Panel>

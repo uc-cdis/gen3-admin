@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	awslookup "github.com/uc-cdis/gen3-admin/internal/aws"
 	"github.com/uc-cdis/gen3-admin/internal/environments"
 	"github.com/uc-cdis/gen3-admin/internal/gitops"
 )
@@ -66,6 +67,10 @@ type InstallOptions struct {
 	AdminPassword string   `json:"admin_password"`
 	APIImage      string   `json:"api_image,omitempty"`
 	FrontendImage string   `json:"frontend_image,omitempty"`
+	// CertificateARN is the ACM certificate the load balancer serves, chosen
+	// on the wizard's Certificate step. Empty falls back to one Terraform
+	// made, for environments planned before that step existed.
+	CertificateARN string `json:"certificate_arn,omitempty"`
 }
 
 var (
@@ -78,7 +83,11 @@ var (
 	validClusterName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$`)
 	validZoneID        = regexp.MustCompile(`^Z[A-Z0-9]{1,31}$`)
 	validEgressIP      = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,3}){3}$`)
+	validCertARN       = regexp.MustCompile(`^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]{36}$`)
 )
+
+// certificateStatus reads a certificate's ACM status; replaced in tests.
+var certificateStatus = awslookup.CertificateStatus
 
 func validateInstallOptions(o *InstallOptions) error {
 	if o == nil {
@@ -94,6 +103,9 @@ func validateInstallOptions(o *InstallOptions) error {
 	}
 	if o.AdminEmail != "" && !validEmail.MatchString(o.AdminEmail) {
 		return fmt.Errorf("admin email is not valid")
+	}
+	if o.CertificateARN != "" && !validCertARN.MatchString(o.CertificateARN) {
+		return fmt.Errorf("certificate_arn is not an ACM certificate ARN")
 	}
 	for _, img := range []string{o.APIImage, o.FrontendImage} {
 		if img != "" && (!validImageRef.MatchString(img) || !strings.Contains(img, ":")) {
@@ -218,9 +230,24 @@ func prepareInstall(ctx context.Context, store *environments.Store, e *environme
 	}
 	install := &environments.Install{
 		Mode: mode, AllowedCIDRs: o.AllowedCIDRs, AdminEmail: o.AdminEmail, APIImage: o.APIImage, FrontendImage: o.FrontendImage,
+		CertificateARN: o.CertificateARN,
 	}
 	if e.Install != nil {
 		install.EgressIP = e.Install.EgressIP
+		install.LoadBalancer = e.Install.LoadBalancer
+	}
+	if install.CertificateARN != "" {
+		// The load balancer controller will not serve a certificate ACM has
+		// not issued; better to say so now than as a stuck ingress later.
+		t := runTarget(req)
+		t.Region = in["AWS_REGION"]
+		status, err := certificateStatus(ctx, t, install.CertificateARN)
+		if err != nil {
+			return nil, fmt.Errorf("check the certificate: %w", err)
+		}
+		if status != "ISSUED" {
+			return nil, fmt.Errorf("the certificate is %s, not issued yet; finish its validation on the Certificate step", strings.ToLower(strings.ReplaceAll(status, "_", " ")))
+		}
 	}
 	e.Install = install
 
@@ -340,9 +367,12 @@ func buildScriptRunArgs(req *TerraformRequest, secretsPath, bootstrapDir string)
 		args = append(args, "-e", "SECRETS_FILE="+containerVarsDir+"/"+filepath.Base(secretsPath))
 	}
 	if bootstrapDir != "" {
-		args = append(args,
-			"-e", "BOOTSTRAP_DIR="+containerVarsDir+"/"+filepath.Base(bootstrapDir),
-			"-e", "RESULT_FILE="+containerVarsDir+"/"+installResultFile)
+		args = append(args, "-e", "BOOTSTRAP_DIR="+containerVarsDir+"/"+filepath.Base(bootstrapDir))
+	}
+	// install-csoc reports the egress IP it found, finish-csoc the load
+	// balancer's address (the records to make when DNS is not in Route 53).
+	if bootstrapDir != "" || req.Operation == OpFinishCSOC {
+		args = append(args, "-e", "RESULT_FILE="+containerVarsDir+"/"+installResultFile)
 	}
 	for k, v := range req.installEnv {
 		args = append(args, "-e", k+"="+v)
@@ -352,7 +382,8 @@ func buildScriptRunArgs(req *TerraformRequest, secretsPath, bootstrapDir string)
 
 // installResult is what install-csoc reports back.
 type installResult struct {
-	EgressIP string `json:"egress_ip"`
+	EgressIP     string `json:"egress_ip"`
+	LoadBalancer string `json:"load_balancer"`
 }
 
 // takeInstallResult reads and removes the result an install-csoc run left.
@@ -368,7 +399,10 @@ func takeInstallResult(varsDir string) *installResult {
 		return &installResult{}
 	}
 	if ip := net.ParseIP(r.EgressIP); ip == nil || ip.To4() == nil || !validEgressIP.MatchString(r.EgressIP) {
-		return &installResult{}
+		r.EgressIP = ""
+	}
+	if !validHostname.MatchString(r.LoadBalancer) {
+		r.LoadBalancer = ""
 	}
 	return &r
 }

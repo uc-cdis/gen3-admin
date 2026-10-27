@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	awslookup "github.com/uc-cdis/gen3-admin/internal/aws"
 	"github.com/uc-cdis/gen3-admin/internal/environments"
 	"github.com/uc-cdis/gen3-admin/internal/environments/envtest"
 )
@@ -353,7 +354,53 @@ func TestUninstallRunsItsScriptWithNoSecrets(t *testing.T) {
 		t.Errorf("uninstall args = %q", got)
 	}
 	// The cluster outlives an uninstall; only a destroy removes it.
-	if s := environments.StatusAfter(string(OpUninstallCSOC), true); s != environments.StatusApplied {
+	if s := environments.StatusAfter(string(OpUninstallCSOC), environments.RunSucceeded, environments.StatusInstalled); s != environments.StatusApplied {
 		t.Errorf("status after uninstall = %q", s)
+	}
+}
+
+func TestInstallUsesTheChosenCertificateOnceIssued(t *testing.T) {
+	status := "PENDING_VALIDATION"
+	certificateStatus = func(context.Context, awslookup.Target, string) (string, error) { return status, nil }
+	t.Cleanup(func() { certificateStatus = awslookup.CertificateStatus })
+
+	store := environments.NewStore(envtest.NewMemS3(), "bucket")
+	ctx := context.Background()
+	e := envWithOutputs(t, completeOutputs())
+	e.GitOps = nil
+	if _, err := store.Save(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	install := goodInstall()
+	install.CertificateARN = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000042"
+	req := &TerraformRequest{Operation: OpInstallCSOC, StateBucket: "bucket", Install: install}
+	if err := validateInstallOptions(req.Install); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareInstall(ctx, store, e, req); err == nil || !strings.Contains(err.Error(), "not issued yet") {
+		t.Fatalf("a pending certificate was accepted: %v", err)
+	}
+	status = "ISSUED"
+	if _, err := prepareInstall(ctx, store, e, req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(req.installFiles["values/aws-load-balancer-controller.yaml"])+allFiles(req.installFiles), install.CertificateARN) {
+		t.Error("the rendered install does not use the chosen certificate")
+	}
+}
+
+func allFiles(files map[string][]byte) string {
+	var b strings.Builder
+	for _, f := range files {
+		b.Write(f)
+	}
+	return b.String()
+}
+
+func TestTakeInstallResultKeepsTheLoadBalancer(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, installResultFile), []byte(`{"load_balancer":"k8s-csoc-abc-123.us-east-1.elb.amazonaws.com"}`), 0o600)
+	if r := takeInstallResult(dir); r == nil || r.LoadBalancer != "k8s-csoc-abc-123.us-east-1.elb.amazonaws.com" {
+		t.Errorf("result = %+v", r)
 	}
 }
