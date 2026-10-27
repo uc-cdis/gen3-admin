@@ -194,6 +194,14 @@ role that cannot be assumed) says so in a red box and changes nothing.
 - [x] **Signed out mid-session.** The realm had Keycloak's 30-minute idle default. CSOC realms now get 8 hours idle and 12 hours maximum. New installs set this in the realm template; existing ones get it the first time the Done step loads.
 - [ ] If an attendee still sees NXDOMAIN: wait a minute, or change the laptop's DNS to 1.1.1.1.
 
+## Ideas: a faster teardown (not done yet)
+
+- [ ] Run `terraform destroy` (and `apply`) with `-parallelism=30`; the default is 10. Nothing currently sets it.
+- [ ] Start the destroy once the uninstall has removed what blocks it (load balancers, Karpenter nodes, volumes, the lambda's VPC link). Its DNS, secrets and private-zone cleanup can finish alongside, not before.
+- [ ] Within the uninstall, run the AWS-side cleanups (DNS records, secrets, the lambda) at the same time as the cluster-side ones.
+- [ ] Delete the hosted zone, and the ACM certificate the Certificate step made, while Terraform destroys: neither is Terraform's. Only the state bucket must wait until the end.
+- [ ] Not in parallel: the uninstall and the cluster's destroy (the uninstall needs the cluster), and the bucket (it holds the state the destroy uses).
+
 ## Overriding Terraform variables from the wizard
 
 - [ ] The example declares 115 variables; the wizard sets about 20 and the

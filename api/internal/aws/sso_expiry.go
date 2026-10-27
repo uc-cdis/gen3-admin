@@ -91,9 +91,17 @@ func ssoSessionExpiry(profile string) (time.Time, bool) {
 			return time.Time{}, false
 		}
 		var tok struct {
-			ExpiresAt string `json:"expiresAt"`
+			ExpiresAt    string `json:"expiresAt"`
+			RefreshToken string `json:"refreshToken"`
 		}
 		if json.Unmarshal(raw, &tok) != nil {
+			return time.Time{}, false
+		}
+		// An sso-session sign-in carries a refresh token: the access token's
+		// expiry is an hour off, but the CLI and SDK renew it themselves for
+		// as long as the session lasts, which the cache does not say. Only a
+		// sign-in that cannot be renewed has an end worth warning about.
+		if tok.RefreshToken != "" {
 			return time.Time{}, false
 		}
 		t, err := time.Parse(time.RFC3339, tok.ExpiresAt)

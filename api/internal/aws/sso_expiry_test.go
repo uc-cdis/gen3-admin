@@ -39,4 +39,10 @@ sso_start_url = https://corp.awsapps.com/start
 	if _, ok := ssoSessionExpiry("keys"); ok {
 		t.Error("a profile without SSO reported an expiry")
 	}
+	// A renewable sign-in has no end to warn about.
+	_ = os.WriteFile(filepath.Join(dir, "sso", "cache", hex.EncodeToString(sum[:])+".json"),
+		[]byte(`{"accessToken":"x","refreshToken":"r","expiresAt":"2030-01-02T03:04:05Z"}`), 0o600)
+	if _, ok := ssoSessionExpiry("workshop"); ok {
+		t.Error("a refreshable session reported an expiry")
+	}
 }
