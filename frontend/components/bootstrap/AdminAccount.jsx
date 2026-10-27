@@ -54,7 +54,7 @@ export default function AdminAccount({ target, environment }) {
             <Text size="sm">Username: <b>{info.username}</b></Text>
             <Text size="sm">Email: <b>{info.email || '(none)'}</b></Text>
             {info.session_idle_hours && (
-              <Text size="xs" c="dimmed">A sign-in lasts {info.session_idle_hours} hours, idle or not{info.sessions_extended ? ' (just extended from Keycloak\'s 30 minute default)' : ''}.</Text>
+              <Text size="xs" c="dimmed">A sign-in survives {info.session_idle_hours} hours idle, and lasts up to 12 hours{info.sessions_extended ? ' (just extended from Keycloak\'s 30 minute default)' : ''}.</Text>
             )}
           </Stack>
         )}
