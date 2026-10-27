@@ -16,6 +16,8 @@ type fakeKeycloak struct {
 	mu      sync.Mutex
 	clients map[string]client // id -> client
 	writes  []string
+	idle    int
+	max     int
 }
 
 func (f *fakeKeycloak) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +65,14 @@ func (f *fakeKeycloak) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.writes = append(f.writes, fmt.Sprintf("reset %v temporary=%v", body["value"], body["temporary"]))
+		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/realms/csoc-realm":
+		json.NewEncoder(w).Encode(map[string]int{"ssoSessionIdleTimeout": f.idle, "ssoSessionMaxLifespan": f.max})
+	case r.Method == http.MethodPut && r.URL.Path == "/admin/realms/csoc-realm":
+		var body map[string]int
+		json.NewDecoder(r.Body).Decode(&body)
+		f.idle, f.max = body["ssoSessionIdleTimeout"], body["ssoSessionMaxLifespan"]
+		f.writes = append(f.writes, fmt.Sprintf("realm idle=%d max=%d", body["ssoSessionIdleTimeout"], body["ssoSessionMaxLifespan"]))
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/client-secret"):
 		json.NewEncoder(w).Encode(map[string]string{"value": "s3cret"})
@@ -143,5 +153,17 @@ func TestFindUserAndResetPassword(t *testing.T) {
 	}
 	if _, err := admin.FindUser(context.Background(), "nobody"); err == nil {
 		t.Error("a missing user was found")
+	}
+}
+
+func TestEnsureSessionLifetimesExtendsShortSessions(t *testing.T) {
+	admin, fake := newAdmin(t)
+	fake.idle, fake.max = 1800, 36000 // Keycloak's defaults
+	changed, err := admin.EnsureSessionLifetimes(context.Background())
+	if err != nil || !changed || fake.writes[0] != "realm idle=28800 max=43200" {
+		t.Fatalf("changed=%v err=%v writes=%v", changed, err, fake.writes)
+	}
+	if changed, _ := admin.EnsureSessionLifetimes(context.Background()); changed {
+		t.Error("a realm already at 8 hours was changed again")
 	}
 }

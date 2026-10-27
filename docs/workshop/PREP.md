@@ -188,6 +188,12 @@ Over any of these, a yellow **AWS session expired** box with the
 again** succeeds. A run that cannot start (that same expired session, a
 role that cannot be assumed) says so in a red box and changes nothing.
 
+## Found on the 2026-10-27 run
+
+- [x] **NXDOMAIN on venue or campus Wi-Fi.** The portal was looked up once before its record existed, and the campus resolver kept answering "no such name". Route 53's default SOA minimum is a day; the bootstrap's zones now use 60 seconds. The Done step also offers the portal only once public DNS answers for both names.
+- [x] **Signed out mid-session.** The realm had Keycloak's 30-minute idle default. CSOC realms now get 8 hours idle and 12 hours maximum. New installs set this in the realm template; existing ones get it the first time the Done step loads.
+- [ ] If an attendee still sees NXDOMAIN: wait a minute, or change the laptop's DNS to 1.1.1.1.
+
 ## Overriding Terraform variables from the wizard
 
 - [ ] The example declares 115 variables; the wizard sets about 20 and the

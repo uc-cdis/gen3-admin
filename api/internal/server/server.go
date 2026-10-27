@@ -212,6 +212,7 @@ func SetupHTTPServer() {
 	r.POST("/api/aws/route53/zone", aws.HostedZoneHandler)
 	r.POST("/api/aws/route53/setup", aws.HostedZoneSetupHandler)
 	r.POST("/api/aws/route53/teardown", aws.HostedZoneTeardownHandler)
+	r.POST("/api/aws/dns/resolves", aws.DNSResolvesHandler)
 	r.POST("/api/aws/acm/certificate", aws.CertificateRequestHandler)
 	r.POST("/api/aws/acm/certificate/status", aws.CertificateStatusHandler)
 	r.POST("/api/aws/acm/request", aws.ACMRequestHandler)

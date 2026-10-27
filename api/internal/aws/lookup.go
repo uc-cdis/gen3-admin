@@ -232,6 +232,8 @@ func HostedZoneHandler(c *gin.Context) {
 			if hz, err := client.GetHostedZone(ctx, &route53.GetHostedZoneInput{Id: z.Id}); err == nil && hz.DelegationSet != nil {
 				resolves = publiclyDelegated(ctx, strings.TrimSuffix(candidate, "."), hz.DelegationSet.NameServers)
 			}
+			// Zones the bootstrap made cache missing names for a minute.
+			ensureShortNegativeTTL(ctx, client, strings.TrimPrefix(awssdk.ToString(z.Id), "/hostedzone/"), candidate)
 			c.JSON(http.StatusOK, gin.H{
 				"found":          true,
 				"hosted_zone_id": strings.TrimPrefix(awssdk.ToString(z.Id), "/hostedzone/"),

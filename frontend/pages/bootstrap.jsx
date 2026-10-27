@@ -945,12 +945,36 @@ export default function Gen3BootstrapStepper() {
     return false;
   };
 
+  // The portal's names, as public DNS answers them. Until both do, the
+  // portal is not offered: a look at a name before its record exists can
+  // leave a network's resolver answering that it does not exist for a while.
+  const [dnsReady, setDnsReady] = useState(null);
+  useEffect(() => {
+    if (status !== 'installed' || !domainName) return undefined;
+    let cancelled = false;
+    const check = () => postJSON('/api/aws/dns/resolves', { names: [domainName, effectiveKeycloakHostname] })
+      .then((d) => { if (!cancelled) setDnsReady(Object.values(d.resolves || {}).every(Boolean)); })
+      .catch(() => { if (!cancelled) setDnsReady(null); });
+    check();
+    const id = setInterval(() => { if (dnsReady !== true) check(); }, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [status, domainName, effectiveKeycloakHostname, dnsReady]);
+
   // On a step behind where the environment stands, the one thing to do is
   // to go there: its action may need a form on that step.
   const STEP_NAME = { provision: 'Provision', certificate: 'Certificate', install: 'Install', done: 'Done' };
-  const bannerState = wizard && !wizard.running && !wizard.blocker && STEP_INDEX[wizard.step] > active && active >= STEPS.provision
+  let bannerState = wizard && !wizard.running && !wizard.blocker && STEP_INDEX[wizard.step] > active && active >= STEPS.provision
     ? { ...wizard, primary: { kind: 'goto', step: wizard.step, label: `Continue to ${STEP_NAME[wizard.step]}` }, secondary: [] }
     : wizard;
+  if (bannerState?.id === 'ready' && dnsReady === false) {
+    bannerState = {
+      ...bannerState, tone: 'blue', title: 'CSOC installed; waiting for DNS',
+      detail: dnsMode === 'self'
+        ? 'Create the two CNAME records below. The portal link appears as soon as public DNS answers for both.'
+        : 'The records are in Route 53; public DNS usually answers within a minute or two. The portal link appears then. Opening it earlier can make your network remember that the name does not exist.',
+      primary: null,
+    };
+  }
 
   // Tear down from Advanced: only when something exists to remove.
   const teardownAdvanced = env && (hasInfra(status) || status === 'partial')
@@ -1881,9 +1905,13 @@ export default function Gen3BootstrapStepper() {
             <>
             <Alert color="green" icon={<IconCheck />} title={csocName}>
               <Stack gap={6}>
-                <Anchor href={`https://${domainName}`} target="_blank" rel="noreferrer">
-                  <Group gap={4}>https://{domainName}<IconExternalLink size={14} /></Group>
-                </Anchor>
+                {dnsReady === false ? (
+                  <Group gap="xs"><Loader size="xs" /><Text size="sm">Waiting for public DNS to answer for {domainName} and {effectiveKeycloakHostname}…</Text></Group>
+                ) : (
+                  <Anchor href={`https://${domainName}`} target="_blank" rel="noreferrer">
+                    <Group gap={4}>https://{domainName}<IconExternalLink size={14} /></Group>
+                  </Anchor>
+                )}
                 <Text size="sm">Keycloak: https://{effectiveKeycloakHostname}. Sign in as <b>admin</b> with the password you set.</Text>
                 {env.install?.egress_ip && <Text size="sm">Cluster egress IP: {env.install.egress_ip}</Text>}
                 {dnsMode === 'self' && (

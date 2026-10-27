@@ -257,3 +257,42 @@ func (a *Admin) ResetPassword(ctx context.Context, userID, password string) erro
 	body := map[string]any{"type": "password", "value": password, "temporary": false}
 	return a.call(ctx, token, http.MethodPut, "/users/"+url.PathEscape(userID)+"/reset-password", body, nil)
 }
+
+// Session lifetimes for a CSOC realm, in seconds: a sign-in lasts a working
+// day. Keycloak's defaults end it after 30 minutes idle.
+const (
+	SessionIdle = 8 * 3600
+	SessionMax  = 12 * 3600
+)
+
+// EnsureSessionLifetimes sets the realm's SSO session lifetimes when they
+// are shorter, for realms imported before the template set them.
+func (a *Admin) EnsureSessionLifetimes(ctx context.Context) (bool, error) {
+	token, err := a.token(ctx)
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.BaseURL+"/admin/realms/"+url.PathEscape(a.Realm), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	var realm struct {
+		Idle int `json:"ssoSessionIdleTimeout"`
+		Max  int `json:"ssoSessionMaxLifespan"`
+	}
+	if err := a.do(req, &realm); err != nil {
+		return false, err
+	}
+	if realm.Idle >= SessionIdle && realm.Max >= SessionMax {
+		return false, nil
+	}
+	body, _ := json.Marshal(map[string]int{"ssoSessionIdleTimeout": SessionIdle, "ssoSessionMaxLifespan": SessionMax})
+	put, err := http.NewRequestWithContext(ctx, http.MethodPut, a.BaseURL+"/admin/realms/"+url.PathEscape(a.Realm), bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	put.Header.Set("Authorization", "Bearer "+token)
+	put.Header.Set("Content-Type", "application/json")
+	return true, a.do(put, nil)
+}

@@ -74,7 +74,15 @@ func HandleCSOCAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"username": u.Username, "email": u.Email, "keycloak": kc.PublicURL})
+	// A realm imported before the template set them gets workshop-length
+	// sessions here, the first time the Done step is shown.
+	extended, err := kc.EnsureSessionLifetimes(s.ctx)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "session lifetimes: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"username": u.Username, "email": u.Email, "keycloak": kc.PublicURL,
+		"session_idle_hours": keycloakadmin.SessionIdle / 3600, "sessions_extended": extended})
 }
 
 // POST /api/gitops/csoc-admin/reset  {bucket, environment, password, ...target}

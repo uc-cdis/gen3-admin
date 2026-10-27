@@ -116,6 +116,8 @@ func ensureZone(ctx context.Context, client zoneAPI, name string) (id string, se
 		ResourceId: awssdk.String(id), ResourceType: r53types.TagResourceTypeHostedzone,
 		AddTags: []r53types.Tag{{Key: awssdk.String("ManagedBy"), Value: awssdk.String("gen3-csoc")}},
 	})
+	// Missing names are cached for a minute, not a day (see zone_soa.go).
+	_, _ = shortenNegativeTTL(ctx, client, id, name)
 	return id, normalizeServers(out.DelegationSet.NameServers), true, nil
 }
 

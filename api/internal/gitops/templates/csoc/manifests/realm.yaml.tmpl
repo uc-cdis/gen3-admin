@@ -19,6 +19,11 @@ spec:
     sslRequired: external
     loginWithEmailAllowed: true
     bruteForceProtected: true
+    # A sign-in lasts a working day: Keycloak's default ends it after 30
+    # minutes idle, which logged people out mid-session. Matches the
+    # portal's own 8 hour session (keycloakadmin.SessionLifetimes).
+    ssoSessionIdleTimeout: 28800
+    ssoSessionMaxLifespan: 43200
     clients:
       - clientId: csoc-client
         name: CSOC Portal
