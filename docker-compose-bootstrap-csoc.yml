@@ -1,67 +1,87 @@
+# Bootstrap a CSOC into AWS from a laptop, with nothing installed but Docker.
+#
+#   ./scripts/build-terraform-image.sh
+#   docker compose -f docker-compose-bootstrap-csoc.yml up --build
+#   open http://localhost:3000/bootstrap
+#
+# The API starts Terraform in sibling containers through the host's Docker, so
+# every path it hands to `docker run -v` is a *host* path. That is why ~/.aws,
+# the work dirs and the runner scripts are mounted at the same absolute paths
+# they have on the host, and HOME is passed through.
+#
+# Both services publish to 127.0.0.1 only. The API runs with MOCK_AUTH, so
+# anything that can reach it acts as a superadmin with your AWS credentials.
 
 services:
+  # Docker API access for the API, limited to what the runner uses (create,
+  # start, inspect, logs, wait, stop). Not published; only `api` can reach it.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+    restart: unless-stopped
 
-  # docker-proxy:
-  #   image: tecnativa/docker-socket-proxy
-  #   container_name: docker-proxy
-  #   environment:
-  #     - CONTAINERS=1
-  #     - IMAGES=1
-  #     - NETWORKS=1
-  #     - VOLUMES=1
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on: [docker-proxy]
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
+      PORT: "8002"
+      # Inside the container; the published port below is loopback-only.
+      BIND_ADDRESS: 0.0.0.0
+      MOCK_AUTH: "true"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      HOME: ${HOME}
+      TERRAFORM_WORK_ROOT: ${HOME}/.gen3-csoc/terraform
+      GEN3_ADMIN_ROOT: ${PWD}
+      # Set to test unpublished gen3-terraform changes from a local checkout.
+      TERRAFORM_MODULES_DIR: ${TERRAFORM_MODULES_DIR:-}
+      # Where the CSOC's ArgoCD gets the CSOC chart. Set to a fork or branch
+      # to test chart changes that are not on uc-cdis/gen3-admin master yet.
+      CSOC_CHART_REPO: ${CSOC_CHART_REPO:-}
+      CSOC_CHART_REVISION: ${CSOC_CHART_REVISION:-}
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      # Read-write so an SSO session can refresh its cached token.
+      - ${HOME}/.aws:${HOME}/.aws
+      - ${HOME}/.gen3-csoc:${HOME}/.gen3-csoc
+      - ./scripts/runner:${PWD}/scripts/runner:ro
+      # A CSOC installed without GitOps gets its chart from this checkout.
+      - ./helm/csoc:${PWD}/helm/csoc:ro
+    networks: [internal, default]
+    restart: unless-stopped
 
-  #     # ADD THESE for docker run:
-  #     - POST=1           # Allow POST requests (creating containers)
-  #     - CREATE=1         # Explicitly allow container creation
-  #     - START=1          # Allow starting containers
-  #     - STOP=1           # Allow stopping containers (optional)
-  #     - RESTART=1        # Allow restarting (optional)
-  #     - DELETE=1         # Allow deleting containers (optional)
-
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   ports:
-  #     - "2375:2375"
-  #   restart: unless-stopped
-
-
-  # api:
-  #   # network_mode: host
-  #   environment:
-  #     DOCKER_HOST: "tcp://docker-proxy:2375"
-  #     PORT: "8002"
-  #     MOCK_AUTH: "true"
-  #     # AWS_PROFILE: "csoc"
-  #     KUBECONFIG: /root/.kube/config
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.api
-  #   ports:
-  #     - "8002:8002"
-  #     - "50051:50051"
-  #   volumes:
-  #     - ~/.aws:/root/.aws
-  #     - ~/.kube/config:/root/.kube/config
-  #     - ./api/certs:/go/src/gen3-admin-api/certs
-  #     - ~/.minikube:/Users/elisecastle/.minikube
   frontend:
-    network_mode: host
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
-        # API_BASE_URL: "http://api:8002"
+        # Next bakes its /api rewrites in at build time.
+        API_BASE_URL: http://api:8002
+    depends_on: [api]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
+      NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: "6bcc8d24207ff145da5740b0ec0ed231563404b4e65325d1ac22b8b68142634f" #pragma: allowlist secret
       MOCK_AUTH: "true"
+      # What next-auth reads to offer the mock sign-in; without it a
+      # production build only has Keycloak, which does not exist yet.
+      ENABLE_MOCK_AUTH: "true"
       NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
-      API_BASE_URL: "http://localhost:8002"
-    # depends_on:
-    #   - api
-    command:
-      - npm
-      - run
-      - start
+      API_BASE_URL: http://api:8002
+    command: ["npm", "run", "start"]
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true

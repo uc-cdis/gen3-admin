@@ -1,0 +1,36 @@
+# {{ .Name }}: CSOC
+
+Everything this CSOC runs, as ArgoCD deploys it. CSOC writes these files
+through pull requests; merge one and ArgoCD applies it.
+
+CSOC owns this directory and re-renders all of it for every change, so make
+changes through CSOC: a hand edit here shows up as a diff in CSOC's next PR.
+
+| Path | What |
+| --- | --- |
+| `root.yaml` | The root Application. It syncs `apps/`. |
+| `apps/` | One Application per component: ArgoCD, External Secrets, the AWS Load Balancer Controller, CloudNativePG, the Keycloak operator, `csoc-config`, and the CSOC portal. |
+| `values/` | Helm values for those Applications. |
+| `manifests/` | Keycloak, its database, the realm, the default StorageClass, and the ExternalSecrets. |
+| `keycloak-operator/` | The Keycloak operator, pinned to {{ .Versions.Keycloak }}. |
+
+## Secrets
+
+No secret is stored in this repo. They live in AWS Secrets Manager in
+{{ .Region }}, under `gen3-csoc/{{ .Name }}/`, and External Secrets Operator
+copies them into the cluster:
+
+| Secrets Manager | Kubernetes Secret |
+| --- | --- |
+| `{{ secret . "github-app" }}` | `argocd/gitops-repo-creds` |
+| `{{ secret . "keycloak-admin" }}` | `{{ .Namespace }}/keycloak-admin-credentials` |
+| `{{ secret . "keycloak-client" }}` | `{{ .Namespace }}/csoc-keycloak-client` |
+| `{{ secret . "nextauth" }}` | `{{ .Namespace }}/csoc-nextauth` |
+
+## Access
+
+`https://{{ .CSOCHost }}` and `https://{{ .KeycloakHost }}` only accept
+these CIDRs:
+{{ range .AllowedCIDRs }}
+- `{{ . }}`
+{{- end }}

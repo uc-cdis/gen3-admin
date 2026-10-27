@@ -1,0 +1,73 @@
+{{- if or .APIImage .FrontendImage }}
+image:
+{{- with .APIImage }}
+  api:
+    repository: {{ q .Repository }}
+    tag: {{ q .Tag }}
+{{- end }}
+{{- with .FrontendImage }}
+  frontend:
+    repository: {{ q .Repository }}
+    tag: {{ q .Tag }}
+{{- end }}
+{{- end }}
+serviceAccount:
+  create: true
+  name: csoc
+  annotations:
+    eks.amazonaws.com/role-arn: {{ q .APIRoleARN }}
+api:
+  env:
+    MOCK_AUTH: "false"
+    KEYCLOAK_URL: {{ q (printf "https://%s" .KeycloakHost) }}
+    KEYCLOAK_REALM: csoc-realm
+    KEYCLOAK_CLIENT_ID: csoc-client
+    CSOC_STATE_BUCKET: {{ q .StateBucket }}
+    CSOC_ENVIRONMENT: {{ q .Name }}
+    AWS_REGION: {{ q .Region }}
+    # Creating a Keycloak client per Gen3 commons goes to Keycloak inside the
+    # cluster, not through the allowlisted load balancer.
+    KEYCLOAK_ADMIN_URL: http://keycloak-service.csoc.svc:8080
+  secretEnv:
+    - name: KEYCLOAK_ADMIN_USERNAME
+      secretName: keycloak-admin-credentials
+      key: username
+    - name: KEYCLOAK_ADMIN_PASSWORD
+      secretName: keycloak-admin-credentials
+      key: password
+frontend:
+  # NEXTAUTH_SECRET and NEXTAUTH_JWT_SECRET, from Secrets Manager.
+  existingSecret: csoc-nextauth
+  env:
+    NEXTAUTH_URL: {{ q (printf "https://%s" .CSOCHost) }}
+    NEXT_KEYCLOAK_CLIENT_ID: csoc-client
+    NEXT_PUBLIC_KEYCLOAK_URL: {{ q (printf "https://%s" .KeycloakHost) }}
+    NEXT_PUBLIC_KEYCLOAK_REALM: csoc-realm
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: {{ q (printf "https://%s/realms/csoc-realm" .KeycloakHost) }}
+  secretEnv:
+    - name: KEYCLOAK_CLIENT_SECRET
+      secretName: csoc-keycloak-client
+      key: client-secret
+service:
+  grpc:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: external
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    loadBalancerSourceRanges:
+{{- range .AllowedCIDRs }}
+      - {{ q . }}
+{{- end }}
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+{{ template "albAnnotations" . }}
+  hosts:
+    - host: {{ q .CSOCHost }}
+      paths:
+        - {path: /api/auth, pathType: Prefix, backend: {service: {name: csoc, port: {name: frontend}}}}
+        - {path: /api/loki, pathType: Prefix, backend: {service: {name: csoc, port: {name: frontend}}}}
+        - {path: /api/obs, pathType: Prefix, backend: {service: {name: csoc, port: {name: frontend}}}}
+        - {path: /api, pathType: Prefix, backend: {service: {name: csoc, port: {name: api}}}}
+        - {path: /, pathType: Prefix, backend: {service: {name: csoc, port: {name: frontend}}}}

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: {{ q .Repo.CloneURL }}
+    targetRevision: {{ q .Branch }}
+    path: {{ .Dir }}/keycloak-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Namespace }}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+{{ template "retry" }}

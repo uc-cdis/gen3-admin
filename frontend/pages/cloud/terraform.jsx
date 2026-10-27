@@ -176,7 +176,7 @@ function ExecutionHistory({ onViewLogs, execution, isExecuting }) {
 export default function Gen3TerraformUI() {
   const [activeStep, setActiveStep] = useState(0);
   const [runtime, setRuntime] = useState('docker');
-  const [workDir, setWorkDir] = useState('/tmp/gen3-terraform');
+  const [workDir, setWorkDir] = useState('');
 
   // AWS Credentials State
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
@@ -493,7 +493,7 @@ export default function Gen3TerraformUI() {
               <TextInput
                 label="Working Directory"
                 description="Path where Terraform files will be executed"
-                placeholder="/tmp/gen3-terraform"
+                placeholder="~/.gen3-csoc/terraform"
                 value={workDir}
                 onChange={(e) => setWorkDir(e.target.value)}
               />

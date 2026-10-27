@@ -1,0 +1,16 @@
+# The Keycloak operator's published manifests, pinned to {{ .Versions.Keycloak }}, installed
+# into the {{ .Namespace }} namespace, where it watches the Keycloak below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ .Namespace }}
+resources:
+  - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/{{ .Versions.Keycloak }}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+  - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/{{ .Versions.Keycloak }}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
+  - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/{{ .Versions.Keycloak }}/kubernetes/kubernetes.yml
+patches:
+  # The manifest binds the operator's ClusterRole to the "keycloak" namespace.
+  - target: {kind: ClusterRoleBinding, name: keycloak-operator-clusterrole-binding}
+    patch: |-
+      - op: replace
+        path: /subjects/0/namespace
+        value: {{ .Namespace }}

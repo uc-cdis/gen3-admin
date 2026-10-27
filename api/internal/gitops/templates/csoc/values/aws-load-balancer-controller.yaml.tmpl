@@ -1,0 +1,12 @@
+clusterName: {{ q .ClusterName }}
+region: {{ q .Region }}
+vpcId: {{ q .VPCID }}
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: {{ q .LBRoleARN }}
+# Every upgrade would otherwise make a new webhook certificate, and until the
+# pods load it the API server rejects every ingress change ("x509:
+# certificate signed by unknown authority"); install and finish both upgrade.
+keepTLSSecret: true

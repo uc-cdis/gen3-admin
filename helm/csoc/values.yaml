@@ -44,6 +44,8 @@ api:
     requests:
       memory: "64Mi"
       cpu: "250m"
+  # Env vars read from Secrets: [{name, secretName, key}]
+  secretEnv: []
   volumeMounts:
     - name: data-volume
       mountPath: /go/src/api/certs
@@ -68,6 +70,9 @@ frontend:
   #   kubectl create secret generic csoc-nextauth \
   #     --from-literal=NEXTAUTH_SECRET="$(openssl rand -base64 32)" \
   #     --from-literal=NEXTAUTH_JWT_SECRET="$(openssl rand -base64 32)"
+  # Env vars read from Secrets: [{name, secretName, key}], e.g. the Keycloak
+  # client secret as KEYCLOAK_CLIENT_SECRET.
+  secretEnv: []
   existingSecret: ""
   existingSecretKeys:
     nextauthSecret: NEXTAUTH_SECRET
@@ -120,8 +125,18 @@ podAnnotations: {}
 # For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+# The pod's data volume is ReadWriteOnce (an EBS volume on AWS): a rolling
+# update starts the new pod while the old one still holds it, and the new
+# one waits forever on a Multi-Attach error. Recreate stops the old one first.
+strategy:
+  type: Recreate
+
+# The images run as uid/gid 1000. A new volume (an EBS one, say) is owned by
+# root, and the API writes its CA into /go/src/api/certs on it; fsGroup gives
+# the volume to the pod's group so it can.
+podSecurityContext:
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
 
 securityContext: {}
   # capabilities:
@@ -139,6 +154,12 @@ service:
     port: 50051      # Service port
     targetPort: 50051  # api containerPort
     type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    # CIDRs allowed to reach the agent endpoint; empty means unrestricted.
+    loadBalancerSourceRanges: []
 
   frontend:
     port: 80          # Service port

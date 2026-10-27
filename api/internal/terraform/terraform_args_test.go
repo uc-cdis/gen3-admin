@@ -29,6 +29,8 @@ func TestInitPassesBackendConfig(t *testing.T) {
 		"-backend-config=bucket=gen3-tf-state",
 		"-backend-config=key=csoc/dev/terraform.tfstate",
 		"-backend-config=region=us-east-1",
+		"-backend-config=encrypt=true",
+		"-backend-config=use_lockfile=true",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("init args = %q, want it to contain %q", got, want)
@@ -225,6 +227,23 @@ func TestDockerRunsOnlyTheConstantPrelude(t *testing.T) {
 	}
 }
 
+func TestLocalModulesOnlyWithACheckout(t *testing.T) {
+	req := validReq()
+	req.FromModule = "/src/examples/csoc"
+	t.Setenv("TERRAFORM_MODULES_DIR", "")
+	if contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("published modules must be fetched as published")
+	}
+	t.Setenv("TERRAFORM_MODULES_DIR", t.TempDir())
+	if !contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("a local checkout must supply the nested gen3-terraform modules too")
+	}
+	req.FromModule = "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc"
+	if contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("only a source inside the mounted checkout is rewritten")
+	}
+}
+
 func TestDockerRunIsDetached(t *testing.T) {
 	// The handler used to block until the whole run finished.
 	args := dockerArgs(t, validReq(), "")
@@ -362,5 +381,22 @@ func TestClientCannotSupplyAModuleURL(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"from_module":"git::https://evil.example/tf"}`), &req)
 	if req.FromModule != "" {
 		t.Errorf("FromModule = %q, want it settable only by the server", req.FromModule)
+	}
+}
+
+func TestSplitTimestamp(t *testing.T) {
+	ts, text, ok := splitTimestamp("2026-10-26T16:58:17.658036051Z module.vpc.aws_eip.nat_gw: Creating...")
+	if !ok || text != "module.vpc.aws_eip.nat_gw: Creating..." || ts.Nanosecond() != 658036051 {
+		t.Errorf("got %v %q %v", ts, text, ok)
+	}
+	// Plan output relies on its indentation, which must survive.
+	if _, text, _ := splitTimestamp("2026-10-26T16:58:17Z       + id = (known after apply)"); text != "      + id = (known after apply)" {
+		t.Errorf("indentation lost: %q", text)
+	}
+	if _, text, ok := splitTimestamp("2026-10-26T16:58:17Z"); !ok || text != "" {
+		t.Errorf("an empty line: %q %v", text, ok)
+	}
+	if _, _, ok := splitTimestamp("no timestamp here"); ok {
+		t.Error("a line without a timestamp was accepted")
 	}
 }

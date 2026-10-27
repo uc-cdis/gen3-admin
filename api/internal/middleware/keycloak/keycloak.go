@@ -415,6 +415,9 @@ func AuthMiddleware() gin.HandlerFunc {
 		superAdminPrefixes := []string{
 			"/api/aws",
 			"/api/terraform",
+			"/api/environments",
+			"/api/gitops",
+			"/api/keycloak",
 			"/api/runner",
 		}
 

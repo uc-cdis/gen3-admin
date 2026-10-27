@@ -1,5 +1,67 @@
-import { TextInput, Stack, Paper, Divider, Card, Group, Title, Switch, Collapse, Text, SimpleGrid, Tooltip, PasswordInput, Radio, Textarea, Alert, List, Anchor, Checkbox, SegmentedControl } from '@mantine/core';
-import { IconHelp, IconWorld, IconId, IconKey, IconLink, IconInfoCircle, IconAlertTriangle, IconBrandGoogle, IconBroadcast } from '@tabler/icons-react';
+import { useState } from 'react';
+import { TextInput, Stack, Paper, Divider, Card, Group, Title, Switch, Collapse, Text, SimpleGrid, Tooltip, PasswordInput, Radio, Textarea, Alert, List, Anchor, Checkbox, SegmentedControl, Button } from '@mantine/core';
+import { IconHelp, IconWorld, IconId, IconKey, IconLink, IconInfoCircle, IconAlertTriangle, IconBrandGoogle, IconBroadcast, IconShieldLock } from '@tabler/icons-react';
+import { callGoApi } from '@/lib/k8s';
+
+const OIDC = 'values.fence.FENCE_CONFIG.OPENID_CONNECT.generic_oidc_idp';
+
+// Log the commons' users in through this CSOC's Keycloak: the CSOC creates
+// the commons' client in its realm, and Fence's generic OIDC provider is
+// filled in from it.
+function CsocKeycloakLogin({ form }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+  const hostname = (form.values.values?.global?.hostname || '').trim().toLowerCase();
+  const namespace = form.values.destination?.namespace || form.values.destination?.releaseName || '';
+
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await callGoApi('/keycloak/commons-client', 'POST', { hostname, namespace }, null);
+      form.setFieldValue(`${OIDC}.enabled`, true);
+      form.setFieldValue(`${OIDC}.name`, res.name);
+      form.setFieldValue(`${OIDC}.client_id`, res.client_id);
+      form.setFieldValue(`${OIDC}.client_secret`, res.client_secret);
+      form.setFieldValue(`${OIDC}.redirect_url`, res.redirect_url);
+      form.setFieldValue(`${OIDC}.discovery_url`, res.discovery_url);
+      // Users are known by email, as in user.yaml.
+      form.setFieldValue(`${OIDC}.user_id_field`, 'email');
+      form.setFieldValue(`${OIDC}.email_field`, 'email');
+      form.setFieldValue(`${OIDC}.scope`, 'openid email profile');
+      form.setFieldValue('values.fence.FENCE_CONFIG.LOGIN_OPTIONS', [{ name: res.name, idp: 'generic_oidc_idp' }]);
+      form.setFieldValue('values.fence.FENCE_CONFIG.DEFAULT_LOGIN_IDP', 'generic_oidc_idp');
+      setDone(res.client_id);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Paper p="md" radius="md" withBorder>
+      <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <Group gap="sm" align="flex-start" wrap="nowrap">
+          <IconShieldLock />
+          <div>
+            <Text>Log in through this CSOC</Text>
+            <Text size="xs" c="dimmed">
+              Users sign in with their CSOC account (Keycloak). Creates the client
+              {namespace ? ` fence-${namespace}` : ''} in the CSOC realm for {hostname || 'this hostname'}.
+            </Text>
+          </div>
+        </Group>
+        <Button size="xs" onClick={connect} loading={busy} disabled={!hostname || hostname.startsWith('.') || !namespace}>
+          {done ? 'Connected' : 'Use CSOC login'}
+        </Button>
+      </Group>
+      {done && <Text size="xs" c="green" mt="xs">Fence uses {done}; the Generic OIDC settings below are filled in.</Text>}
+      {error && <Text size="xs" c="red" mt="xs">{error}</Text>}
+    </Paper>
+  );
+}
 
 
 const AuthStep = ({ form }) => {
@@ -7,6 +69,8 @@ const AuthStep = ({ form }) => {
 
   return (
     <Stack gap="lg">
+      <CsocKeycloakLogin form={form} />
+
       <Paper p="md" radius="md" withBorder>
         <Group justify="space-between">
           <IconBrandGoogle />

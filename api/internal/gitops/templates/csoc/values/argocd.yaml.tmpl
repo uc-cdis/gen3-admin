@@ -1,0 +1,9 @@
+# The CSOC's ArgoCD only deploys the CSOC itself; each Gen3 commons runs its
+# own. Its UI is not exposed: CSOC talks to it inside the cluster.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+configs:
+  params:
+    server.insecure: true
