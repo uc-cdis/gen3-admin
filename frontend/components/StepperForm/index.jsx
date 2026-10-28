@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Stepper, Button, Group, Container, Switch, Code, Flex, Paper, Stack, Divider, Text, Alert,
   Progress, ThemeIcon, Box, Badge, Loader, Title, SimpleGrid, Accordion, Anchor,
@@ -32,12 +32,14 @@ import YamlEditor from '../YamlEditor/YamlEditor';
 import ConfigStep from './steps/ConfigStep';
 import GlobalSettingsStep from './steps/GlobalSettingsStep';
 
-// Baseline copy of the chart defaults the wizard renders in its UI.
-// IMPORTANT: this object is NOT sent to Helm wholesale. At deploy time we diff the
-// form state against it (see diffValues) and send only the keys the user actually
-// changed, so the upstream gen3-helm chart owns every default we did not touch.
-// Anything hardcoded here that drifts from upstream would otherwise silently
-// override the chart (this is what pinned a non-existent postgres image before).
+// Fallback copy of the chart defaults, used only until the live fetch of the
+// chart's own values.yaml succeeds (see the /helm/chart-values effect below),
+// or when that fetch fails. The live fetch is the baseline the diff is taken
+// against, so gen3-helm default changes reflect in the wizard with no portal
+// release; this copy is just the offline fallback. It is never sent to Helm
+// wholesale: at deploy time we diff the form state against the baseline
+// (see diffValues) and send only the keys the user actually changed, so the
+// upstream chart owns every default we did not touch.
 const DEFAULT_VALUES = {
     // ── global (aligned with gen3-helm/helm/gen3/values.yaml lines 6-147) ──
     global: {
@@ -446,10 +448,14 @@ const StepperForm = () => {
   const [deployComplete, setDeployComplete] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [deployedHostname, setDeployedHostname] = useState('');
-  // Baseline the outgoing values are diffed against. Defaults to the chart-aligned
-  // defaults; in edit mode it becomes the live release's values so an update sends
-  // only what the user actually changed this session.
+  // Baseline the outgoing values are diffed against. Ideally the chart's own
+  // values.yaml (fetched below); until that arrives, or if it fails, the
+  // built-in chart-aligned copy.
   const [valuesBaseline, setValuesBaseline] = useState(() => structuredClone(DEFAULT_VALUES));
+  // The chart's real defaults, fetched from the chart repository, and the error
+  // when the fetch fell back to the built-in copy.
+  const [chartDefaults, setChartDefaults] = useState(null);
+  const [chartDefaultsError, setChartDefaultsError] = useState(null);
 
   const form = useForm({
     initialValues: {
@@ -488,6 +494,41 @@ const StepperForm = () => {
       console.error('Error fetching certs', err);
     }
   };
+
+  // The diff baseline must be the chart's real values.yaml, not the built-in
+  // copy: a hand-maintained baseline drifts from upstream (the legacy-portal
+  // vs frontend-framework inversion proved it) and drift means the wizard
+  // deploys the chart's defaults while showing the operator something else.
+  // Fetching from the repo means gen3-helm default changes reflect here with
+  // no portal release. Falls back to the built-in copy on failure.
+  const latestFormRef = useRef({ values: form.values.values, baseline: valuesBaseline, editMode });
+  latestFormRef.current = { values: form.values.values, baseline: valuesBaseline, editMode };
+  useEffect(() => {
+    const dest = form.values.destination;
+    if (!dest?.repoUrl || !dest?.chartName) return;
+    let cancelled = false;
+    const q = new URLSearchParams({ repoUrl: dest.repoUrl, chart: dest.chartName });
+    if (dest.chartVersion) q.set('version', dest.chartVersion);
+    setChartDefaultsError(null);
+    callGoApi(`/helm/chart-values?${q}`, 'GET', null, null, accessToken)
+      .then((values) => {
+        if (cancelled) return;
+        setChartDefaults(values);
+        const latest = latestFormRef.current;
+        // Edit mode baselines the live release; and never clobber a form the
+        // operator has already touched this session.
+        if (latest.editMode) return;
+        if (Object.keys(diffValues(latest.values, latest.baseline)).length > 0) return;
+        form.setFieldValue('values', deepMerge(structuredClone(DEFAULT_VALUES), values));
+        setValuesBaseline(structuredClone(values));
+      })
+      .catch((err) => {
+        console.error('Chart defaults fetch failed; using the built-in copy:', err);
+        if (!cancelled) setChartDefaultsError(err.message || 'unknown error');
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.values.destination?.repoUrl, form.values.destination?.chartName, form.values.destination?.chartVersion, accessToken]);
 
   // Poll helm releases for deployment status
   const pollReleaseStatus = useCallback(() => {
@@ -730,6 +771,12 @@ const StepperForm = () => {
               <Text size="sm" fw={600}>Generated Configuration</Text>
               <Badge size="xs" variant="light" color="gray">values.yaml</Badge>
             </Group>
+            {chartDefaultsError ? (
+              <Alert color="orange" variant="light" mb="sm" fw={500} fontSize="xs">
+                Could not load the chart's current defaults ({chartDefaultsError}); diffing
+                against the built-in copy, which may lag the upstream chart.
+              </Alert>
+            ) : null}
             <Editor
               className='border rounded-lg'
               value={YAML.stringify(diffValues(form.values.values, valuesBaseline), null, 2)}

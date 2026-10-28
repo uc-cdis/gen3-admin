@@ -200,6 +200,9 @@ func SetupHTTPServer() {
 	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
 	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
 	r.GET("/api/terraform/runner-image", terraform.HandleCheckRunnerImage())
+	// The deploy wizard's baseline: the chart's own values.yaml, so helm
+	// default changes reflect in the wizard without a portal release.
+	r.GET("/api/helm/chart-values", HelmChartValuesHandler)
 	environments.ReconcileRun = terraform.ReconcileRun
 	environments.RegisterRoutes(r)
 	gitops.RegisterRoutes(r)
