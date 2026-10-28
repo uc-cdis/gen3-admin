@@ -43,7 +43,7 @@ export const END = { ok: '\n✓ Execution completed successfully' };
  * @param {(run: {id: string, operation: string}, ok: boolean) => void} [p.onEnd]
  * @param {(run: {id: string, operation: string}) => void} [p.onStart]
  */
-export function useTerraformRun({ workDir, environment, moduleName, tfvars, awsContext, onEnd, onStart, dockerImage = 'gen3-terraform:latest' }) {
+export function useTerraformRun({ workDir, environment, moduleName, tfvars, awsContext, onEnd, onStart, dockerImage }) {
   const [run, setRun] = useState(null); // { id, operation }
   const [lines, setLines] = useState([]);
   const [running, setRunning] = useState(false);

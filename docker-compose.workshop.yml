@@ -9,8 +9,9 @@
 # docker-compose-bootstrap-csoc.yml builds from source and stays for
 # development.
 #
-# After a release, pin the three quay tags below to the release tag. Until
-# then master is rebuilt by CI on every push to master.
+# Pinned to the feat/csoc-bootstrap-wizard branch build, and the CSOC
+# Terraform to gen3-terraform's feat/csoc-bootstrap-master, until both are
+# merged; then pin every tag below and TERRAFORM_MODULES_REF to a release.
 #
 # The API starts Terraform in sibling containers through the host's Docker,
 # so every path it hands to `docker run -v` is a *host* path: ~/.aws and the
@@ -37,7 +38,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: quay.io/cdis/csoc-api:master
+    image: quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard
     depends_on: [docker-proxy]
     environment:
       DOCKER_HOST: tcp://docker-proxy:2375
@@ -52,15 +53,15 @@ services:
       # runner containers mount them from there.
       GEN3_ADMIN_ROOT: ${PWD}
       # The runner image every plan, apply, install and teardown runs in.
-      TERRAFORM_RUNNER_IMAGE: quay.io/cdis/csoc-terraform:master
+      TERRAFORM_RUNNER_IMAGE: quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard
       # Set to a local gen3-terraform checkout to test unpublished modules.
       # TERRAFORM_MODULES_DIR: ${TERRAFORM_MODULES_DIR:-}
       # Which gen3-terraform branch or tag the CSOC's Terraform comes from.
-      # TERRAFORM_MODULES_REF: ${TERRAFORM_MODULES_REF:-}
+      TERRAFORM_MODULES_REF: ${TERRAFORM_MODULES_REF:-feat/csoc-bootstrap-master}
       # What the install puts in the cluster; empty leaves the chart's
       # defaults (:master).
-      CSOC_API_IMAGE: quay.io/cdis/csoc-api:master
-      CSOC_FRONTEND_IMAGE: quay.io/cdis/csoc-frontend:master
+      CSOC_API_IMAGE: quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard
+      CSOC_FRONTEND_IMAGE: quay.io/cdis/csoc-frontend:feat_csoc-bootstrap-wizard
       # The agent follows the API's tag by default; name one to override.
       # CSOC_AGENT_IMAGE: quay.io/cdis/csoc-agent:master
       # Where the CSOC's ArgoCD gets the chart, for GitOps installs.
@@ -82,7 +83,7 @@ services:
     # The wizard: Dockerfile.frontend with bootstrap mode and the compose
     # API host baked in at build time (CI cannot pass build args, hence the
     # separate image).
-    image: quay.io/cdis/csoc-bootstrap-frontend:master
+    image: quay.io/cdis/csoc-bootstrap-frontend:feat_csoc-bootstrap-wizard
     depends_on: [api]
     ports:
       - "127.0.0.1:3000:3000"

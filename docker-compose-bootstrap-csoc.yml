@@ -48,7 +48,7 @@ services:
       # Or pick a branch/tag of uc-cdis/gen3-terraform for the git modules.
       TERRAFORM_MODULES_REF: ${TERRAFORM_MODULES_REF:-}
       # Pin the Terraform runner image (default: quay.io/cdis/csoc-terraform:master).
-      TERRAFORM_RUNNER_IMAGE: ${TERRAFORM_RUNNER_IMAGE:-}
+      TERRAFORM_RUNNER_IMAGE: ${TERRAFORM_RUNNER_IMAGE:-gen3-terraform:latest}
       # Where the CSOC's ArgoCD gets the CSOC chart. Set to a fork or branch
       # to test chart changes that are not on uc-cdis/gen3-admin master yet.
       CSOC_CHART_REPO: ${CSOC_CHART_REPO:-}
