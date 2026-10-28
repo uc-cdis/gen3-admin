@@ -202,6 +202,21 @@ role that cannot be assumed) says so in a red box and changes nothing.
 - [ ] Delete the hosted zone, and the ACM certificate the Certificate step made, while Terraform destroys: neither is Terraform's. Only the state bucket must wait until the end.
 - [ ] Not in parallel: the uninstall and the cluster's destroy (the uninstall needs the cluster), and the bucket (it holds the state the destroy uses).
 
+## Backlog: Force teardown clears everything left in the VPC
+
+Found 2026-10-28. The destroy sat for 10 minutes on the node security groups (`ssh_eks_*`, `eks_nodes_sg`) and a private subnet. The cause was a detached VPC CNI interface (`aws-K8S-i-…`, status `available`) that a Karpenter node's termination left behind. Terraform retries for about 20 minutes, then fails, and a retry fails the same way because nothing removes the interface. That day it was deleted by hand (`aws ec2 delete-network-interface`), and the destroy then finished at once.
+
+- [ ] With Force, after the Karpenter nodes terminate, the uninstall clears **everything left in the cluster's VPC** that Terraform doesn't own and that would block the destroy:
+  - [ ] detached network interfaces (`available`, any description; `aws-K8S-*` from the CNI is the known one);
+  - [ ] instances still in the VPC (Karpenter nodes not yet terminated, or terminated but stuck);
+  - [ ] load balancers and target groups the controller left behind;
+  - [ ] security groups the load balancer controller or Karpenter created (`k8s-*`, tagged `elbv2.k8s.aws/cluster` or `karpenter.sh/discovery`), and any rules on Terraform's security groups that reference them;
+  - [ ] EBS volumes in `available` state that were this cluster's;
+  - [ ] VPC endpoints and NAT gateways not in the Terraform state.
+- [ ] Scope it strictly to the cluster's own VPC, by its ID from the outputs. Log every ID before deleting it, and skip anything carrying a tag that isn't this cluster's.
+- [ ] Also run it when a destroy fails on `DependencyViolation`, as part of "Retry teardown with Force".
+- [ ] Without Force, keep today's behaviour: wait, and report what is left.
+
 ## Overriding Terraform variables from the wizard
 
 - [ ] The example declares 115 variables; the wizard sets about 20 and the
