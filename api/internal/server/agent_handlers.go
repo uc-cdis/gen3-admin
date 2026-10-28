@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"regexp"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -68,6 +69,21 @@ type ServiceAccountData struct {
 	Name            string
 	ServerAddress   string
 	Namespace       string
+	Image           string
+}
+
+// defaultAgentImage is used when CSOC_AGENT_IMAGE is unset. A CSOC
+// installed by the bootstrap sets it to csoc-agent at its own API's tag.
+const defaultAgentImage = "quay.io/cdis/csoc-agent:feat_bootstrap-onboarding-impl"
+
+var validAgentImage = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$`)
+
+// agentImage is the image deployed for every agent.
+func agentImage() string {
+	if v := os.Getenv("CSOC_AGENT_IMAGE"); v != "" && validAgentImage.MatchString(v) {
+		return v
+	}
+	return defaultAgentImage
 }
 
 func generateAgentConfig(agentName string, roleArn string, eks bool, assumeMethod string, accessKey string, secretAccessKey string, serverAddress string) (string, error) {
@@ -195,7 +211,7 @@ spec:
       serviceAccount: csoc
       containers:
         - name: agent
-          image: quay.io/cdis/csoc-agent:feat_bootstrap-onboarding-impl
+          image: {{ .Image }}
           imagePullPolicy: Always
           command: ["agent"]
           args: ["--name", "{{ .Name }}", "--server-address", "{{ .ServerAddress }}"]
@@ -232,6 +248,7 @@ spec:
 		Name:            agentName,
 		ServerAddress:   serverAddress,
 		Namespace:       agentNamespace,
+		Image:           agentImage(),
 	}
 
 	var saBuffer bytes.Buffer

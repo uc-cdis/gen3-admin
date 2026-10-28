@@ -3,6 +3,7 @@ package gitops
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/uc-cdis/gen3-admin/internal/environments"
@@ -76,16 +77,41 @@ func CSOCInputsFor(e *environments.Environment, bucket string) (CSOCInputs, erro
 		LBRoleARN:     str("lb_controller_role_arn"),
 		ESORoleARN:    str("external_secrets_role_arn"),
 		APIRoleARN:    str("csoc_api_role_arn"),
+		EBSRoleARN:    str("ebs_csi_role_arn"),
 		CertARN:       cert,
 		CSOCHost:      str("csoc_hostname"),
 		KeycloakHost:  str("keycloak_hostname"),
 		StateBucket:   bucket,
 		AdminEmail:    email,
 		AllowedCIDRs:  cidrs,
-		APIImage:      SplitImage(e.Install.APIImage),
-		FrontendImage: SplitImage(e.Install.FrontendImage),
+		APIImage:      SplitImage(orDefault(e.Install.APIImage, "CSOC_API_IMAGE")),
+		FrontendImage: SplitImage(orDefault(e.Install.FrontendImage, "CSOC_FRONTEND_IMAGE")),
 		Chart:         DefaultChart(),
 		Versions:      DefaultVersions,
 	}
+	in.AgentImage = agentImage(in.APIImage)
 	return in, in.Validate()
+}
+
+// orDefault is the image the form named, else the one this bootstrap API
+// was configured with (the workshop compose pins both), else none: the
+// chart's own default.
+func orDefault(ref, env string) string {
+	if ref != "" {
+		return ref
+	}
+	return os.Getenv(env)
+}
+
+// agentImage is the agent the CSOC deploys into each cluster:
+// CSOC_AGENT_IMAGE, else csoc-agent at the CSOC API's own tag, so the two
+// are released together.
+func agentImage(api *Image) *Image {
+	if v := os.Getenv("CSOC_AGENT_IMAGE"); v != "" {
+		return SplitImage(v)
+	}
+	if api != nil && api.Tag != "" && strings.HasSuffix(api.Repository, "/csoc-api") {
+		return &Image{Repository: strings.TrimSuffix(api.Repository, "/csoc-api") + "/csoc-agent", Tag: api.Tag}
+	}
+	return nil
 }

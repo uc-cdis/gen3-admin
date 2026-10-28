@@ -28,6 +28,9 @@ api:
     # Creating a Keycloak client per Gen3 commons goes to Keycloak inside the
     # cluster, not through the allowlisted load balancer.
     KEYCLOAK_ADMIN_URL: http://keycloak-service.csoc.svc:8080
+{{- with .AgentImage }}
+    CSOC_AGENT_IMAGE: {{ q (printf "%s:%s" .Repository .Tag) }}
+{{- end }}
   secretEnv:
     - name: KEYCLOAK_ADMIN_USERNAME
       secretName: keycloak-admin-credentials
