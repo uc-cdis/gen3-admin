@@ -452,9 +452,19 @@ func terraformRoot() string {
 
 // validWorkDirName matches a single path segment: no separators, no dots, so
 // neither traversal nor shell metacharacters can survive it.
-// defaultRunnerImage is built locally by scripts/build-terraform-image.sh and
-// is never pushed; docker resolves local images first.
-const defaultRunnerImage = "gen3-terraform:latest"
+// publishedRunnerImage is the runner CI publishes from Dockerfile.terraform.
+// TERRAFORM_RUNNER_IMAGE overrides it: a pinned tag for a workshop, or
+// gen3-terraform:latest from scripts/build-terraform-image.sh for local
+// development.
+const publishedRunnerImage = "quay.io/cdis/csoc-terraform:master"
+
+// defaultRunnerImage is the image a run uses when the request names none.
+func defaultRunnerImage() string {
+	if v := os.Getenv("TERRAFORM_RUNNER_IMAGE"); v != "" && validImageRef.MatchString(v) {
+		return v
+	}
+	return publishedRunnerImage
+}
 
 // validImageRef allows a plain [registry/]name[:tag|@digest] reference and
 // nothing that could be read as another docker argument -- in particular it
@@ -520,7 +530,7 @@ func HandleCheckRunnerImage() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		image := c.Query("image")
 		if image == "" {
-			image = defaultRunnerImage
+			image = defaultRunnerImage()
 		}
 
 		// Reject anything that is not a plain image reference: the value is

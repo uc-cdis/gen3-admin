@@ -178,9 +178,23 @@ func TestValidateRejectsHostileValues(t *testing.T) {
 func TestModuleSourceIsChosenByTheServer(t *testing.T) {
 	t.Setenv("CSOC_MODULE_SOURCE", "")
 	t.Setenv("TERRAFORM_MODULES_DIR", "")
-	if got := moduleSources()["csoc"]; !strings.Contains(got, "//examples/csoc?ref=terraform-docker") {
-		t.Errorf("default csoc source = %q, want the published terraform-docker ref", got)
+	t.Setenv("TERRAFORM_MODULES_REF", "")
+	if got := moduleSources()["csoc"]; !strings.HasSuffix(got, "//examples/csoc?ref=master") {
+		t.Errorf("default csoc source = %q, want gen3-terraform master", got)
 	}
+
+	// A branch or tag; anything that could leave the sed expression is ignored.
+	t.Setenv("TERRAFORM_MODULES_REF", "feat/csoc-bootstrap")
+	if got := moduleSources()["csoc"]; !strings.HasSuffix(got, "?ref=feat/csoc-bootstrap") {
+		t.Errorf("csoc source with TERRAFORM_MODULES_REF = %q", got)
+	}
+	for _, bad := range []string{"x#y", "a'b", "-rf", "a..b", "a b"} {
+		t.Setenv("TERRAFORM_MODULES_REF", bad)
+		if got := modulesRef(); got != defaultModulesRef {
+			t.Errorf("modulesRef with %q = %q, want the default", bad, got)
+		}
+	}
+	t.Setenv("TERRAFORM_MODULES_REF", "")
 
 	// A local checkout is mounted read-only; the source becomes a path in it.
 	t.Setenv("TERRAFORM_MODULES_DIR", "/Users/me/gen3-terraform")
@@ -398,5 +412,20 @@ func TestSplitTimestamp(t *testing.T) {
 	}
 	if _, _, ok := splitTimestamp("no timestamp here"); ok {
 		t.Error("a line without a timestamp was accepted")
+	}
+}
+
+func TestRunnerImageDefault(t *testing.T) {
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "")
+	if got := defaultRunnerImage(); got != publishedRunnerImage {
+		t.Errorf("default runner image = %q, want %q", got, publishedRunnerImage)
+	}
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "gen3-terraform:latest")
+	if got := defaultRunnerImage(); got != "gen3-terraform:latest" {
+		t.Errorf("runner image with TERRAFORM_RUNNER_IMAGE = %q", got)
+	}
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "--privileged")
+	if got := defaultRunnerImage(); got != publishedRunnerImage {
+		t.Errorf("runner image with a flag-like value = %q, want the published image", got)
 	}
 }

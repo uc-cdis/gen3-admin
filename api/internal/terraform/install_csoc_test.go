@@ -283,7 +283,7 @@ func TestScriptDockerArgsKeepThePasswordOutOfArgv(t *testing.T) {
 	}
 	// The script runs as $0 of the constant command that copies ~/.aws.
 	if !strings.HasSuffix(got, `exec /bin/bash "$0" /gen3-admin/scripts/runner/install-csoc.sh`) ||
-		!strings.Contains(got, "--entrypoint /bin/bash gen3-terraform:latest -c "+awsHomeCopy) {
+		!strings.Contains(got, "--entrypoint /bin/bash "+publishedRunnerImage+" -c "+awsHomeCopy) {
 		t.Errorf("args do not end by running the install script: %q", got)
 	}
 	if !strings.Contains(got, ".aws:"+containerAWSHostDir+":ro") || strings.Contains(got, ".aws:/root/.aws:") {

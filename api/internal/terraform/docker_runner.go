@@ -71,6 +71,11 @@ const runnerPrelude = `set -e
 elif [ -n "$GEN3_FROM_MODULE" ] && ! ls ./*.tf >/dev/null 2>&1; then
   echo "=== Fetching module $GEN3_FROM_MODULE ==="
   terraform init -input=false -backend=false -from-module="$GEN3_FROM_MODULE"
+  if [ -n "$GEN3_MODULES_REF" ]; then
+    # The example's own gen3-terraform modules, at the example's ref.
+    sed -i -E 's#("git::(https://)?github\.com/uc-cdis/gen3-terraform\.git//[^"?]+)(\?ref=[^"]*)?"#\1?ref='"$GEN3_MODULES_REF"'"#' ./*.tf
+    grep -h 'source *= *"git::.*gen3-terraform' ./*.tf || true
+  fi
 fi
 if [ -f "` + containerVarsDir + `/` + backendOverrideName + `" ]; then
   cp "` + containerVarsDir + `/` + backendOverrideName + `" "./` + backendOverrideName + `"
@@ -174,11 +179,14 @@ func validateRequest(req *TerraformRequest) error {
 // server fetches. Clients pick a name, never a URL, so a request cannot make
 // the runner pull and execute arbitrary Terraform.
 //
+// The CSOC's Terraform is gen3-terraform's examples/csoc at modulesRef():
+// TERRAFORM_MODULES_REF picks a branch or tag, and the gen3-terraform modules
+// the example uses are fetched at the same ref (see runnerPrelude).
 // TERRAFORM_MODULES_DIR points at a local gen3-terraform checkout, mounted
 // read-only into the runner; this is the path for testing unpublished module
 // changes. CSOC_MODULE_SOURCE overrides the source outright.
 func moduleSources() map[string]string {
-	csoc := "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=terraform-docker"
+	csoc := "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc?ref=" + modulesRef()
 	if os.Getenv("TERRAFORM_MODULES_DIR") != "" {
 		csoc = containerModulesDir + "/examples/csoc"
 	}
@@ -186,6 +194,20 @@ func moduleSources() map[string]string {
 		csoc = v
 	}
 	return map[string]string{"csoc": csoc}
+}
+
+// validModulesRef is a git branch or tag name. The ref reaches a sed
+// expression in the runner, so nothing outside these characters may.
+var validModulesRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`)
+
+const defaultModulesRef = "master"
+
+// modulesRef is the gen3-terraform branch or tag the runner fetches.
+func modulesRef() string {
+	if v := os.Getenv("TERRAFORM_MODULES_REF"); v != "" && validModulesRef.MatchString(v) && !strings.Contains(v, "..") {
+		return v
+	}
+	return defaultModulesRef
 }
 
 // prepareRunFiles writes the per-run files the container reads from the vars
@@ -240,6 +262,8 @@ func buildDockerRunArgs(req *TerraformRequest, executionID, credsPath string) []
 			args = append(args, "-e", "GEN3_FROM_MODULE="+src)
 			if os.Getenv("TERRAFORM_MODULES_DIR") != "" && strings.HasPrefix(src, containerModulesDir+"/") {
 				args = append(args, "-e", "GEN3_LOCAL_MODULES=1")
+			} else if os.Getenv("TERRAFORM_MODULES_REF") != "" {
+				args = append(args, "-e", "GEN3_MODULES_REF="+modulesRef())
 			}
 		}
 		args = append(args, "-e", "GEN3_SHOW_IDENTITY=1")
@@ -281,7 +305,7 @@ func runnerImage(req *TerraformRequest) string {
 	if req.DockerImage != "" {
 		return req.DockerImage
 	}
-	return defaultRunnerImage
+	return defaultRunnerImage()
 }
 
 // dockerRunHeader is everything up to the image: identity labels, mounts,
