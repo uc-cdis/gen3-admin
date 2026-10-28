@@ -9,13 +9,13 @@ export const CONCEPTS = [
   body: () => `
 <p>Read this page to know what you are operating and reviewing: which component does what, where it runs, and what it can reach. The tutorial pages link here for detail; procedures are in the tutorial and the how-to guides.</p>
 <h2>The bootstrap wizard on your computer</h2>
-<p><code>docker-compose-bootstrap-csoc.yml</code> starts three long-running containers:</p>
+<p><code>docker-compose.workshop.yml</code> starts three long-running containers from published images. (<code>docker-compose-bootstrap-csoc.yml</code> builds the same containers from source, for development.)</p>
 ${table(['Service', 'Built from', 'Listens on', 'Role'], [
-  ['<code>frontend</code>', '<code>Dockerfile.frontend</code> (Next.js)', '<code>127.0.0.1:3000</code>', 'Serves the wizard at <code>/bootstrap</code> and forwards <code>/api</code> calls to the API.'],
-  ['<code>api</code>', '<code>Dockerfile.api</code> (Go)', '<code>127.0.0.1:8002</code>', 'Acts with your AWS credentials, without a sign-in of its own, and starts runner containers.'],
+  ['<code>frontend</code>', '<code>quay.io/cdis/csoc-bootstrap-frontend</code> (Next.js)', '<code>127.0.0.1:3000</code>', 'Serves the wizard at <code>/bootstrap</code> and forwards <code>/api</code> calls to the API.'],
+  ['<code>api</code>', '<code>quay.io/cdis/csoc-api</code> (Go)', '<code>127.0.0.1:8002</code>', 'Acts with your AWS credentials, without a sign-in of its own, and starts runner containers.'],
   ['<code>docker-proxy</code>', '<code>tecnativa/docker-socket-proxy</code>', 'an internal network only', 'Gives the API the container and image operations the runner needs (<code>CONTAINERS</code>, <code>IMAGES</code> and <code>POST</code> enabled) and blocks the rest of the Docker API.'],
 ])}
-<p>For each run (init, plan, apply, bootstrap, finish, uninstall and destroy) the API starts a new <b>runner container</b> from the <code>gen3-terraform:latest</code> image, which contains Terraform, Helm, kubectl and the AWS CLI. The runner is started through your computer's Docker, so the paths it mounts are paths on your computer: <code>~/.aws</code>, the run working directories under <code>~/.gen3-csoc/terraform</code>, and the runner scripts from the repository. The runner's log streams back to the page while it runs.</p>
+<p>For each run (init, plan, apply, bootstrap, finish, uninstall and destroy) the API starts a new <b>runner container</b> from the image in <code>TERRAFORM_RUNNER_IMAGE</code>, <code>quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code>, which contains Terraform, Helm, kubectl and the AWS CLI. The runner is started through your computer's Docker, so the paths it mounts are paths on your computer: <code>~/.aws</code>, the run working directories under <code>~/.gen3-csoc/terraform</code>, and the runner scripts from the repository. The runner's log streams back to the page while it runs.</p>
 ${diagram('stack', 'The wizard on your computer', [
   'You open <code>localhost:3000/bootstrap</code>, and the frontend serves the wizard.',
   'Each action calls the API at <code>/api/…</code>, published on <code>127.0.0.1:8002</code> only.',
@@ -293,22 +293,22 @@ ${table(['Role', 'Used by', 'Permissions'], [
 
 <h3 id="images-and-pinning">Images and pinning</h3>
 ${table(['Image', 'Runs', 'Default tag'], [
-  ['<code>quay.io/cdis/csoc-api</code>', 'The CSOC API, in the cluster', '<code>master</code>, unless set under <b>Images</b> on the <b>Install</b> step'],
-  ['<code>quay.io/cdis/csoc-frontend</code>', 'The CSOC portal, in the cluster', '<code>master</code>, unless set under <b>Images</b>'],
-  ['<code>quay.io/cdis/csoc-agent</code>', 'Each agent', 'Set by the CSOC API; not configurable from the portal'],
+  ['<code>quay.io/cdis/csoc-api</code>', 'The CSOC API, in the cluster', 'Set under <b>Images</b> on the <b>Install</b> step; empty, <code>feat_csoc-bootstrap-wizard</code> from <code>CSOC_API_IMAGE</code> in <code>docker-compose.workshop.yml</code> (the chart\'s own default is <code>master</code>)'],
+  ['<code>quay.io/cdis/csoc-frontend</code>', 'The CSOC portal, in the cluster', 'Set under <b>Images</b>; empty, <code>feat_csoc-bootstrap-wizard</code> from <code>CSOC_FRONTEND_IMAGE</code>'],
+  ['<code>quay.io/cdis/csoc-agent</code>', 'Each agent', 'The CSOC API\'s tag, unless <code>CSOC_AGENT_IMAGE</code> is set'],
   ['Keycloak, its operator, CloudNativePG, External Secrets, the AWS Load Balancer Controller, external-dns, the EBS CSI driver', 'In the cluster', 'Chart and manifest versions pinned by the bootstrap'],
   ['Gen3 services', 'Each commons', 'Set by the <code>gen3</code> chart version'],
   ['<code>public.ecr.aws/docker/library/busybox:1.37</code>', 'Briefly, to find the outbound address', 'Pinned'],
 ])}
-<p>A <code>master</code> tag changes whenever the branch changes, so a restarted pod can run different code. For real use, set fixed release tags for the CSOC images. The wizard's own images, which run only on your computer, are listed on <a href="../prerequisites.html#install-the-tools">Prerequisites</a>.</p>
+<p>Branch tags such as <code>feat_csoc-bootstrap-wizard</code> and <code>master</code> change whenever the branch changes, so a restarted pod can run different code. For real use, set fixed release tags for the CSOC images. The wizard's own images, which run only on your computer, are listed on <a href="../prerequisites.html#install-the-tools">Prerequisites</a>.</p>
 
 <h3>Third-party sources</h3>
 <p>Building, installing and running the CSOC downloads from these sources:</p>
 <ul>
-  <li><b>quay.io</b> (<code>quay.io/cdis/…</code>): the CSOC, agent and Gen3 images, and the wizard's base images.</li>
-  <li><b>Docker Hub</b>: <code>hashicorp/terraform</code> and <code>tecnativa/docker-socket-proxy</code>, on your computer.</li>
+  <li><b>quay.io</b> (<code>quay.io/cdis/…</code>): the wizard's images (<code>csoc-api</code>, <code>csoc-bootstrap-frontend</code>, <code>csoc-terraform</code>), and the CSOC, agent and Gen3 images.</li>
+  <li><b>Docker Hub</b>: <code>tecnativa/docker-socket-proxy</code>, on your computer (and <code>hashicorp/terraform</code> if you build the runner from source).</li>
   <li><b>public.ecr.aws</b>: the busybox image.</li>
-  <li><b>GitHub</b>: the gen3-terraform modules, <code>cloud-automation</code> (Squid's startup scripts and allowlist), and the Keycloak operator's manifests (<code>keycloak/keycloak-k8s-resources</code>).</li>
+  <li><b>GitHub</b>: the gen3-terraform configuration and modules (branch <code>feat/csoc-bootstrap-master</code>), <code>cloud-automation</code> (Squid's startup scripts and allowlist), and the Keycloak operator's manifests (<code>keycloak/keycloak-k8s-resources</code>).</li>
   <li><b>Helm repositories</b>: <code>charts.external-secrets.io</code>, <code>aws.github.io/eks-charts</code>, <code>kubernetes-sigs.github.io/external-dns</code>, <code>kubernetes-sigs.github.io/aws-ebs-csi-driver</code>, <code>cloudnative-pg.github.io/charts</code>, <code>argoproj.github.io/argo-helm</code> (GitOps only) and <code>helm.gen3.org</code>.</li>
   <li><b>checkip.amazonaws.com</b>, to find the cluster's outbound address.</li>
 </ul>

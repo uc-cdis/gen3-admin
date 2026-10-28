@@ -29,7 +29,7 @@
 
 
 <h2 id="build-from-source">Build from source</h2>
-<p>The wizard's API and frontend, and the runner image, are built from the repository:</p>
+<p>Readers use the published images in <code>docker-compose.workshop.yml</code>. To build the wizard's API and frontend, and the runner image (<code>gen3-terraform:latest</code>), from the repository, use the development compose file:</p>
 <div class="codeblock"><span class="lang">bash</span><pre><code>./scripts/build-terraform-image.sh
 docker compose -f docker-compose-bootstrap-csoc.yml up -d --build</code></pre></div>
 

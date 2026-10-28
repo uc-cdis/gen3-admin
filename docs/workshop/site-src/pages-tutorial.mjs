@@ -78,22 +78,22 @@ export const TUTORIAL = [
 
 <h2>Steps</h2>
 <ol class="steps">
-  <li>${where('Terminal')}In the <code>gen3-admin</code> directory, start the containers. The first time, after you built the images in <a href="prerequisites.html#install-the-tools">Prerequisites</a>, run:
-    ${cmd('docker compose -f docker-compose-bootstrap-csoc.yml up -d')}
-    On later runs, after you update the repository with <code>git pull</code>, rebuild as you start:
-    ${cmd('./scripts/build-terraform-image.sh\ndocker compose -f docker-compose-bootstrap-csoc.yml up -d --build')}</li>
-  <li>${where('Terminal')}Check that all three containers are running: ${cp('docker compose -f docker-compose-bootstrap-csoc.yml ps')}. It lists <b>api</b>, <b>frontend</b> and <b>docker-proxy</b>.</li>
+  <li>${where('Terminal')}In the <code>gen3-admin</code> directory, start the containers. The first time, after you pulled the images in <a href="prerequisites.html#install-the-tools">Prerequisites</a>, run:
+    ${cmd('docker compose -f docker-compose.workshop.yml up -d')}
+    On later runs, update the checkout and the images first:
+    ${cmd('git pull\ndocker compose -f docker-compose.workshop.yml pull\ndocker pull quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard\ndocker compose -f docker-compose.workshop.yml up -d')}</li>
+  <li>${where('Terminal')}Check that all three containers are running: ${cp('docker compose -f docker-compose.workshop.yml ps')}. It lists <b>api</b>, <b>frontend</b> and <b>docker-proxy</b>.</li>
   <li>${where('Browser')}Open ${cp('http://localhost:3000/bootstrap')}. On macOS you can run ${cp('open http://localhost:3000/bootstrap')}.</li>
   <li>You see <b>Welcome to the Gen3 CSOC Bootstrap</b>, the list of what the wizard creates, and "${F.ui.welcome}" Press ${btn('Next')} at the top right.</li>
 </ol>
 ${doneWhen('the stepper shows <i>Welcome · Setup · Review · Provision · Certificate · Install · Done</i> and, after <b>Next</b>, the <b>Environment Setup</b> page is open.')}
 ${shot(R, '01-welcome.png', "The wizard's Welcome step", 'The <b>Welcome</b> step.')}
-<p>When you are not using the wizard, stop it with ${cp('docker compose -f docker-compose-bootstrap-csoc.yml down')}. Nothing in AWS changes when you stop it.</p>
+<p>When you are not using the wizard, stop it with ${cp('docker compose -f docker-compose.workshop.yml down')}. Nothing in AWS changes when you stop it.</p>
 
 <h2>Expected result</h2>
 <div class="expect">
 <p>The <b>Welcome</b> step is open in your browser.</p>
-<h4>Time</h4><p>Under 1 minute from <code>docker compose up</code> to the <b>Welcome</b> step, when the images are already built.</p>
+<h4>Time</h4><p>Under 1 minute from <code>docker compose up</code> to the <b>Welcome</b> step, when the images are already pulled.</p>
 </div>
 
 <h2>What's happening</h2>
@@ -108,7 +108,7 @@ ${diagram('stack', 'The wizard on your computer', [
   'The runner\'s log streams back through the API to your browser.',
 ])}
 <p>Everything the wizard does is recorded in the state bucket you create on the next step, so you can close the tab and come back at any time. For the containers, ports and mounts, see ${arch('the-bootstrap-wizard-on-your-computer', 'The bootstrap wizard on your computer')}.</p>
-${adm('danger', 'Keep the wizard on your own computer', 'Anyone who can reach the wizard\'s API can act with your AWS credentials. Keep the <code>127.0.0.1</code> port bindings in <code>docker-compose-bootstrap-csoc.yml</code>, and do not run the wizard on a shared server.')}
+${adm('danger', 'Keep the wizard on your own computer', 'Anyone who can reach the wizard\'s API can act with your AWS credentials. Keep the <code>127.0.0.1</code> port bindings in <code>docker-compose.workshop.yml</code>, and do not run the wizard on a shared server.')}
 
 <h2>Troubleshooting</h2>
 {{TS:start-the-wizard}}
@@ -428,7 +428,7 @@ ${diagram('cert', 'ACM DNS validation', [
   <li>Under ${fld('Admin email (optional)')}, enter the email you will sign in with, for example ${ex('email')}. Do not leave it empty: you use the same email in the commons' user.yaml, and without it Keycloak asks for an email and a name at the first sign-in.</li>
   <li>Press ${btn('Generate password', 'light')}. It fills ${fld('Admin password')} and ${fld('Confirm admin password')}.</li>
   <li>Save the password in your password manager now.</li>
-  <li>Open <b>Images</b>. For a test, leave ${fld('API image')} and ${fld('Frontend image')} empty, which runs <code>quay.io/cdis/csoc-api:master</code> and <code>quay.io/cdis/csoc-frontend:master</code>. For real use, enter a release tag in both fields so that a restarted pod does not change version (see <a href="concepts/security.html#images-and-pinning">Images and pinning</a>).</li>
+  <li>Open <b>Images</b>. For a test, leave ${fld('API image')} and ${fld('Frontend image')} empty, which runs the images set in <code>docker-compose.workshop.yml</code>: <code>quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard</code> and <code>quay.io/cdis/csoc-frontend:feat_csoc-bootstrap-wizard</code>. The agent follows the API's tag. For real use, enter a release tag in both fields so that a restarted pod does not change version (see <a href="concepts/security.html#images-and-pinning">Images and pinning</a>).</li>
   <li>Press ${btn('Bootstrap CSOC')} in the banner. The text under the form reads "Ready: press Bootstrap CSOC in the banner above." once every field is valid.</li>
 </ol>
 ${doneWhen('the log ends with <code>=== CSOC is applied ===</code> and the banner reads <b>Bootstrapped; ready to finish</b>.')}

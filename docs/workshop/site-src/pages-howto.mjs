@@ -25,7 +25,7 @@ ${adm('danger', 'A teardown permanently deletes all data', 'Every commons in the
 <h2>Steps</h2>
 <ol class="steps">
   <li>On the <b>Done</b> step, press ${btn('Tear down', 'red')} in the banner. You can also open <b>Advanced</b> under the run log and press <b>Tear down…</b>.</li>
-  <li>Leave <b>Force: don't wait for anything graceful</b> on, the default. For test environments, leave Force on. It deletes nodes and disks immediately instead of shutting them down cleanly. Turn it off only if workloads must stop gracefully, which makes the uninstall slower.</li>
+  <li>For test environments, leave <b>Force: don't wait for anything graceful</b> on, the default. It deletes nodes and disks immediately instead of shutting them down cleanly. Turn it off only if workloads must stop gracefully, which makes the uninstall slower.</li>
   <li>Choose whether to delete the zone:
     <ul>
       <li><b>If you will not reuse ${EX.zone}</b>, select <b>Also delete the hosted zone and its delegation</b>. Under ${fld('Parent zone reached with')}, choose <b>These credentials</b> (the default) if the parent zone is in this account, <b>Profile: …</b> for another account, or <b>Nothing: I remove the NS records myself</b> if central IT manages it (then ask them to remove the NS record set).</li>

@@ -139,7 +139,7 @@ ${table(['Role', 'Responsibilities'], [
 <p>Before you open the wizard, do four things:</p>
 <ol>
   <li>Fill in the <a href="#worksheet">worksheet</a> below.</li>
-  <li><a href="#install-the-tools">Install</a> Git, the AWS CLI version 2 and Docker, and build the wizard's images.</li>
+  <li><a href="#install-the-tools">Install</a> Git, the AWS CLI version 2 and Docker, and pull the wizard's images.</li>
   <li><a href="#create-an-aws-cli-profile">Create an AWS CLI profile</a>, and confirm that <code>aws sts get-caller-identity</code> prints the ID of the account the CSOC goes in.</li>
   <li><a href="#get-your-subdomain-delegated">Get your subdomain</a>, for example ${ex('zone')}, delegated to that account, or send the request to central IT.</li>
 </ol>
@@ -167,23 +167,25 @@ ${adm('warning', 'The hostname decides the zone', `The wizard takes the hostname
 ${adm('note', 'Choose the Region before you create the bucket', `<b>Create bucket</b> creates the bucket in the Region currently selected under ${fld('AWS Region')}, which is ${ex('region')} until you change it. On the <b>Setup</b> step, ${fld('AWS Region')} comes after ${fld('CSOC Name')}, below the bucket field, so set it first.`)}
 
 <h2>Steps</h2>
-<h3 id="install-the-tools">Install the tools and build the images</h3>
+<h3 id="install-the-tools">Install the tools and pull the images</h3>
 <ol class="steps">
   <li>${where('Terminal')}Install ${ext('git', 'Git')}.</li>
   <li>${where('Terminal')}Install the ${ext('awscli', 'AWS CLI version 2')}. You use it to sign in; the runs use their own copy inside the runner image.</li>
   <li>${where('Terminal')}Install and start a Docker runtime: ${ext('docker', 'Docker Desktop')}, ${ext('orbstack', 'OrbStack')} or ${ext('colima', 'Colima')}, with ${ext('compose', 'Docker Compose')}. Check that Docker is running: ${cp("docker info --format '{{.ServerVersion}}'")}</li>
   <li>${where('Terminal')}Clone the repository:
     ${cmd('git clone https://github.com/uc-cdis/gen3-admin\ncd gen3-admin')}</li>
-  <li>${where('Terminal')}Build the wizard's images. There are no published images for the wizard, so you build them once on your computer; the builds download many dependencies, so use a fast connection:
-    ${cmd('./scripts/build-terraform-image.sh\ndocker compose -f docker-compose-bootstrap-csoc.yml build')}</li>
+  <li>${where('Terminal')}Pull the wizard's images. They are published, so nothing is built on your computer:
+    ${cmd('docker compose -f docker-compose.workshop.yml pull\ndocker pull quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard')}
+    The second command pulls the runner image, which the wizard starts for every run.</li>
 </ol>
-<p>The wizard's images run only on your computer:</p>
-${table(['Image', 'Where it comes from', 'Purpose'], [
-  ['the compose project\'s <code>api</code> image', 'built from <code>Dockerfile.api</code> (base <code>quay.io/cdis/golang-build-base</code>)', 'The wizard\'s API.'],
-  ['the compose project\'s <code>frontend</code> image', 'built from <code>Dockerfile.frontend</code> (base <code>quay.io/cdis/amazonlinux-base</code>)', 'The wizard\'s web pages.'],
-  ['<code>gen3-terraform:latest</code>', 'built by <code>./scripts/build-terraform-image.sh</code> (base <code>hashicorp/terraform:1.16.5</code>)', 'The runner: Terraform, Helm, kubectl and the AWS CLI.'],
-  ['<code>tecnativa/docker-socket-proxy:v0.5.0</code>', 'pulled from Docker Hub', 'The restricted Docker socket proxy.'],
+<p>The wizard's images run only on your computer. <code>docker-compose.workshop.yml</code> pins them all to the tag <code>feat_csoc-bootstrap-wizard</code>:</p>
+${table(['Image', 'Purpose'], [
+  ['<code>quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard</code>', 'The wizard\'s API.'],
+  ['<code>quay.io/cdis/csoc-bootstrap-frontend:feat_csoc-bootstrap-wizard</code>', 'The wizard\'s web pages.'],
+  ['<code>quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code>', 'The runner: Terraform, Helm, kubectl and the AWS CLI.'],
+  ['<code>tecnativa/docker-socket-proxy:v0.5.0</code>', 'The restricted Docker socket proxy.'],
 ])}
+<p>The runner fetches the CSOC's Terraform from gen3-terraform's <code>feat/csoc-bootstrap-master</code> branch (set by <code>TERRAFORM_MODULES_REF</code> in the compose file). The repository checkout is still needed: the runner mounts its <code>scripts/runner</code> and <code>helm/csoc</code> directories. To build the images from source instead, see <a href="contributing.html#build-from-source">For developers</a>.</p>
 <p>The images that run in your AWS account are listed in <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</p>
 
 <h3 id="create-an-aws-cli-profile">Create an AWS CLI profile</h3>
@@ -225,7 +227,7 @@ ${table(['Where the parent domain is', 'Choose on the Setup step', 'Who adds the
 <ul>
   <li><code>git --version</code> and <code>aws --version</code> print versions.</li>
   <li><code>docker info</code> prints a version, not "Cannot connect to the Docker daemon".</li>
-  <li><code>docker images</code> lists <code>gen3-terraform</code>, and the API and frontend images.</li>
+  <li><code>docker images</code> lists <code>quay.io/cdis/csoc-api</code>, <code>quay.io/cdis/csoc-bootstrap-frontend</code> and <code>quay.io/cdis/csoc-terraform</code> with the tag <code>feat_csoc-bootstrap-wizard</code>.</li>
   <li><code>aws sts get-caller-identity --profile ${v('profile')}</code> prints the CSOC account's ID.</li>
   <li>Every row of the worksheet has a value, and the delegation is in place or requested.</li>
 </ul>

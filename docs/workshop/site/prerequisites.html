@@ -31,7 +31,7 @@
 <p>Before you open the wizard, do four things:</p>
 <ol>
   <li>Fill in the <a href="#worksheet">worksheet</a> below.</li>
-  <li><a href="#install-the-tools">Install</a> Git, the AWS CLI version 2 and Docker, and build the wizard's images.</li>
+  <li><a href="#install-the-tools">Install</a> Git, the AWS CLI version 2 and Docker, and pull the wizard's images.</li>
   <li><a href="#create-an-aws-cli-profile">Create an AWS CLI profile</a>, and confirm that <code>aws sts get-caller-identity</code> prints the ID of the account the CSOC goes in.</li>
   <li><a href="#get-your-subdomain-delegated">Get your subdomain</a>, for example <code class="ex">csoc.example.org</code>, delegated to that account, or send the request to central IT.</li>
 </ol>
@@ -59,7 +59,7 @@
 <div class="adm note" role="note"><p class="adm-t">Choose the Region before you create the bucket</p><p><b>Create bucket</b> creates the bucket in the Region currently selected under <span class="field">AWS Region</span>, which is <code class="ex">us-east-1</code> until you change it. On the <b>Setup</b> step, <span class="field">AWS Region</span> comes after <span class="field">CSOC Name</span>, below the bucket field, so set it first.</p></div>
 
 <h2 id="steps">Steps</h2>
-<h3 id="install-the-tools">Install the tools and build the images</h3>
+<h3 id="install-the-tools">Install the tools and pull the images</h3>
 <ol class="steps">
   <li><span class="where">Terminal</span> Install <a href="https://git-scm.com/downloads">Git</a>.</li>
   <li><span class="where">Terminal</span> Install the <a href="https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html">AWS CLI version 2</a>. You use it to sign in; the runs use their own copy inside the runner image.</li>
@@ -67,12 +67,14 @@
   <li><span class="where">Terminal</span> Clone the repository:
     <div class="codeblock"><span class="lang">bash</span><pre><code>git clone https://github.com/uc-cdis/gen3-admin
 cd gen3-admin</code></pre></div></li>
-  <li><span class="where">Terminal</span> Build the wizard's images. There are no published images for the wizard, so you build them once on your computer; the builds download many dependencies, so use a fast connection:
-    <div class="codeblock"><span class="lang">bash</span><pre><code>./scripts/build-terraform-image.sh
-docker compose -f docker-compose-bootstrap-csoc.yml build</code></pre></div></li>
+  <li><span class="where">Terminal</span> Pull the wizard's images. They are published, so nothing is built on your computer:
+    <div class="codeblock"><span class="lang">bash</span><pre><code>docker compose -f docker-compose.workshop.yml pull
+docker pull quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code></pre></div>
+    The second command pulls the runner image, which the wizard starts for every run.</li>
 </ol>
-<p>The wizard's images run only on your computer:</p>
-<div class="tw"><table><thead><tr><th>Image</th><th>Where it comes from</th><th>Purpose</th></tr></thead><tbody><tr><td>the compose project's <code>api</code> image</td><td>built from <code>Dockerfile.api</code> (base <code>quay.io/cdis/golang-build-base</code>)</td><td>The wizard's API.</td></tr><tr><td>the compose project's <code>frontend</code> image</td><td>built from <code>Dockerfile.frontend</code> (base <code>quay.io/cdis/amazonlinux-base</code>)</td><td>The wizard's web pages.</td></tr><tr><td><code>gen3-terraform:latest</code></td><td>built by <code>./scripts/build-terraform-image.sh</code> (base <code>hashicorp/terraform:1.16.5</code>)</td><td>The runner: Terraform, Helm, kubectl and the AWS CLI.</td></tr><tr><td><code>tecnativa/docker-socket-proxy:v0.5.0</code></td><td>pulled from Docker Hub</td><td>The restricted Docker socket proxy.</td></tr></tbody></table></div>
+<p>The wizard's images run only on your computer. <code>docker-compose.workshop.yml</code> pins them all to the tag <code>feat_csoc-bootstrap-wizard</code>:</p>
+<div class="tw"><table><thead><tr><th>Image</th><th>Purpose</th></tr></thead><tbody><tr><td><code>quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard</code></td><td>The wizard's API.</td></tr><tr><td><code>quay.io/cdis/csoc-bootstrap-frontend:feat_csoc-bootstrap-wizard</code></td><td>The wizard's web pages.</td></tr><tr><td><code>quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code></td><td>The runner: Terraform, Helm, kubectl and the AWS CLI.</td></tr><tr><td><code>tecnativa/docker-socket-proxy:v0.5.0</code></td><td>The restricted Docker socket proxy.</td></tr></tbody></table></div>
+<p>The runner fetches the CSOC's Terraform from gen3-terraform's <code>feat/csoc-bootstrap-master</code> branch (set by <code>TERRAFORM_MODULES_REF</code> in the compose file). The repository checkout is still needed: the runner mounts its <code>scripts/runner</code> and <code>helm/csoc</code> directories. To build the images from source instead, see <a href="contributing.html#build-from-source">For developers</a>.</p>
 <p>The images that run in your AWS account are listed in <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</p>
 
 <h3 id="create-an-aws-cli-profile">Create an AWS CLI profile</h3>
@@ -94,7 +96,7 @@ region = <span class="ph">&lt;your-region&gt;</span></code></pre></div></li>
 aws sts get-caller-identity --profile <span class="ph">&lt;your-aws-profile&gt;</span></code></pre></div>
     The <code>Account</code> value must be the ID of the CSOC account, for example <code class="ex">111122223333</code>. If you use access keys, skip <code>aws sso login</code>. In these docs, <span class="ph">&lt;your-sso-profile&gt;</span> is the profile you sign in with; if that sign-in lands directly in the CSOC account, it is the same profile as <span class="ph">&lt;your-aws-profile&gt;</span>.</li>
 </ol>
-<div class="adm warning" role="note"><p class="adm-t">Check the account number</p><p>If the number is not the CSOC account, fix the profile before you continue. Default credentials often point at another account, such as the one that holds your institution's DNS.</p></div>
+<div class="adm warning" role="note"><p class="adm-t">Check the account number</p><p>If the number is not the CSOC account, fix the profile before you continue. Default credentials can point at another account, such as the one that holds your institution's DNS.</p></div>
 <div class="adm note" role="note"><p class="adm-t">Sign in shortly before you start</p><p>The wizard asks you to sign in again before an apply or a teardown if less than 45 minutes are left on your SSO sign-in, and before a bootstrap or a finish if less than 15 minutes are left.</p></div>
 
 <h3 id="get-your-subdomain-delegated">Get your subdomain delegated</h3>
@@ -110,7 +112,7 @@ aws sts get-caller-identity --profile <span class="ph">&lt;your-aws-profile&gt;<
 <ul>
   <li><code>git --version</code> and <code>aws --version</code> print versions.</li>
   <li><code>docker info</code> prints a version, not "Cannot connect to the Docker daemon".</li>
-  <li><code>docker images</code> lists <code>gen3-terraform</code>, and the API and frontend images.</li>
+  <li><code>docker images</code> lists <code>quay.io/cdis/csoc-api</code>, <code>quay.io/cdis/csoc-bootstrap-frontend</code> and <code>quay.io/cdis/csoc-terraform</code> with the tag <code>feat_csoc-bootstrap-wizard</code>.</li>
   <li><code>aws sts get-caller-identity --profile <span class="ph">&lt;your-aws-profile&gt;</span></code> prints the CSOC account's ID.</li>
   <li>Every row of the worksheet has a value, and the delegation is in place or requested.</li>
 </ul>
@@ -120,7 +122,7 @@ aws sts get-caller-identity --profile <span class="ph">&lt;your-aws-profile&gt;<
 <p>The wizard works entirely from your computer with your AWS credentials. Terraform, Helm, kubectl and a copy of the AWS CLI are in the runner image, and the wizard starts one runner container for each run.</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
-<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><code>The SSO session associated with this profile has expired</code></td><td>Your SSO sign-in ran out.</td><td>In a terminal, run <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>.</td></tr><tr><td><code>Cannot connect to the Docker daemon</code></td><td>Docker is not running.</td><td>Start Docker Desktop or OrbStack, or run <code>colima start</code>.</td></tr><tr><td><code>get-caller-identity</code> prints the wrong account</td><td>The profile points at another account, often the one that holds your DNS.</td><td>Correct <code>role_arn</code> or <code>sso_account_id</code> in the profile in <code>~/.aws/config</code>, or use another profile.</td></tr><tr><td><code>AccessDenied</code> or <code>explicit deny in a service control policy</code> for a service, even with administrator rights</td><td>An organization-wide Service Control Policy blocks that service or Region.</td><td>Send the error message to your cloud administrators and ask them to allow it. See <a href="concepts/security.html#campus-realities">Campus realities</a>.</td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><code>The SSO session associated with this profile has expired</code></td><td>Your SSO sign-in ran out.</td><td>In a terminal, run <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>.</td></tr><tr><td><code>Cannot connect to the Docker daemon</code></td><td>Docker is not running.</td><td>Start Docker Desktop or OrbStack, or run <code>colima start</code>.</td></tr><tr><td><code>get-caller-identity</code> prints the wrong account</td><td>The profile points at another account, for example the one that holds your DNS.</td><td>Correct <code>role_arn</code> or <code>sso_account_id</code> in the profile in <code>~/.aws/config</code>, or use another profile.</td></tr><tr><td><code>AccessDenied</code> or <code>explicit deny in a service control policy</code> for a service, even with administrator rights</td><td>An organization-wide Service Control Policy blocks that service or Region.</td><td>Send the error message to your cloud administrators and ask them to allow it. See <a href="concepts/security.html#campus-realities">Campus realities</a>.</td></tr></tbody></table></div>
 
 <nav class="pager" aria-label="Previous and next page">
 <a class="prev" href="what-is-a-csoc.html" rel="prev"><small>Previous</small><b>← What is a CSOC?</b></a>

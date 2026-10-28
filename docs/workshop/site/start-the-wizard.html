@@ -33,33 +33,35 @@
 
 <h2 id="steps">Steps</h2>
 <ol class="steps">
-  <li><span class="where">Terminal</span> In the <code>gen3-admin</code> directory, start the containers. The first time, after you built the images in <a href="prerequisites.html#install-the-tools">Prerequisites</a>, run:
-    <div class="codeblock"><span class="lang">bash</span><pre><code>docker compose -f docker-compose-bootstrap-csoc.yml up -d</code></pre></div>
-    On later runs, after you update the repository with <code>git pull</code>, rebuild as you start:
-    <div class="codeblock"><span class="lang">bash</span><pre><code>./scripts/build-terraform-image.sh
-docker compose -f docker-compose-bootstrap-csoc.yml up -d --build</code></pre></div></li>
-  <li><span class="where">Terminal</span> Check that all three containers are running: <code class="cp">docker compose -f docker-compose-bootstrap-csoc.yml ps</code>. It lists <b>api</b>, <b>frontend</b> and <b>docker-proxy</b>.</li>
+  <li><span class="where">Terminal</span> In the <code>gen3-admin</code> directory, start the containers. The first time, after you pulled the images in <a href="prerequisites.html#install-the-tools">Prerequisites</a>, run:
+    <div class="codeblock"><span class="lang">bash</span><pre><code>docker compose -f docker-compose.workshop.yml up -d</code></pre></div>
+    On later runs, update the checkout and the images first:
+    <div class="codeblock"><span class="lang">bash</span><pre><code>git pull
+docker compose -f docker-compose.workshop.yml pull
+docker pull quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard
+docker compose -f docker-compose.workshop.yml up -d</code></pre></div></li>
+  <li><span class="where">Terminal</span> Check that all three containers are running: <code class="cp">docker compose -f docker-compose.workshop.yml ps</code>. It lists <b>api</b>, <b>frontend</b> and <b>docker-proxy</b>.</li>
   <li><span class="where">Browser</span> Open <code class="cp">http://localhost:3000/bootstrap</code>. On macOS you can run <code class="cp">open http://localhost:3000/bootstrap</code>.</li>
   <li>You see <b>Welcome to the Gen3 CSOC Bootstrap</b>, the list of what the wizard creates, and "Estimated time: about 40 minutes." Press <span class="btn-ui">Next</span> at the top right.</li>
 </ol>
 <p class="donewhen"><b>Done when:</b> the stepper shows <i>Welcome · Setup · Review · Provision · Certificate · Install · Done</i> and, after <b>Next</b>, the <b>Environment Setup</b> page is open.</p>
 <figure class="shot"><img src="assets/img/01-welcome.png" alt="The wizard's Welcome step" loading="lazy"><figcaption>The <b>Welcome</b> step.</figcaption></figure>
-<p>When you are not using the wizard, stop it with <code class="cp">docker compose -f docker-compose-bootstrap-csoc.yml down</code>. Nothing in AWS changes when you stop it.</p>
+<p>When you are not using the wizard, stop it with <code class="cp">docker compose -f docker-compose.workshop.yml down</code>. Nothing in AWS changes when you stop it.</p>
 
 <h2 id="expected-result">Expected result</h2>
 <div class="expect">
 <p>The <b>Welcome</b> step is open in your browser.</p>
-<h4>Time</h4><p>Under 1 minute from <code>docker compose up</code> to the <b>Welcome</b> step, when the images are already built.</p>
+<h4>Time</h4><p>Under 1 minute from <code>docker compose up</code> to the <b>Welcome</b> step, when the images are already pulled.</p>
 </div>
 
 <h2 id="whats-happening">What's happening</h2>
 <p>Three containers start on your computer: the wizard's web frontend, its API, and a proxy that lets the API start and watch other containers and blocks the rest of the Docker API. The frontend and the API listen only on your own computer, because the API acts with your AWS credentials and does not ask anyone to sign in. For each Terraform or install run, the API starts a new runner container and streams its log to the page.</p>
 <figure class="anim" data-dg="stack" data-label="The wizard on your computer"><figcaption><b>Diagram: The wizard on your computer.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-stack-steps"><li>You open <code>localhost:3000/bootstrap</code>, and the frontend serves the wizard.</li><li>Each action in the wizard calls the API, which listens only on your computer.</li><li>The API reads your AWS profiles to confirm which account you are using.</li><li>To run Terraform, the API asks the Docker socket proxy to start a container.</li><li>A new runner container starts, with a copy of your AWS configuration and the profile you chose.</li><li>The runner calls AWS with Terraform, the AWS CLI, kubectl and Helm.</li><li>The runner's log streams back through the API to your browser.</li></ol></figure>
 <p>Everything the wizard does is recorded in the state bucket you create on the next step, so you can close the tab and come back at any time. For the containers, ports and mounts, see <a href="concepts/architecture.html#the-bootstrap-wizard-on-your-computer">The bootstrap wizard on your computer</a>.</p>
-<div class="adm danger" role="note"><p class="adm-t">Keep the wizard on your own computer</p><p>Anyone who can reach the wizard's API can act with your AWS credentials. Keep the <code>127.0.0.1</code> port bindings in <code>docker-compose-bootstrap-csoc.yml</code>, and do not run the wizard on a shared server.</p></div>
+<div class="adm danger" role="note"><p class="adm-t">Keep the wizard on your own computer</p><p>Anyone who can reach the wizard's API can act with your AWS credentials. Keep the <code>127.0.0.1</code> port bindings in <code>docker-compose.workshop.yml</code>, and do not run the wizard on a shared server.</p></div>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
-<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><code>localhost:3000</code> does not load, or the page is blank</td><td>The frontend has not started, or it failed.</td><td>Run <code class="cp">docker compose -f docker-compose-bootstrap-csoc.yml logs frontend api</code> and look for <code>Error</code> in the last lines.</td></tr><tr><td><code>port is already allocated</code></td><td>Another program uses port 3000 or 8002.</td><td>Stop that program (find it with <code>lsof -i :3000</code>), then run <code>docker compose … up -d</code> again.</td></tr><tr><td>Later, a red box: <b>The init did not start</b></td><td>The runner image is missing, or AWS refused the credentials. Nothing ran.</td><td>Check that <code>docker images</code> lists <code>gen3-terraform</code>; if not, build the images as in <a href="prerequisites.html#install-the-tools">Prerequisites</a>. Otherwise sign in again.</td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><code>localhost:3000</code> does not load, or the page is blank</td><td>The frontend has not started, or it failed.</td><td>Run <code class="cp">docker compose -f docker-compose.workshop.yml logs frontend api</code> and look for <code>Error</code> in the last lines.</td></tr><tr><td><code>port is already allocated</code></td><td>Another program uses port 3000 or 8002.</td><td>Stop that program (find it with <code>lsof -i :3000</code>), then run <code>docker compose … up -d</code> again.</td></tr><tr><td>Later, a red box: <b>The init did not start</b></td><td>The runner image is missing, or AWS refused the credentials. Nothing ran.</td><td>Check that <code>docker images</code> lists <code>quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code>; if not, pull it as in <a href="prerequisites.html#install-the-tools">Prerequisites</a>. Otherwise sign in again.</td></tr></tbody></table></div>
 
 <nav class="pager" aria-label="Previous and next page">
 <a class="prev" href="prerequisites.html" rel="prev"><small>Previous</small><b>← Prerequisites</b></a>

@@ -13,9 +13,9 @@ export const TS = {
     ['<code>AccessDenied</code> or <code>explicit deny in a service control policy</code> for a service, even with administrator rights', 'An organization-wide Service Control Policy blocks that service or Region.', 'Send the error message to your cloud administrators and ask them to allow it. See <a href="{R}concepts/security.html#campus-realities">Campus realities</a>.'],
   ] },
   'start-the-wizard': { title: 'Start the wizard', rows: [
-    ['<code>localhost:3000</code> does not load, or the page is blank', 'The frontend has not started, or it failed.', `Run ${cp('docker compose -f docker-compose-bootstrap-csoc.yml logs frontend api')} and look for <code>Error</code> in the last lines.`],
+    ['<code>localhost:3000</code> does not load, or the page is blank', 'The frontend has not started, or it failed.', `Run ${cp('docker compose -f docker-compose.workshop.yml logs frontend api')} and look for <code>Error</code> in the last lines.`],
     ['<code>port is already allocated</code>', 'Another program uses port 3000 or 8002.', 'Stop that program (find it with <code>lsof -i :3000</code>), then run <code>docker compose … up -d</code> again.'],
-    ['Later, a red box: <b>The init did not start</b>', 'The runner image is missing, or AWS refused the credentials. Nothing ran.', 'Check that <code>docker images</code> lists <code>gen3-terraform</code>; if not, build the images as in <a href="{R}prerequisites.html#install-the-tools">Prerequisites</a>. Otherwise sign in again.'],
+    ['Later, a red box: <b>The init did not start</b>', 'The runner image is missing, or AWS refused the credentials. Nothing ran.', 'Check that <code>docker images</code> lists <code>quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard</code>; if not, pull it as in <a href="{R}prerequisites.html#install-the-tools">Prerequisites</a>. Otherwise sign in again.'],
   ] },
   setup: { title: 'Setup', rows: [
     ['Yellow box: <b>AWS SSO session expired</b>, with a command', 'Your SSO sign-in ran out. The Setup step cannot check anything until you sign in.', `In a terminal, run the command shown, for example ${login}, then press <b>Retry</b> in the box.`],

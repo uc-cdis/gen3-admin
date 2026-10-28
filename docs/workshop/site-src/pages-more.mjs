@@ -10,7 +10,7 @@ export const MORE = [
   <li><b>Connect your identity provider.</b> Broker Keycloak to your campus single sign-on so that people sign in with their institutional accounts. See <a href="how-to/connect-identity-provider.html">Add your institution's sign-in to Keycloak</a>.</li>
   <li><b>Configure backups.</b> The bootstrap configures none. Back up Keycloak's database and each commons' database before they hold anything you need to keep. See <a href="concepts/security.html#what-this-setup-is-not">What this setup is not</a>.</li>
   <li><b>Plan for data.</b> Turn on persistence for each commons' database, or use an external database, and configure a data bucket before anyone uploads files. See <a href="deploy-gen3.html#where-the-data-lives">Where the data lives</a>.</li>
-  <li><b>Pin image tags.</b> Replace the <code>master</code> tags of the CSOC images with release tags. See <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</li>
+  <li><b>Pin image tags.</b> Replace the branch tags of the CSOC images with release tags. See <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</li>
   <li><b>Plan the Kubernetes version.</b> The default version is in EKS extended support, the largest avoidable cost. See <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
   <li><b>Set a budget alert.</b> See <a href="concepts/security.html#cost">Cost</a>.</li>
   <li><b>Review the allowed addresses.</b> Replace individual addresses with your campus and VPN ranges. See <a href="how-to/allow-an-address.html">Allow a new IP address</a>.</li>
@@ -48,7 +48,7 @@ export const MORE = [
   <li><b>The EKS public endpoint.</b> Restricting it to CIDR ranges, or closing it; the configuration sets <code>eks_public_access</code>, which the wizard does not expose.</li>
   <li><b>EKS secrets encryption.</b> What EKS applies by default to Kubernetes Secrets in this configuration.</li>
   <li><b>Commons cost.</b> The cost of a commons has not been measured.</li>
-  <li><b>Published wizard images.</b> The wizard's images must be built on your computer; there are no published images to pull.</li>
+  <li><b>Image and module versions.</b> <code>docker-compose.workshop.yml</code> pins the images to the branch tag <code>feat_csoc-bootstrap-wizard</code> and the Terraform to the branch <code>feat/csoc-bootstrap-master</code>, not to releases.</li>
   <li><b>The Kubernetes version.</b> There is no wizard field for it; see <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
 </ul>
 
@@ -65,7 +65,7 @@ ${table(['Where', 'For'], [
   lead: 'Settings and notes for people who change the wizard, the CSOC chart, the Terraform modules or these docs.',
   body: () => `
 <h2>Build from source</h2>
-<p>The wizard's API and frontend, and the runner image, are built from the repository:</p>
+<p>Readers use the published images in <code>docker-compose.workshop.yml</code>. To build the wizard's API and frontend, and the runner image (<code>gen3-terraform:latest</code>), from the repository, use the development compose file:</p>
 ${cmd(`./scripts/build-terraform-image.sh
 docker compose -f docker-compose-bootstrap-csoc.yml up -d --build`)}
 

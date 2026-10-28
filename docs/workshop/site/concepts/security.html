@@ -67,7 +67,7 @@
 <h3 id="what-a-commons-adds">What a commons adds</h3>
 <p>Each commons adds its own resources to the bill. Their size depends on the services you enable and on use:</p>
 <ul>
-  <li>EC2 nodes that Karpenter starts for the commons' services, usually the largest part.</li>
+  <li>EC2 nodes that Karpenter starts for the commons' services, the largest part.</li>
   <li>An Application Load Balancer, about $16 a month in us-east-1 plus capacity units, and its public IPv4 addresses.</li>
   <li>An EBS volume for the local database, if you turn on persistence, or a managed database if you use an external one.</li>
   <li>S3 storage and requests for data files, once you configure a data bucket.</li>
@@ -85,8 +85,8 @@
 
 <h2 id="campus-realities">Campus realities</h2>
 <ul>
-  <li><b>The parent domain belongs to central IT.</b> Delegation of <code class="ex">csoc.example.org</code> usually needs a ticket and can take days. Send the request early; <a href="../how-to/request-dns-delegation.html">Request DNS delegation</a> has a template.</li>
-  <li><b>Service Control Policies may block services.</b> Institutional AWS organizations often limit Regions or services with <a href="https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html">Service Control Policies</a>. Ask your cloud administrators to confirm that EKS, Fargate, EC2, AWS Lambda, Route 53, ACM, Secrets Manager and IAM role creation are allowed in <code class="ex">us-east-1</code>. An SCP denial looks like an access error even with administrator rights.</li>
+  <li><b>The parent domain belongs to central IT.</b> At most universities, delegating <code class="ex">csoc.example.org</code> needs a ticket and takes days. Send the request early; <a href="../how-to/request-dns-delegation.html">Request DNS delegation</a> has a template.</li>
+  <li><b>Service Control Policies can block services.</b> AWS organizations can limit Regions or services with <a href="https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html">Service Control Policies</a>. Ask your cloud administrators to confirm that EKS, Fargate, EC2, AWS Lambda, Route 53, ACM, Secrets Manager and IAM role creation are allowed in <code class="ex">us-east-1</code>. An SCP denial looks like an access error even with administrator rights.</li>
   <li><b>Campus and VPN outbound addresses.</b> The allowlist needs the public addresses your traffic leaves from, which are not your computer's local address. Ask your network team for the outbound ranges of the campus network and the VPN.</li>
   <li><b>Short sign-in sessions.</b> The wizard asks for at least 45 minutes left on your AWS sign-in before an apply or a teardown. If your institution sets short sessions, sign in again just before each long step.</li>
 </ul>
@@ -125,16 +125,16 @@
 <p>Each EC2 node that Karpenter starts runs a startup script that appends the public keys in <a href="https://github.com/uc-cdis/cloud-automation/blob/master/files/authorized_keys/ops_team">cloud-automation's <code>files/authorized_keys/ops_team</code></a> to the node's <code>ec2-user</code> account, and every node carries the security group <code>ssh_eks_&lt;csoc-name&gt;</code>, which allows SSH from <code>0.0.0.0/0</code>. The nodes have no public addresses, so this allows SSH from inside the VPC only, by the holders of those keys. Reviewers should decide whether to remove the keys and the rule; both are in the gen3-terraform <code>eks</code> module.</p>
 
 <h3 id="images-and-pinning">Images and pinning</h3>
-<div class="tw"><table><thead><tr><th>Image</th><th>Runs</th><th>Default tag</th></tr></thead><tbody><tr><td><code>quay.io/cdis/csoc-api</code></td><td>The CSOC API, in the cluster</td><td><code>master</code>, unless set under <b>Images</b> on the <b>Install</b> step</td></tr><tr><td><code>quay.io/cdis/csoc-frontend</code></td><td>The CSOC portal, in the cluster</td><td><code>master</code>, unless set under <b>Images</b></td></tr><tr><td><code>quay.io/cdis/csoc-agent</code></td><td>Each agent</td><td>Set by the CSOC API; not configurable from the portal</td></tr><tr><td>Keycloak, its operator, CloudNativePG, External Secrets, the AWS Load Balancer Controller, external-dns, the EBS CSI driver</td><td>In the cluster</td><td>Chart and manifest versions pinned by the bootstrap</td></tr><tr><td>Gen3 services</td><td>Each commons</td><td>Set by the <code>gen3</code> chart version</td></tr><tr><td><code>public.ecr.aws/docker/library/busybox:1.37</code></td><td>Briefly, to find the outbound address</td><td>Pinned</td></tr></tbody></table></div>
-<p>A <code>master</code> tag changes whenever the branch changes, so a restarted pod can run different code. For real use, set fixed release tags for the CSOC images. The wizard's own images, which run only on your computer, are listed on <a href="../prerequisites.html#install-the-tools">Prerequisites</a>.</p>
+<div class="tw"><table><thead><tr><th>Image</th><th>Runs</th><th>Default tag</th></tr></thead><tbody><tr><td><code>quay.io/cdis/csoc-api</code></td><td>The CSOC API, in the cluster</td><td>Set under <b>Images</b> on the <b>Install</b> step; empty, <code>feat_csoc-bootstrap-wizard</code> from <code>CSOC_API_IMAGE</code> in <code>docker-compose.workshop.yml</code> (the chart's own default is <code>master</code>)</td></tr><tr><td><code>quay.io/cdis/csoc-frontend</code></td><td>The CSOC portal, in the cluster</td><td>Set under <b>Images</b>; empty, <code>feat_csoc-bootstrap-wizard</code> from <code>CSOC_FRONTEND_IMAGE</code></td></tr><tr><td><code>quay.io/cdis/csoc-agent</code></td><td>Each agent</td><td>The CSOC API's tag, unless <code>CSOC_AGENT_IMAGE</code> is set</td></tr><tr><td>Keycloak, its operator, CloudNativePG, External Secrets, the AWS Load Balancer Controller, external-dns, the EBS CSI driver</td><td>In the cluster</td><td>Chart and manifest versions pinned by the bootstrap</td></tr><tr><td>Gen3 services</td><td>Each commons</td><td>Set by the <code>gen3</code> chart version</td></tr><tr><td><code>public.ecr.aws/docker/library/busybox:1.37</code></td><td>Briefly, to find the outbound address</td><td>Pinned</td></tr></tbody></table></div>
+<p>Branch tags such as <code>feat_csoc-bootstrap-wizard</code> and <code>master</code> change whenever the branch changes, so a restarted pod can run different code. For real use, set fixed release tags for the CSOC images. The wizard's own images, which run only on your computer, are listed on <a href="../prerequisites.html#install-the-tools">Prerequisites</a>.</p>
 
 <h3 id="third-party-sources">Third-party sources</h3>
 <p>Building, installing and running the CSOC downloads from these sources:</p>
 <ul>
-  <li><b>quay.io</b> (<code>quay.io/cdis/…</code>): the CSOC, agent and Gen3 images, and the wizard's base images.</li>
-  <li><b>Docker Hub</b>: <code>hashicorp/terraform</code> and <code>tecnativa/docker-socket-proxy</code>, on your computer.</li>
+  <li><b>quay.io</b> (<code>quay.io/cdis/…</code>): the wizard's images (<code>csoc-api</code>, <code>csoc-bootstrap-frontend</code>, <code>csoc-terraform</code>), and the CSOC, agent and Gen3 images.</li>
+  <li><b>Docker Hub</b>: <code>tecnativa/docker-socket-proxy</code>, on your computer (and <code>hashicorp/terraform</code> if you build the runner from source).</li>
   <li><b>public.ecr.aws</b>: the busybox image.</li>
-  <li><b>GitHub</b>: the gen3-terraform modules, <code>cloud-automation</code> (Squid's startup scripts and allowlist), and the Keycloak operator's manifests (<code>keycloak/keycloak-k8s-resources</code>).</li>
+  <li><b>GitHub</b>: the gen3-terraform configuration and modules (branch <code>feat/csoc-bootstrap-master</code>), <code>cloud-automation</code> (Squid's startup scripts and allowlist), and the Keycloak operator's manifests (<code>keycloak/keycloak-k8s-resources</code>).</li>
   <li><b>Helm repositories</b>: <code>charts.external-secrets.io</code>, <code>aws.github.io/eks-charts</code>, <code>kubernetes-sigs.github.io/external-dns</code>, <code>kubernetes-sigs.github.io/aws-ebs-csi-driver</code>, <code>cloudnative-pg.github.io/charts</code>, <code>argoproj.github.io/argo-helm</code> (GitOps only) and <code>helm.gen3.org</code>.</li>
   <li><b>checkip.amazonaws.com</b>, to find the cluster's outbound address.</li>
 </ul>
