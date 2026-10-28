@@ -33,6 +33,11 @@ ARG NEXT_PUBLIC_DD_ENV
 ARG NEXT_PUBLIC_DD_VERSION
 ARG NEXT_PUBLIC_DD_SESSION_SAMPLE_RATE
 ARG NEXT_PUBLIC_DD_SESSION_REPLAY_SAMPLE_RATE
+# Direct host URL of the API for the run log stream (bypasses the Next.js
+# proxy, which buffers the gzip-compressed event stream). Empty by default:
+# the admin image streams same-origin; the bootstrap image sets a default.
+ARG NEXT_PUBLIC_STREAM_BASE
+ENV NEXT_PUBLIC_STREAM_BASE=${NEXT_PUBLIC_STREAM_BASE}
 ARG NEXT_PUBLIC_DD_PROXY
 ENV NEXT_PUBLIC_DD_RUM_APPLICATION_ID=${NEXT_PUBLIC_DD_RUM_APPLICATION_ID} \
     NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN=${NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN} \

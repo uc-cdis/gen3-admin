@@ -2,7 +2,7 @@
 #
 #   ./scripts/build-terraform-image.sh
 #   docker compose -f docker-compose-bootstrap-csoc.yml up --build
-#   open http://localhost:3000/bootstrap
+#   open http://localhost:3030/bootstrap
 #
 # The API starts Terraform in sibling containers through the host's Docker, so
 # every path it hands to `docker run -v` is a *host* path. That is why ~/.aws,
@@ -37,18 +37,26 @@ services:
       # Inside the container; the published port below is loopback-only.
       BIND_ADDRESS: 0.0.0.0
       MOCK_AUTH: "true"
-      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      # Host port for the frontend; the browser talks to the API only through
+      # the frontend's /api rewrite, but keep them in sync for direct calls.
+      CORS_ALLOWED_ORIGINS: http://localhost:3030
       HOME: ${HOME}
       TERRAFORM_WORK_ROOT: ${HOME}/.gen3-csoc/terraform
       GEN3_ADMIN_ROOT: ${PWD}
       # Set to test unpublished gen3-terraform changes from a local checkout.
       TERRAFORM_MODULES_DIR: ${TERRAFORM_MODULES_DIR:-}
+      # Or pick a branch/tag of uc-cdis/gen3-terraform for the git modules.
+      TERRAFORM_MODULES_REF: ${TERRAFORM_MODULES_REF:-}
+      # Pin the Terraform runner image (default: quay.io/cdis/csoc-terraform:master).
+      TERRAFORM_RUNNER_IMAGE: ${TERRAFORM_RUNNER_IMAGE:-}
       # Where the CSOC's ArgoCD gets the CSOC chart. Set to a fork or branch
       # to test chart changes that are not on uc-cdis/gen3-admin master yet.
       CSOC_CHART_REPO: ${CSOC_CHART_REPO:-}
       CSOC_CHART_REVISION: ${CSOC_CHART_REVISION:-}
     ports:
-      - "127.0.0.1:8002:8002"
+      # 8030 on the host so this stack can run alongside scripts/dev.sh, which
+      # owns 8002 (the container still listens on 8002).
+      - "127.0.0.1:8030:8002"
     volumes:
       # Read-write so an SSO session can refresh its cached token.
       - ${HOME}/.aws:${HOME}/.aws
@@ -67,11 +75,15 @@ services:
         NEXT_PUBLIC_BOOTSTRAP_MODE: "true"
         # Next bakes its /api rewrites in at build time.
         API_BASE_URL: http://api:8002
+        # Run log stream goes straight to the API host port (the Next.js
+        # proxy buffers the gzip-compressed event stream).
+        NEXT_PUBLIC_STREAM_BASE: http://localhost:8030/api
     depends_on: [api]
     ports:
-      - "127.0.0.1:3000:3000"
+      # 3030 on the host so this stack can run alongside scripts/dev.sh on 3000.
+      - "127.0.0.1:3030:3000"
     environment:
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3030
       NEXTAUTH_SECRET: "6bcc8d24207ff145da5740b0ec0ed231563404b4e65325d1ac22b8b68142634f" #pragma: allowlist secret
       MOCK_AUTH: "true"
       # What next-auth reads to offer the mock sign-in; without it a

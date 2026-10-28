@@ -32,6 +32,12 @@ ENV NEXT_PUBLIC_BOOTSTRAP_MODE=${NEXT_PUBLIC_BOOTSTRAP_MODE}
 ARG API_BASE_URL=http://api:8002
 ENV API_BASE_URL=${API_BASE_URL}
 
+# The run log stream goes straight to the API host port (the Next.js proxy
+# buffers the gzip-compressed event stream). Workshop compose serves the
+# API on 8002; override for other layouts.
+ARG NEXT_PUBLIC_STREAM_BASE=http://localhost:8002/api
+ENV NEXT_PUBLIC_STREAM_BASE=${NEXT_PUBLIC_STREAM_BASE}
+
 COPY ./frontend/package.json ./frontend/package-lock.json /frontend/
 RUN npm install
 

@@ -11,13 +11,16 @@ const SAVED_PLAN_PATH = '/workspace/tf/tfplan';
 
 // The log stream goes straight to the API in development: Next's proxy
 // buffers server-sent events.
-// Dev (next dev) talks to the API on 8002 directly. Production builds —
-// including the bootstrap image, which may run on any host port — stream
-// same-origin so the server proxies /api to whatever API it is paired with.
+// The run log stream is fetched straight from the API host, not through
+// the Next.js proxy: the proxy gzip-compresses the event stream and holds
+// it in a buffer, so the UI sits on "Waiting for logs...". The base is set
+// per deployment (NEXT_PUBLIC_STREAM_BASE, baked at build time) and falls
+// back to the local dev layout, then same-origin.
 const streamBase = () =>
-  process.env.NODE_ENV !== 'production'
+  process.env.NEXT_PUBLIC_STREAM_BASE ||
+  (process.env.NODE_ENV !== 'production'
     ? 'http://localhost:8002/api'
-    : '/api';
+    : '/api');
 
 function toApiCredentials(credentials) {
   if (!credentials?.accessKeyId) return undefined;
