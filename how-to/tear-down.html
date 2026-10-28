@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tear down a CSOC · Gen3 CSOC docs</title>
+<meta name="description" content="Remove the CSOC, its commons and its infrastructure, and optionally the hosted zone and the state bucket.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html" aria-current="page"><span>Tear down</span></a></li><li><a href="../how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../how-to/tear-down.html">How-to guides</a></li><li aria-current="page">Tear down</li></ol></nav>
+<h1>Tear down a CSOC</h1>
+<p class="lead">Remove the CSOC, its commons and its infrastructure, and optionally the hosted zone and the state bucket.</p>
+<div class="meta"><span class="pill">Wizard step <b>Done</b></span><span class="pill">Time <b>10–15 minutes</b></span></div>
+
+<div class="adm danger" role="note"><p class="adm-t">A teardown permanently deletes all data</p><p>Every commons in the cluster is deleted with it: its databases, its volumes and its Kubernetes Secrets, with no way to recover them. The CSOC's secrets in Secrets Manager are deleted without a recovery window, and Keycloak's users and settings go with its database. The bootstrap configures no backups.</p></div>
+
+<h2 id="when-you-need-this">When you need this</h2>
+<p>When you no longer need a CSOC, for example after a test, and want to stop its costs ($720–800 a month in us-east-1).</p>
+
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+  <li>Back up everything you want to keep: commons databases, data files, and the users and settings in Keycloak.</li>
+  <li><span class="where">Terminal</span> Sign in so that at least 45 minutes are left on your SSO sign-in. Otherwise the wizard stops before it starts, with the message "A teardown takes 10–15 minutes, up to 45, and stops part-way if the sign-in ends first."</li>
+  <li>Open the wizard at <code>localhost:3000/bootstrap</code> and resume the environment if needed (see <a href="resume.html">Resume after closing the tab</a>).</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>On the <b>Done</b> step, press <span class="btn-ui red">Tear down</span> in the banner. You can also open <b>Advanced</b> under the run log and press <b>Tear down…</b>.</li>
+  <li>For test environments, leave <b>Force: don't wait for anything graceful</b> on, the default. It deletes nodes and disks immediately instead of shutting them down cleanly. Turn it off only if workloads must stop gracefully, which makes the uninstall slower.</li>
+  <li>Choose whether to delete the zone:
+    <ul>
+      <li><b>If you will not reuse csoc.example.org</b>, select <b>Also delete the hosted zone and its delegation</b>. Under <span class="field">Parent zone reached with</span>, choose <b>These credentials</b> (the default) if the parent zone is in this account, <b>Profile: …</b> for another account, or <b>Nothing: I remove the NS records myself</b> if central IT manages it (then ask them to remove the NS record set).</li>
+      <li><b>If you will reuse it</b>, leave the box off.</li>
+    </ul></li>
+  <li>Select <b>Also empty and delete the state bucket</b> only if you will not come back to this environment. The bucket is deleted only after every environment in it is destroyed.</li>
+  <li>Type the CSOC name, for example <code class="ex">csoc-dev</code>, to confirm, and press <span class="btn-ui red">Tear down</span>.</li>
+</ol>
+<p>The teardown panel lists its steps with their state. Each starts only after the previous one succeeds:</p>
+<ol>
+  <li><b>Uninstall the CSOC</b> removes what the bootstrap added outside Terraform: load balancers, volumes, Karpenter's nodes, DNS records and secrets. It takes 2–10 minutes.</li>
+  <li><b>Destroy the infrastructure</b> runs <code>terraform destroy</code> ("terraform destroy: the cluster, VPC, Squid, IAM roles and the certificate. About 5 minutes.").</li>
+  <li><b>Delete the hosted zone</b>, with the CSOC's certificate and the NS records in the parent zone, if selected.</li>
+  <li><b>Delete the state bucket</b>, if selected.</li>
+</ol>
+
+<h2 id="check-it-worked">Check it worked</h2>
+<div class="expect">
+<div class="banner"><b>Uninstall in progress</b><span>Removing the load balancers, volumes, nodes, DNS records and secrets the install added. A few minutes.</span></div>
+<div class="banner"><b>Destroy in progress</b><span>Deleting the infrastructure. About 5 minutes; up to 30 if AWS is slow to release network interfaces.</span></div>
+<div class="banner gray"><b>Torn down</b><span>Terraform destroyed everything it created. Below is what is left outside it.</span><span class="acts">Buttons: [Provision again] [Start over]</span></div>
+<p>Below the banner, <b>What is left</b> checks AWS for the CSOC's certificate, the hosted zone and the state bucket, each with its own delete button. When nothing is left, the banner reads <b>Back to a blank account</b>.</p>
+<p>The commons <code>commons-a</code> is removed with the cluster. Its ACM certificate, which the portal requested, is not; it is free, and you can delete it in the ACM console.</p>
+<h4>Time</h4><p>10–15 minutes from <b>Tear down</b> to <b>Torn down</b>: 2–10 minutes for the uninstall, then about 5 minutes for the destroy; normal up to 25 minutes.</p>
+<div class="timer noprint" data-t="teardown" data-typ="15" data-hi="25" data-label="teardown" data-typtext="10–15 minutes"></div>
+</div>
+<p>For what the uninstall removes and in what order, see <a href="../concepts/architecture.html#teardown">Teardown</a> in Architecture.</p>
+
+<h2 id="if-it-fails">If it fails</h2>
+<ul>
+  <li><b>No progress for 30 minutes:</b> open the run log and search for <code>DependencyViolation</code>. It names the resource AWS will not delete yet, for example a network interface or a security group that something still uses. Do not change the runner scripts or stop the run; wait, then see <a href="../reference/troubleshooting.html#tear-down">Tear down troubleshooting</a>.</li>
+  <li><b>A banner reports a failure:</b> see <a href="../reference/troubleshooting.html#tear-down">Tear down troubleshooting</a>.</li>
+</ul>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Banner: <b>The uninstall failed</b></td><td>Removing what the bootstrap added did not complete. The CSOC is still recorded.</td><td>Press <b>Retry teardown with Force</b>. It retries with the Force setting you chose, which is on unless you turned it off. If the cluster cannot be reached at all, press <b>Destroy anyway…</b>, which lists what may be left behind and asks for the name.</td></tr><tr><td>Banner: <b>The destroy failed</b></td><td>The environment is <code>partial</code>; some resources still exist.</td><td>Search the log for <code>DependencyViolation</code> to see which resource blocked it, then press <b>Retry teardown</b>. It continues where it stopped. A retry does not delete the state bucket; delete it afterwards from <b>What is left</b>.</td></tr><tr><td>A prompt to sign in again before the teardown starts</td><td>"A teardown takes 10–15 minutes, up to 45, and stops part-way if the sign-in ends first."</td><td>In a terminal, run <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>.</td></tr><tr><td>The state bucket is not deleted</td><td>Another environment in it is not destroyed, or it holds other objects.</td><td>Destroy the other environments first, or keep the bucket.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../deploy-gen3.html" rel="prev"><small>Previous</small><b>← Deploy a Gen3 commons</b></a>
+<a class="next" href="../how-to/resume.html" rel="next"><small>Next</small><b>Resume after closing the tab →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

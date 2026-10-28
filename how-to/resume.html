@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resume after closing the tab · Gen3 CSOC docs</title>
+<meta name="description" content="Return to an environment after closing the browser, restarting the wizard, or switching computers.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="../how-to/resume.html" aria-current="page"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../how-to/tear-down.html">How-to guides</a></li><li aria-current="page">Resume after closing the tab</li></ol></nav>
+<h1>Resume after closing the tab</h1>
+<p class="lead">Return to an environment after closing the browser, restarting the wizard, or switching computers.</p>
+
+
+<h2 id="when-you-need-this">When you need this</h2>
+<p>When you come back to the wizard after closing it, waiting for DNS delegation, or moving to another computer. Nothing is lost: the state bucket records every environment and run, and a run in progress keeps going without the page.</p>
+
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+  <li><span class="where">Terminal</span> Start the wizard if it is not running (<a href="../start-the-wizard.html">Start the wizard</a>).</li>
+  <li><span class="where">Terminal</span> Sign in: <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>.</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Open <code>localhost:3000/bootstrap</code>.</li>
+  <li><b>If you use the same browser as before</b>, the wizard returns to the step you were on, and follows a run that is still in progress. You are done.</li>
+  <li><b>Otherwise</b>, on the <b>Setup</b> step, choose the same <span class="field">AWS Profile</span>, enter the same <span class="field">Terraform State Bucket</span>, for example <code class="ex">gen3-csoc-csoc-dev-111122223333</code>, and press <span class="btn-ui light">Check</span>.</li>
+  <li>Under <b>Environments in this bucket</b>, press <b>Resume</b> next to your CSOC, for example <code class="ex">csoc-dev</code>.</li>
+</ol>
+<figure class="shot"><img src="../assets/img/12-resume.png" alt="Environments in this bucket, with Resume" loading="lazy"><figcaption>The environments in a state bucket, each with <b>Resume</b>.</figcaption></figure>
+
+<h2 id="check-it-worked">Check it worked</h2>
+<p>The wizard opens the step that matches the environment's state, and the banner offers the next action.</p>
+
+<h2 id="if-it-fails">If it fails</h2>
+<ul>
+  <li><b>A yellow box AWS session expired appears</b>, and every button is disabled: <span class="where">Terminal</span> sign in again, then press <b>Check again</b> in the box.</li>
+  <li><b>The bucket shows no environments</b>: check that the profile reaches the same account as before; the blue box shows the account ID.</li>
+</ul>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../how-to/tear-down.html" rel="prev"><small>Previous</small><b>← Tear down</b></a>
+<a class="next" href="../how-to/allow-an-address.html" rel="next"><small>Next</small><b>Allow a new IP address →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

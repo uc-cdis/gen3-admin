@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>After the tutorial · Gen3 CSOC docs</title>
+<meta name="description" content="What to set up before real use, how to keep the CSOC current, the gaps these docs do not cover yet, and where to get help.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html" aria-current="page"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="next-steps.html">Next steps</a></li><li aria-current="page">After the tutorial</li></ol></nav>
+<h1>After the tutorial</h1>
+<p class="lead">What to set up before real use, how to keep the CSOC current, the gaps these docs do not cover yet, and where to get help.</p>
+
+
+<h2 id="before-real-use">Before real use</h2>
+<ul>
+  <li><b>Connect your identity provider.</b> Broker Keycloak to your campus single sign-on so that people sign in with their institutional accounts. See <a href="how-to/connect-identity-provider.html">Add your institution's sign-in to Keycloak</a>.</li>
+  <li><b>Configure backups.</b> The bootstrap configures none. Back up Keycloak's database and each commons' database before they hold anything you need to keep. See <a href="concepts/security.html#what-this-setup-is-not">What this setup is not</a>.</li>
+  <li><b>Plan for data.</b> Turn on persistence for each commons' database, or use an external database, and configure a data bucket before anyone uploads files. See <a href="deploy-gen3.html#where-the-data-lives">Where the data lives</a>.</li>
+  <li><b>Pin image tags.</b> Replace the branch tags of the CSOC images with release tags. See <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</li>
+  <li><b>Plan the Kubernetes version.</b> The default version is in EKS extended support, the largest avoidable cost. See <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
+  <li><b>Set a budget alert.</b> See <a href="concepts/security.html#cost">Cost</a>.</li>
+  <li><b>Review the allowed addresses.</b> Replace individual addresses with your campus and VPN ranges. See <a href="how-to/allow-an-address.html">Allow a new IP address</a>.</li>
+  <li><b>Have the setup reviewed.</b> Give your security and compliance reviewers <a href="concepts/security.html">Security, cost and responsibilities</a> and <a href="concepts/architecture.html">Architecture</a>, and agree on what data each commons may hold.</li>
+</ul>
+
+<h2 id="keep-it-up-to-date">Keep it up to date</h2>
+<p>Upgrades are not automated. Test each change on a CSOC that holds nothing important first.</p>
+<ul>
+  <li><b>Infrastructure.</b> Resume the environment in the wizard, press <b>Plan again</b>, and read the plan. Apply only changes you expect; an apply that destroys or replaces resources asks for the environment name.</li>
+  <li><b>The CSOC portal and API.</b> On the <b>Install</b> step, open <b>Advanced</b>, press <b>Bootstrap</b>, enter the new tags under <b>Images</b>, and run the bootstrap and the finish again.</li>
+  <li><b>Commons.</b> Each commons is a Helm release of the <code>gen3</code> chart. Before you change its version, read the <a href="https://github.com/uc-cdis/gen3-helm">gen3-helm</a> release notes and the <a href="https://docs.gen3.org/">Gen3 documentation</a>.</li>
+</ul>
+
+<h3 id="upgrade-kubernetes">Upgrade Kubernetes</h3>
+<p>The cluster runs Kubernetes 1.33, which bills at the EKS extended-support rate, $438 a month instead of $73 a month. The wizard has no field for the version. The version is the Terraform variable <code>eks_version</code> in gen3-terraform's <code>examples/csoc/variables.tf</code> (default <code>"1.33"</code>). To change it:</p>
+<ol>
+  <li>Check the <a href="https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html">Amazon EKS Kubernetes release calendar</a> for the target version. EKS upgrades one minor version at a time, so 1.33 goes to 1.34, then 1.35.</li>
+  <li><span class="where">Terminal</span> In a local gen3-terraform checkout, set the default of <code>eks_version</code> to the next minor version, and start the wizard with <code>TERRAFORM_MODULES_DIR</code> pointing at that checkout (see <a href="contributing.html#developer-settings">For developers</a>).</li>
+  <li>Resume the environment, press <b>Plan again</b>, and check that the plan updates the cluster in place (<b>~N to update</b>) rather than replacing it.</li>
+  <li>Press <b>Apply</b>. Repeat for each minor version.</li>
+</ol>
+<p>Test this on a CSOC that holds nothing important first: changing the version this way is a developer procedure, not a wizard feature.</p>
+
+<h2 id="add-more-commons">Add more commons</h2>
+<p>Deploy further commons into the CSOC's cluster from the portal: on the success page press <b>Deploy Another</b>, or open <b>Deploy a new Gen3 instance</b>. Give each one its own release name, such as <code>commons-b</code>, and hostname, such as <code class="ex">commons-b.csoc.example.org</code>.</p>
+
+<h2 id="known-gaps">Known gaps</h2>
+<p>These topics are not covered by these docs yet, or the behavior has not been checked:</p>
+<ul>
+  <li><b>Data uploads.</b> Creating a data bucket for a commons and giving Fence access to it.</li>
+  <li><b>Agents in other clusters.</b> Connecting an agent in a cluster in another AWS account to the CSOC's agent endpoint.</li>
+  <li><b>Re-applying user.yaml.</b> Whether <b>Update Deployment</b> re-runs the commons' <code>useryaml</code> job, and how to re-run it if not.</li>
+  <li><b>Identity brokering.</b> The Keycloak steps in <a href="how-to/connect-identity-provider.html">Add your institution's sign-in to Keycloak</a> are general Keycloak guidance and have not been tried end to end with a CSOC.</li>
+  <li><b>The EKS public endpoint.</b> Restricting it to CIDR ranges, or closing it; the configuration sets <code>eks_public_access</code>, which the wizard does not expose.</li>
+  <li><b>EKS secrets encryption.</b> What EKS applies by default to Kubernetes Secrets in this configuration.</li>
+  <li><b>Commons cost.</b> The cost of a commons has not been measured.</li>
+  <li><b>Image and module versions.</b> <code>docker-compose.workshop.yml</code> pins the images to the branch tag <code>feat_csoc-bootstrap-wizard</code> and the Terraform to the branch <code>feat/csoc-bootstrap-master</code>, not to releases.</li>
+  <li><b>The Kubernetes version.</b> There is no wizard field for it; see <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
+</ul>
+
+<h2 id="get-help">Get help</h2>
+<div class="tw"><table><thead><tr><th>Where</th><th>For</th></tr></thead><tbody><tr><td><a href="https://github.com/uc-cdis/gen3-admin/issues">uc-cdis/gen3-admin issues</a></td><td>Problems with the bootstrap wizard, the CSOC portal or these docs. Include the banner text and the run log's <code>Error:</code> lines, with account numbers removed. Do not report security vulnerabilities here; see <a href="concepts/security.html#reporting-vulnerabilities-and-license">Reporting vulnerabilities</a>.</td></tr><tr><td><a href="https://gen3.org/community/">Gen3 community</a></td><td>Questions about Gen3 and data commons, and contact with other operators.</td></tr><tr><td><a href="https://docs.gen3.org/">Gen3 documentation</a></td><td>Gen3 services, configuration and operation.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="reference/where-things-live.html" rel="prev"><small>Previous</small><b>← Where things live</b></a>
+<a class="next" href="contributing.html" rel="next"><small>Next</small><b>For developers →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

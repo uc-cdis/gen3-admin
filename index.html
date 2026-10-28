@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bootstrap a Gen3 CSOC in your AWS account · Gen3 CSOC docs</title>
+<meta name="description" content="These docs take you from an empty AWS account to a running CSOC, the control plane that deploys and manages Gen3 data commons, and then to a first Gen3 commons deployed from it.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html" aria-current="page"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li aria-current="page">Overview</li></ol></nav>
+<h1>Bootstrap a Gen3 CSOC in your AWS account</h1>
+<p class="lead">These docs take you from an empty AWS account to a running CSOC, the control plane that deploys and manages Gen3 data commons, and then to a first Gen3 commons deployed from it.</p>
+<div class="meta"><span class="pill">To a running CSOC <b>about 40 minutes in the wizard</b></span><span class="pill">First commons <b>about 12 minutes from Deploy</b></span><span class="pill">Cost while running <b>$720–800 a month in us-east-1, before commons</b></span></div>
+
+<p>A CSOC costs <b>$720–800 a month</b> in us-east-1, before commons and data transfer, on the default Kubernetes version 1.33. <a href="concepts/security.html#cost">Cost</a> breaks the figure down.</p>
+<p>You run a bootstrap wizard on your own computer. It uses your AWS credentials to create the network, the Kubernetes cluster, the certificate and the DNS records, and it shows you what it will create before it creates anything. When it finishes, you sign in to the CSOC and deploy a Gen3 commons from it. If you are new to the terms, start with <a href="what-is-a-csoc.html">What is a CSOC?</a></p>
+
+<h2 id="who-these-docs-are-for">Who these docs are for</h2>
+<p>They are written for research-IT and research-computing groups, at large universities and at smaller research institutes, and for three readers in particular:</p>
+<div class="cards">
+  <a class="card" href="what-is-a-csoc.html"><b>Deciding whether to adopt</b><span>What a CSOC is, who it suits, the roles involved, and what it costs to run.</span></a>
+  <a class="card" href="prerequisites.html"><b>Running it</b><span>The prerequisites, then the tutorial step by step, then the how-to guides.</span></a>
+  <a class="card" href="concepts/security.html"><b>Reviewing security and compliance</b><span>What is exposed, where secrets live, why administrator rights are needed, and the shared responsibilities.</span></a>
+</div>
+
+<h2 id="what-youll-build">What you'll build</h2>
+<ul>
+  <li>An <b>S3 state bucket</b> that holds the Terraform state and a record of every change.</li>
+  <li>A <b>Route 53 hosted zone</b> for a subdomain such as <code class="ex">csoc.example.org</code>. Your parent domain, <code class="ex">example.org</code>, <b>delegates</b> the subdomain to it: a record in the parent's DNS tells the internet which name servers answer for the subdomain.</li>
+  <li>A <b>VPC</b> (private network) across three availability zones, with a <b>NAT gateway</b> (lets private machines reach the internet without being reachable from it) and <b>Squid</b> (a proxy that allows outbound traffic only to listed destinations).</li>
+  <li>An <b>Amazon EKS</b> Kubernetes cluster without fixed worker nodes: <b>Karpenter</b> starts EC2 nodes when workloads need them.</li>
+  <li>An <b>ACM certificate</b> for the CSOC's two hostnames, <code class="ex">portal.csoc.example.org</code> and <code class="ex">auth.csoc.example.org</code>.</li>
+  <li>The <b>CSOC</b>: the CSOC portal and <b>Keycloak</b> for sign-in, behind a load balancer that accepts only the IP addresses you allow.</li>
+  <li>A first <b>Gen3 commons</b> at <code class="ex">commons-a.csoc.example.org</code>, deployed from the CSOC and signed in to through the CSOC's Keycloak.</li>
+</ul>
+<p>The <a href="reference/glossary.html">Glossary</a> defines every term.</p>
+
+<h2 id="how-it-fits-together">How it fits together</h2>
+<p>The wizard and its API run in Docker on your computer. Everything else runs in your AWS account.</p>
+<figure class="anim" data-dg="overview" data-label="How the pieces fit together"><figcaption><b>Diagram: How the pieces fit together.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-overview-steps"><li>On your computer, Docker runs the bootstrap wizard, its API and a restricted Docker socket proxy. Your AWS credentials stay on your computer. <a href="start-the-wizard.html">Start the wizard</a></li><li>The <b>Setup</b> step creates the S3 state bucket and a Route 53 hosted zone delegated from your parent domain. <a href="setup.html">Setup</a></li><li>Each Terraform, bootstrap or finish run happens in a new runner container. The apply creates the VPC, the NAT gateway, Squid and the EKS cluster with Karpenter. <a href="apply.html">Apply</a></li><li>After the apply, ACM issues a certificate for the two CSOC hostnames, proven through records in your zone. <a href="certificate-and-dns.html">Certificate</a></li><li>The bootstrap stores the CSOC's secrets in AWS Secrets Manager and installs the controllers, Keycloak and the CSOC portal. <a href="install.html">Bootstrap the CSOC</a></li><li>The finish points <code class="ex">portal.csoc.example.org</code> and <code class="ex">auth.csoc.example.org</code> at the load balancer. Only the addresses you allow can reach them. <a href="finish.html">Finish the install</a></li><li>In the CSOC portal you deploy an agent into the cluster. The agent connects to the CSOC over an encrypted, mutually authenticated channel. <a href="connect-cluster.html">Connect the cluster</a></li><li>The CSOC asks the agent to install a Gen3 commons with Helm. external-dns publishes <code class="ex">commons-a.csoc.example.org</code>. <a href="deploy-gen3.html">Deploy a Gen3 commons</a></li></ol></figure>
+<p>For the detail behind each box, read <a href="concepts/architecture.html">Architecture</a>.</p>
+
+<h2 id="time">Time</h2>
+<p>These times come from recorded runs in new AWS accounts. They assume the prerequisites are done and the delegation of your subdomain is in place; if central IT must add the delegation, add their turnaround. Most of the time is spent waiting while AWS creates resources.</p>
+<div class="tw"><table><thead><tr><th>Wizard step</th><th>Pages</th><th>Time</th></tr></thead><tbody><tr><td><b>Welcome</b></td><td><a href="start-the-wizard.html">Start the wizard</a></td><td>about 1 minute</td></tr><tr><td><b>Setup</b></td><td><a href="setup.html">Setup</a></td><td>about 5 minutes</td></tr><tr><td><b>Review</b></td><td><a href="review-and-provision.html">Review and provision</a></td><td>about 1 minute</td></tr><tr><td><b>Provision</b></td><td><a href="plan.html">Plan</a>, <a href="apply.html">Apply</a></td><td>under 1 minute for the plan, then 15–20 minutes for the apply</td></tr><tr><td><b>Certificate</b></td><td><a href="certificate-and-dns.html">Certificate</a></td><td>1–5 minutes</td></tr><tr><td><b>Install</b></td><td><a href="install.html">Bootstrap the CSOC</a>, <a href="finish.html">Finish the install</a></td><td>about 5 minutes for the bootstrap, then 3–6 minutes for the finish</td></tr><tr><td><b>Done</b></td><td><a href="sign-in.html">Sign in</a></td><td>about 1 minute</td></tr><tr><td><i>Total, from Welcome to Done</i></td><td></td><td><b>about 40 minutes</b></td></tr><tr><td>CSOC portal</td><td><a href="connect-cluster.html">Connect the cluster</a>, <a href="deploy-gen3.html">Deploy a Gen3 commons</a></td><td>about 2 minutes for the agent, then about 12 minutes from Deploy Gen3 to a working site</td></tr><tr><td>Clean up</td><td><a href="how-to/tear-down.html">Tear down</a></td><td>10–15 minutes: 2–10 minutes to uninstall, then about 5 minutes to destroy</td></tr></tbody></table></div>
+
+<h2 id="how-these-docs-are-organized">How these docs are organized</h2>
+<div class="tw"><table><thead><tr><th>Part</th><th>Use it to</th><th>Pages</th></tr></thead><tbody><tr><td>Start here</td><td>understand the product and get ready</td><td><a href="what-is-a-csoc.html">What is a CSOC?</a>, <a href="prerequisites.html">Prerequisites</a></td></tr><tr><td>Tutorial</td><td>build a CSOC and a first commons, once, from start to finish</td><td>grouped by the wizard's steps, starting with <a href="start-the-wizard.html">Start the wizard</a></td></tr><tr><td>How-to guides</td><td>do one specific task</td><td><a href="how-to/tear-down.html">Tear down</a>, <a href="how-to/resume.html">Resume</a>, <a href="how-to/allow-an-address.html">Allow a new IP address</a>, and more</td></tr><tr><td>Concepts</td><td>understand how it works and what it means for security and cost</td><td><a href="concepts/architecture.html">Architecture</a>, <a href="concepts/security.html">Security, cost and responsibilities</a></td></tr><tr><td>Reference</td><td>look something up</td><td><a href="reference/wizard-states.html">Wizard states</a>, <a href="reference/troubleshooting.html">Troubleshooting</a>, <a href="reference/glossary.html">Glossary</a>, <a href="reference/where-things-live.html">Where things live</a></td></tr></tbody></table></div>
+
+<h2 id="conventions">Conventions</h2>
+<ul>
+  <li>Buttons look like <span class="btn-ui">Next</span> and field labels look like <span class="field">CSOC Name</span>. Both use the exact text on screen.</li>
+  <li>Wizard steps are named by their label in the wizard's stepper: <b>Welcome</b>, <b>Setup</b>, <b>Review</b>, <b>Provision</b>, <b>Certificate</b>, <b>Install</b> and <b>Done</b>.</li>
+  <li>One example runs through every page: the CSOC name <code class="ex">csoc-dev</code>, the subdomain <code class="ex">csoc.example.org</code> under <code class="ex">example.org</code>, the portal <code class="ex">portal.csoc.example.org</code>, Keycloak <code class="ex">auth.csoc.example.org</code>, the commons <code class="ex">commons-a.csoc.example.org</code>, the administrator <code class="ex">jdoe@example.org</code>, the address <code class="ex">203.0.113.7/32</code>, and the Region <code class="ex">us-east-1</code>. Replace them with your own values; <a href="prerequisites.html#worksheet">the worksheet</a> collects them.</li>
+  <li>Commands and templates use placeholders such as <span class="ph">&lt;your-domain&gt;</span>, which you replace before running them.</li>
+  <li>A label such as <span class="where">Terminal</span> marks a step that happens outside the wizard.</li>
+  <li>The banner under the wizard's stepper always says where you are and offers the next button to press. If a screenshot and the banner disagree, follow the banner.</li>
+  <li><b>About the screenshots:</b> they come from an example run, so the account numbers, names and addresses in them belong to that run, and the stepper at the top of some of them uses different labels from the current wizard.</li>
+  <li>Press <kbd>/</kbd> to search. The moon button switches between light and dark themes, and pages print without the navigation.</li>
+</ul>
+
+<nav class="pager" aria-label="Previous and next page">
+
+<a class="next" href="what-is-a-csoc.html" rel="next"><small>Next</small><b>What is a CSOC? →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
