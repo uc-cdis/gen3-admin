@@ -1,4 +1,4 @@
-import { v, ex, cmd, adm, diagram, table, F, ext, COST_IN } from './lib.mjs';
+import { v, ex, cmd, adm, diagram, table, F, ext } from './lib.mjs';
 
 const C = 'Concepts';
 
@@ -61,7 +61,7 @@ ${table(['Component', 'Detail'], [
 
 <h2>The EKS cluster</h2>
 ${table(['Component', 'Detail'], [
-  ['Control plane', `${ext('eks', 'Amazon EKS')} running Kubernetes ${F.eksVersion}, in extended support (see <a href="security.html#cost">Cost</a>). It has a private API endpoint and a public one with no CIDR restriction (see <a href="security.html#internet-facing-endpoints">Internet-facing endpoints</a>). Creating it takes ${F.eks}.`],
+  ['Control plane', `${ext('eks', 'Amazon EKS')} running Kubernetes ${F.eksVersion}, which is past EKS standard support. It has a private API endpoint and a public one with no CIDR restriction (see <a href="security.html#internet-facing-endpoints">Internet-facing endpoints</a>). Creating it takes ${F.eks}.`],
   ['IAM', 'The cluster\'s OIDC provider, and IRSA roles for the AWS Load Balancer Controller, External Secrets Operator, the EBS CSI driver, the CSOC API and external-dns. Terraform creates only these roles; the controllers themselves, including the EBS CSI driver, are installed by the bootstrap with Helm. An EKS access entry gives the deploying role administrator access to the cluster.'],
   ['Karpenter', `${ext('karpenter', 'Karpenter')} runs on AWS Fargate. When pods cannot be scheduled, it starts on-demand amd64 EC2 nodes running Amazon Linux 2023, choosing the cheapest instance type that fits from any family of generation 5 or newer (<code>karpenter_instance_categories = []</code>, <code>karpenter_min_instance_generation = "4"</code>). The first node joins in under 1 minute. The cluster has no fixed node group.`],
 ])}
@@ -207,40 +207,16 @@ ${table(['Area', 'Responsible'], [
 ])}
 
 <h2>Cost</h2>
-<p>A running CSOC costs <b>${F.costNow}</b> ${COST_IN}, on the default Kubernetes version ${F.eksVersion}. That version left EKS standard support on ${F.eks133StdEnd}, so the control plane is billed at the extended-support rate of ${F.eksExtRate}, ${F.eksExt} instead of ${F.eksStd}, until extended support ends on ${F.eks133ExtEnd}. On a Kubernetes version in standard support (1.35 or later; 1.34 leaves standard support on ${F.eks134StdEnd}) the CSOC costs ${F.costStd} ${COST_IN}. Sources: the ${ext('ekscal', 'Amazon EKS Kubernetes release calendar')} and ${ext('ekspricing', 'Amazon EKS pricing')}. The <b>Rough Monthly Cost Estimate</b> on the wizard's <b>Review</b> step shows the same figure, ${F.costBadge}.</p>
-${table(['Item (us-east-1, 730 hours a month)', 'Estimate per month'], [
-  ['EKS control plane', `${F.eksStd} in standard support; ${F.eksExt} in extended support`],
-  ['Squid: 2 × t3.medium instances', '$60 (approximate)'],
-  ['Karpenter\'s controller on AWS Fargate', '$70 (approximate)'],
-  ['EC2 nodes started by Karpenter: 1–2 nodes for the CSOC alone, the cheapest type that fits', '$60–140, depending on load (approximate)'],
-  ['NAT gateway', 'about $33, plus $0.045 per GB processed'],
-  ['Public IPv4 addresses: 6 × $3.65', 'about $22'],
-  ['Application Load Balancer', 'about $16, plus capacity units'],
-  ['EBS volumes', 'about $10'],
-  ['Route 53: 2 hosted zones (public and private)', '$1'],
-  ['Secrets Manager: 3–4 secrets × $0.40', '$1–2'],
-  ['CloudWatch Logs', `small; the VPC's log group keeps logs for ${F.logRetention} by default`],
-  ['Data transfer', 'depends on use; not included above'],
-])}
-<p>To plan and control spending, model your configuration in the ${ext('calc', 'AWS Pricing Calculator')}, see ${ext('vpcpricing', 'Amazon VPC pricing')} for NAT gateways and public IPv4 addresses, and set up ${ext('budgets', 'AWS Budgets')} alerts on the account before you start.</p>
-
-<h3>What a commons adds</h3>
-<p>Each commons adds its own resources to the bill. Their size depends on the services you enable and on use:</p>
-<ul>
-  <li>EC2 nodes that Karpenter starts for the commons' services, the largest part.</li>
-  <li>An Application Load Balancer, about $16 a month in us-east-1 plus capacity units, and its public IPv4 addresses.</li>
-  <li>An EBS volume for the local database, if you turn on persistence, or a managed database if you use an external one.</li>
-  <li>S3 storage and requests for data files, once you configure a data bucket.</li>
-</ul>
-<p>Check the actual figures in AWS Cost Explorer a day after you deploy, filtered by the commons' resources.</p>
+<p>Running a CSOC incurs AWS charges (EKS, EC2, NAT gateway, load balancer, and others); check AWS Cost Explorer for your account. Kubernetes 1.33, the default version, is past EKS standard support; AWS charges more for extended support. See the ${ext('ekscal', 'Amazon EKS Kubernetes release calendar')}. To plan and control spending, use the ${ext('calc', 'AWS Pricing Calculator')} and ${ext('budgets', 'AWS Budgets')}.</p>
+<p>Each commons adds its own resources: the EC2 nodes Karpenter starts for its services, its own Application Load Balancer and public IPv4 addresses, an EBS volume or a managed database, and S3 storage for data files once you configure a bucket.</p>
 
 <h3>What remains after teardown</h3>
 <p>A teardown removes everything Terraform and the bootstrap created. These remain unless you remove them; the wizard's <b>What is left</b> list offers to delete the first three:</p>
 <ul>
-  <li>The hosted zone ${ex('zone')}, $0.50 a month, if you did not select it for deletion.</li>
-  <li>The CSOC's ACM certificate, which is free, if the zone was kept.</li>
-  <li>The state bucket ${ex('bucket')}, a few cents a month, if you did not select it for deletion.</li>
-  <li>Each commons' ACM certificate, which the portal requested. Certificates are free; delete them in the ACM console.</li>
+  <li>The hosted zone ${ex('zone')}, if you did not select it for deletion.</li>
+  <li>The CSOC's ACM certificate, if the zone was kept.</li>
+  <li>The state bucket ${ex('bucket')}, if you did not select it for deletion.</li>
+  <li>Each commons' ACM certificate, which the portal requested. Delete them in the ACM console.</li>
 </ul>
 
 <h2>Campus realities</h2>

@@ -1,18 +1,17 @@
-import { v, ex, btn, fld, cp, cmd, adm, diagram, table, pill, F, ext, COST_IN, where } from './lib.mjs';
+import { v, ex, btn, fld, cp, cmd, adm, diagram, table, pill, F, ext, where } from './lib.mjs';
 
 export const START = [
 /* ================================================================ OVERVIEW */
 { file: 'index.html', key: 'index', nav: 'Overview', section: 'Start here', title: 'Bootstrap a Gen3 CSOC in your AWS account',
   lead: 'These docs take you from an empty AWS account to a running CSOC, the control plane that deploys and manages Gen3 data commons, and then to a first Gen3 commons deployed from it.',
-  meta: [pill('To a running CSOC', `${F.total} in the wizard`), pill('First commons', `${F.gen3} from Deploy`), pill('Cost while running', `${F.costNow} in us-east-1, before commons`)],
+  meta: [pill('To a running CSOC', `${F.total} in the wizard`), pill('First commons', `${F.gen3} from Deploy`)],
   body: () => `
-<p>A CSOC costs <b>${F.costNow}</b> ${COST_IN}, on the default Kubernetes version ${F.eksVersion}. <a href="concepts/security.html#cost">Cost</a> breaks the figure down.</p>
 <p>You run a bootstrap wizard on your own computer. It uses your AWS credentials to create the network, the Kubernetes cluster, the certificate and the DNS records, and it shows you what it will create before it creates anything. When it finishes, you sign in to the CSOC and deploy a Gen3 commons from it. If you are new to the terms, start with <a href="what-is-a-csoc.html">What is a CSOC?</a></p>
 
 <h2>Who these docs are for</h2>
 <p>They are written for research-IT and research-computing groups, at large universities and at smaller research institutes, and for three readers in particular:</p>
 <div class="cards">
-  <a class="card" href="what-is-a-csoc.html"><b>Deciding whether to adopt</b><span>What a CSOC is, who it suits, the roles involved, and what it costs to run.</span></a>
+  <a class="card" href="what-is-a-csoc.html"><b>Deciding whether to adopt</b><span>What a CSOC is, who it suits, and the roles involved.</span></a>
   <a class="card" href="prerequisites.html"><b>Running it</b><span>The prerequisites, then the tutorial step by step, then the how-to guides.</span></a>
   <a class="card" href="concepts/security.html"><b>Reviewing security and compliance</b><span>What is exposed, where secrets live, why administrator rights are needed, and the shared responsibilities.</span></a>
 </div>

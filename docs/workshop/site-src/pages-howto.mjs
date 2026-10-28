@@ -13,7 +13,7 @@ export const HOWTO = [
 ${adm('danger', 'A teardown permanently deletes all data', 'Every commons in the cluster is deleted with it: its databases, its volumes and its Kubernetes Secrets, with no way to recover them. The CSOC\'s secrets in Secrets Manager are deleted without a recovery window, and Keycloak\'s users and settings go with its database. The bootstrap configures no backups.')}
 
 <h2>When you need this</h2>
-<p>When you no longer need a CSOC, for example after a test, and want to stop its costs (${F.costNow} in us-east-1).</p>
+<p>When you no longer need a CSOC, for example after a test, and want to stop its AWS charges.</p>
 
 <h2>Before you start</h2>
 <ul>
@@ -205,7 +205,7 @@ ${shot(R, '12-resume.png', 'Environments in this bucket, with Resume', 'The envi
 <ol class="steps">
   <li>Copy the request below and replace the placeholders, including the four name servers from the box.</li>
   <li>Send it through your institution's DNS request process.</li>
-  <li>While you wait, close the wizard; the zone and the bucket stay in your account, and the empty zone costs $0.50 a month. Use the time to finish the other prerequisites, have <a href="../concepts/security.html">Security, cost and responsibilities</a> reviewed, and ask your cloud administrators to confirm that the services the CSOC uses are allowed. The wizard cannot go past <b>Setup</b> until the delegation is in place.</li>
+  <li>While you wait, close the wizard; the zone and the bucket stay in your account. Use the time to finish the other prerequisites, have <a href="../concepts/security.html">Security, cost and responsibilities</a> reviewed, and ask your cloud administrators to confirm that the services the CSOC uses are allowed. The wizard cannot go past <b>Setup</b> until the delegation is in place.</li>
   <li>When central IT confirms, <a href="resume.html">resume</a>. The page continues by itself once it sees the zone.</li>
 </ol>
 ${cmd(`Subject: DNS delegation request for ${v('zone')}

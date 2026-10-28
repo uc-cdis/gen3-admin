@@ -46,8 +46,8 @@ export const table = (cols, rows) =>
     .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 export const pill = (k, val) => `<span class="pill">${k} <b>${val}</b></span>`;
 
-// One source of truth for every number the docs quote. Durations come from 58 recorded runs; costs from AWS
-// pricing (us-east-1, 730 hours a month). Style: a range ("15–20 minutes") or a single value ("about 5 minutes"),
+// One source of truth for every number the docs quote. Durations come from 58 recorded runs. The docs quote no prices.
+// Style: a range ("15–20 minutes") or a single value ("about 5 minutes"),
 // never "about" with a range; every bound has its unit.
 export const F = {
   resources: 'about 120',            // plans of 119–123
@@ -69,11 +69,6 @@ export const F = {
   destroy: 'about 5 minutes',
   teardown: '10–15 minutes',         // from Tear down to "Torn down"
   teardownTyp: 15, teardownMax: 25,
-  // Cost, us-east-1, before commons and data transfer.
-  costNow: '$720–800 a month',       // default Kubernetes 1.33, in EKS extended support
-  costStd: '$360–440 a month',       // a Kubernetes version in standard support (1.35 or later)
-  costBadge: '$720–800/month',       // the Review step's badge, calculateCost() in frontend/pages/bootstrap.jsx
-  eksStd: '$73 a month', eksExt: '$438 a month', eksExtRate: '$0.60 per hour',
   eks133StdEnd: 'July 29, 2026', eks133ExtEnd: 'July 29, 2027', eks134StdEnd: 'December 2, 2026',
   logRetention: '3653 days', lambdaLogRetention: '14 days', stuck: 30,
   cidr: '172.24.16.0/20',
@@ -93,7 +88,6 @@ export const F = {
   },
 
 };
-export const COST_IN = 'in us-east-1, before commons and data transfer';
 
 // Official documentation, in one place. Every URL here was checked to load.
 export const URL = {

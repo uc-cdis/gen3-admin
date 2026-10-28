@@ -153,7 +153,6 @@ ${next ? `<a class="next" href="${root}${next.file}" rel="next"><small>Next</sma
     else if (f.endsWith('.html')) fs.unlinkSync(p);
   }
 })(SITE);
-fs.rmSync(path.join(SITE, 'assets/img'), { recursive: true, force: true });
 
 let index = [];
 PAGES.forEach((p, i) => {
@@ -168,6 +167,10 @@ const js = fs.readFileSync(path.join(HERE, 'site.src.js'), 'utf8').replace('/*__
 fs.writeFileSync(path.join(SITE, 'assets/site.js'), js);
 
 fs.mkdirSync(path.join(SITE, 'assets/img'), { recursive: true });
-for (const f of used) fs.copyFileSync(path.join(IMG_SRC, f), path.join(SITE, 'assets/img', f));
+// Images already in the site are kept as they are: they may have been edited
+// (account numbers, domains and addresses blurred). Only missing ones are copied,
+// and images no page uses are removed.
+for (const f of used) { const dst = path.join(SITE, 'assets/img', f); if (!fs.existsSync(dst)) fs.copyFileSync(path.join(IMG_SRC, f), dst); }
+for (const f of fs.readdirSync(path.join(SITE, 'assets/img'))) if (!used.has(f)) fs.unlinkSync(path.join(SITE, 'assets/img', f));
 fs.writeFileSync(path.join(SITE, '.nojekyll'), '');
 console.log(`pages: ${PAGES.length}, index entries: ${index.length}, images: ${[...used].sort().join(' ')}`);

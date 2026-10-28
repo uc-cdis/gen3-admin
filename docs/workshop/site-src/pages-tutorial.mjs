@@ -1,4 +1,4 @@
-import { v, ex, EX, btn, fld, cp, cmd, banner, adm, shot, diagram, timer, table, pill, F, ext, COST_IN, where, doneWhen } from './lib.mjs';
+import { v, ex, EX, btn, fld, cp, cmd, banner, adm, shot, diagram, timer, table, pill, F, ext, where, doneWhen } from './lib.mjs';
 
 const R = '';
 const T = 'Tutorial';
@@ -245,8 +245,7 @@ ${diagram('dns', 'Creating and delegating the zone', [
       ['Data bucket', 'none'],
     ])}
     If a line is wrong, press <b>Back</b> and change it on <b>Setup</b>.</li>
-  <li>Read the <b>Rough Monthly Cost Estimate</b>. Its badge shows <b>${F.costBadge}</b>: a us-east-1 figure before commons and data transfer, on Kubernetes ${F.eksVersion}, which is billed at the EKS extended-support rate. <a href="concepts/security.html#cost">Cost</a> breaks it down.</li>
-  <li>Press ${btn('Provision')} at the top right. The text below the cost reads "Provision registers ${EX.name} in the state bucket and starts Terraform."</li>
+  <li>Press ${btn('Provision')} at the top right. The text at the bottom of the page reads "Provision registers ${EX.name} in the state bucket and starts Terraform."</li>
 </ol>
 ${doneWhen('the stepper moves to <b>Provision</b> and the banner reads <b>Init in progress</b>.')}
 
@@ -360,7 +359,6 @@ ${diagram('apply', 'What the apply creates', [
   'Karpenter, running on Fargate.',
   'EC2 nodes, which Karpenter starts later, when the bootstrap needs them.',
 ])}
-${adm('warning', 'Kubernetes version and cost', `The cluster runs Kubernetes ${F.eksVersion}, the configuration's default. Its EKS standard support ended on ${F.eks133StdEnd}, so AWS bills the control plane at the extended-support rate of ${F.eksExtRate} (${F.eksExt} instead of ${F.eksStd}) until extended support ends on ${F.eks133ExtEnd}. That makes the CSOC cost ${F.costNow} ${COST_IN}. See the ${ext('ekscal', 'Amazon EKS Kubernetes release calendar')}, ${ext('ekspricing', 'Amazon EKS pricing')} and <a href="next-steps.html#upgrade-kubernetes">Upgrade Kubernetes</a>.`)}
 <p>The certificate is not part of the apply; you choose it on the next step. For every component, see ${arch('network-and-outbound-traffic', 'Network and outbound traffic')} and ${arch('the-eks-cluster', 'The EKS cluster')}.</p>
 
 <h2>Troubleshooting</h2>
@@ -645,7 +643,6 @@ ${doneWhen(`${EX.commons} shows the Gen3 portal, signed in as <code>admin</code>
 
 <h3>Where the data lives</h3>
 <p>A Gen3 commons keeps metadata in its database and data files in object storage. This tutorial's commons has a database, on an EBS volume with persistence on, but <b>no data bucket</b>: <b>Data Upload Bucket</b> on the <b>Globals</b> step is empty, and Crossplane, which could create one, is off. Uploading data files needs an S3 bucket and Fence access to it, which the tutorial does not create; see <a href="next-steps.html#known-gaps">Known gaps</a>.</p>
-<p>A commons also adds cost on top of the CSOC: the EC2 nodes Karpenter starts for its services, its own Application Load Balancer, and its EBS volume. See <a href="concepts/security.html#what-a-commons-adds">What a commons adds</a>.</p>
 
 <h3>Deploy a second commons</h3>
 <p>On the success page, press <b>Deploy Another</b> and repeat the steps with the release name <code>commons-b</code> and the hostname ${ex('commonsb')}.</p>

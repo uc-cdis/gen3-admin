@@ -11,8 +11,8 @@ export const MORE = [
   <li><b>Configure backups.</b> The bootstrap configures none. Back up Keycloak's database and each commons' database before they hold anything you need to keep. See <a href="concepts/security.html#what-this-setup-is-not">What this setup is not</a>.</li>
   <li><b>Plan for data.</b> Turn on persistence for each commons' database, or use an external database, and configure a data bucket before anyone uploads files. See <a href="deploy-gen3.html#where-the-data-lives">Where the data lives</a>.</li>
   <li><b>Pin image tags.</b> Replace the branch tags of the CSOC images with release tags. See <a href="concepts/security.html#images-and-pinning">Images and pinning</a>.</li>
-  <li><b>Plan the Kubernetes version.</b> The default version is in EKS extended support, the largest avoidable cost. See <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
-  <li><b>Set a budget alert.</b> See <a href="concepts/security.html#cost">Cost</a>.</li>
+  <li><b>Plan the Kubernetes version.</b> Kubernetes 1.33, the default version, is past EKS standard support; AWS charges more for extended support. See <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
+  <li><b>Set a budget alert.</b> See ${ext('budgets', 'AWS Budgets')}.</li>
   <li><b>Review the allowed addresses.</b> Replace individual addresses with your campus and VPN ranges. See <a href="how-to/allow-an-address.html">Allow a new IP address</a>.</li>
   <li><b>Have the setup reviewed.</b> Give your security and compliance reviewers <a href="concepts/security.html">Security, cost and responsibilities</a> and <a href="concepts/architecture.html">Architecture</a>, and agree on what data each commons may hold.</li>
 </ul>
@@ -26,7 +26,7 @@ export const MORE = [
 </ul>
 
 <h3 id="upgrade-kubernetes">Upgrade Kubernetes</h3>
-<p>The cluster runs Kubernetes ${F.eksVersion}, which bills at the EKS extended-support rate, ${F.eksExt} instead of ${F.eksStd}. The wizard has no field for the version. The version is the Terraform variable <code>eks_version</code> in gen3-terraform's <code>examples/csoc/variables.tf</code> (default <code>"1.33"</code>). To change it:</p>
+<p>Kubernetes 1.33, the default version, is past EKS standard support; AWS charges more for extended support. The wizard has no field for the version. The version is the Terraform variable <code>eks_version</code> in gen3-terraform's <code>examples/csoc/variables.tf</code> (default <code>"1.33"</code>). To change it:</p>
 <ol>
   <li>Check the ${ext('ekscal', 'Amazon EKS Kubernetes release calendar')} for the target version. EKS upgrades one minor version at a time, so 1.33 goes to 1.34, then 1.35.</li>
   <li>${where('Terminal')}In a local gen3-terraform checkout, set the default of <code>eks_version</code> to the next minor version, and start the wizard with <code>TERRAFORM_MODULES_DIR</code> pointing at that checkout (see <a href="contributing.html#developer-settings">For developers</a>).</li>
@@ -47,7 +47,6 @@ export const MORE = [
   <li><b>Identity brokering.</b> The Keycloak steps in <a href="how-to/connect-identity-provider.html">Add your institution's sign-in to Keycloak</a> are general Keycloak guidance and have not been tried end to end with a CSOC.</li>
   <li><b>The EKS public endpoint.</b> Restricting it to CIDR ranges, or closing it; the configuration sets <code>eks_public_access</code>, which the wizard does not expose.</li>
   <li><b>EKS secrets encryption.</b> What EKS applies by default to Kubernetes Secrets in this configuration.</li>
-  <li><b>Commons cost.</b> The cost of a commons has not been measured.</li>
   <li><b>Image and module versions.</b> <code>docker-compose.workshop.yml</code> pins the images to the branch tag <code>feat_csoc-bootstrap-wizard</code> and the Terraform to the branch <code>feat/csoc-bootstrap-master</code>, not to releases.</li>
   <li><b>The Kubernetes version.</b> There is no wizard field for it; see <a href="#upgrade-kubernetes">Upgrade Kubernetes</a>.</li>
 </ul>
