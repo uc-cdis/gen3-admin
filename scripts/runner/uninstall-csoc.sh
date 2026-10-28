@@ -152,7 +152,9 @@ kubectl delete externalsecrets.external-secrets.io --all -A --timeout=5m 2>/dev/
 step "Namespaces"
 # What the cluster itself needs to finish this: the EBS CSI driver and load
 # balancer controller (kube-system) and Karpenter.
-keep=" kube-system kube-public kube-node-lease default karpenter "
+# external-dns stays until the cluster goes: it removes the commons' records
+# once their ingresses are deleted above.
+keep=" kube-system kube-public kube-node-lease default karpenter external-dns "
 for ns in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'); do
   [[ "$keep" == *" $ns "* ]] && continue
   kubectl delete namespace "$ns" --wait=false
@@ -178,13 +180,19 @@ gone() {
 # it go. What it guarded (an AWS resource, say) is cleaned up below or by
 # the destroy.
 if ! wait_for_quietly "$GRACE" gone; then
+  # Only objects that still carry finalizers (events and most others have
+  # none), listed in one call per namespace, and only while the namespace is
+  # still there: patching every object one by one took many minutes on a
+  # Gen3 namespace, long after it was gone.
+  types="$(kubectl api-resources --verbs=list,patch --namespaced -o name | grep -vE '^(events|events\.events\.k8s\.io)$' | paste -sd, -)"
   for ns in $(kubectl get namespaces -o jsonpath='{.items[?(@.status.phase=="Terminating")].metadata.name}'); do
-    for r in $(kubectl api-resources --verbs=list --namespaced -o name | paste -sd, -); do
-      kubectl get -n "$ns" "$r" -o name 2>/dev/null
-    done | while read -r obj; do
-      echo "removing the finalizers of $ns/$obj"
-      kubectl patch -n "$ns" "$obj" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null || true
-    done
+    kubectl get -n "$ns" "$types" -o json 2>/dev/null \
+      | jq -r '.items[] | select((.metadata.finalizers // []) | length > 0) | "\(.kind)/\(.metadata.name)"' \
+      | while read -r obj; do
+          kubectl get namespace "$ns" >/dev/null 2>&1 || break
+          echo "removing the finalizers of $ns/$obj"
+          kubectl patch -n "$ns" "$obj" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1 || true
+        done
   done
 fi
 wait_for 600 "the namespaces to be deleted" gone

@@ -1,0 +1,10 @@
+{{ if .EBSRoleARN }}# The EBS CSI driver, as gen3-helm's cluster-level-resources installs it
+# (release ebs-csi-driver in kube-system). A Helm release rather than the
+# EKS add-on: the add-on made the apply wait for Karpenter's first node.
+controller:
+  serviceAccount:
+    create: true
+    name: ebs-csi-controller-sa
+    annotations:
+      eks.amazonaws.com/role-arn: {{ q .EBSRoleARN }}
+{{ end }}

@@ -152,6 +152,12 @@ var (
 	installChecks = []outputCheck{
 		{"CLUSTER_NAME", "cluster_name", validClusterName, false},
 		{"AWS_REGION", "aws_region", validRegion, false},
+		// For external-dns, which points commons' hostnames at their load
+		// balancers; absent for environments planned before it existed.
+		{"EXTERNAL_DNS_ROLE_ARN", "external_dns_role_arn", validRoleARN, true},
+		{"HOSTED_ZONE_ID", "hosted_zone_id", validZoneID, true},
+		{"CSOC_HOSTNAME", "csoc_hostname", validHostname, true},
+		{"KEYCLOAK_HOSTNAME", "keycloak_hostname", validHostname, true},
 	}
 	finishChecks = []outputCheck{
 		{"CLUSTER_NAME", "cluster_name", validClusterName, false},
@@ -270,7 +276,9 @@ func prepareInstall(ctx context.Context, store *environments.Store, e *environme
 	in["ARGOCD_CHART_VERSION"] = inputs.Versions.ArgoCD
 	in["ESO_CHART_VERSION"] = inputs.Versions.ExternalSecrets
 	in["LBC_CHART_VERSION"] = inputs.Versions.LBController
+	in["EXTERNAL_DNS_CHART_VERSION"] = inputs.Versions.ExternalDNS
 	in["CNPG_CHART_VERSION"] = inputs.Versions.CNPG
+	in["EBS_CSI_CHART_VERSION"] = inputs.Versions.EBSCSI
 	return in, nil
 }
 

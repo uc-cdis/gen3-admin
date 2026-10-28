@@ -46,6 +46,8 @@ direct_helm_repos() {
   helm repo add external-secrets https://charts.external-secrets.io >/dev/null
   helm repo add eks https://aws.github.io/eks-charts >/dev/null
   helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null
+  helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ >/dev/null
+  helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver >/dev/null
   helm repo update >/dev/null
 }
 
@@ -64,6 +66,34 @@ direct_controllers() {
   helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
     --version "$LBC_CHART_VERSION" --namespace kube-system \
     -f "$d/values/aws-load-balancer-controller.yaml" --wait --timeout 10m
+
+  # Points each commons' hostname at its load balancer, so a deploy from the
+  # CSOC needs no DNS by hand. Only in the CSOC's zone, only records it owns
+  # (TXT records name this cluster), and never the CSOC's own two names,
+  # which finish-csoc writes.
+  if [[ -n "${EXTERNAL_DNS_ROLE_ARN:-}" && -n "${HOSTED_ZONE_ID:-}" ]]; then
+    step "external-dns ${EXTERNAL_DNS_CHART_VERSION:-}"
+    helm_unstick external-dns external-dns
+    helm upgrade --install external-dns external-dns/external-dns \
+      --version "${EXTERNAL_DNS_CHART_VERSION}" --namespace external-dns --create-namespace \
+      --set provider.name=aws --set policy=sync --set "txtOwnerId=${CLUSTER_NAME}" \
+      --set "sources={ingress}" --set "env[0].name=AWS_DEFAULT_REGION" --set "env[0].value=${AWS_REGION}" \
+      --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${EXTERNAL_DNS_ROLE_ARN}" \
+      --set "extraArgs={--zone-id-filter=${HOSTED_ZONE_ID},--exclude-domains=${CSOC_HOSTNAME},--exclude-domains=${KEYCLOAK_HOSTNAME}}" \
+      --wait --timeout 10m
+  else
+    echo "external-dns: skipped (no zone or role; point commons' hostnames at their load balancers yourself)"
+  fi
+
+  # Volumes, for Keycloak's Postgres and the commons. Rendered only for
+  # environments whose apply made the driver's role rather than the add-on.
+  if [[ -f "$d/values/ebs-csi-driver.yaml" ]]; then
+    step "EBS CSI driver $EBS_CSI_CHART_VERSION"
+    helm_unstick ebs-csi-driver kube-system
+    helm upgrade --install ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+      --version "$EBS_CSI_CHART_VERSION" --namespace kube-system \
+      -f "$d/values/ebs-csi-driver.yaml" --wait --timeout 10m
+  fi
 
   step "CloudNativePG $CNPG_CHART_VERSION"
   helm_unstick cloudnative-pg cnpg-system

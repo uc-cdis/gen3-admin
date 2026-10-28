@@ -1,0 +1,1 @@
+{{ if .EBSRoleARN }}{{ template "helmApp" (app . "ebs-csi-driver" "kube-system" "https://kubernetes-sigs.github.io/aws-ebs-csi-driver" "aws-ebs-csi-driver" .Versions.EBSCSI "-2") }}{{ end }}

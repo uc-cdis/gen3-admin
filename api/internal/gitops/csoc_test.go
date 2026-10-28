@@ -20,6 +20,7 @@ func testInputs() CSOCInputs {
 		LBRoleARN:    "arn:aws:iam::123456789012:role/csoc-dev-lb-controller",
 		ESORoleARN:   "arn:aws:iam::123456789012:role/csoc-dev-external-secrets",
 		APIRoleARN:   "arn:aws:iam::123456789012:role/csoc-dev-csoc-api",
+		EBSRoleARN:   "arn:aws:iam::123456789012:role/csoc-dev-ebs-csi",
 		CertARN:      "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555",
 		CSOCHost:     "csoc.example.org",
 		KeycloakHost: "auth.csoc.example.org",
@@ -185,5 +186,35 @@ func TestSplitImage(t *testing.T) {
 	}
 	if got := SplitImage("quay.io/x/y:1.2"); got.Repository != "quay.io/x/y" || got.Tag != "1.2" {
 		t.Errorf("SplitImage = %+v", got)
+	}
+}
+
+func TestRenderCSOCEBSDriver(t *testing.T) {
+	r := renderTest(t)
+	if v := file(t, r, "values/ebs-csi-driver.yaml"); !strings.Contains(v, "role/csoc-dev-ebs-csi") {
+		t.Errorf("EBS values miss the role:\n%s", v)
+	}
+	if app := file(t, r, "apps/ebs-csi-driver.yaml"); !strings.Contains(app, "chart: aws-ebs-csi-driver") || !strings.Contains(app, "namespace: kube-system") {
+		t.Errorf("EBS Application:\n%s", app)
+	}
+
+	// Applied while the driver was an EKS add-on: no role, nothing rendered.
+	in := testInputs()
+	in.EBSRoleARN = ""
+	in.Repo = Repo{}
+	r, err := RenderCSOC(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range r.Files {
+		if strings.Contains(f.Path, "ebs-csi") {
+			t.Errorf("rendered %s without a role", f.Path)
+		}
+	}
+
+	in = testInputs()
+	in.EBSRoleARN = "not-an-arn"
+	if _, err := RenderCSOC(in); err == nil {
+		t.Error("accepted a bad EBS role ARN")
 	}
 }

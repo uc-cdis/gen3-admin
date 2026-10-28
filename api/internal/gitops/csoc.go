@@ -27,6 +27,11 @@ type Versions struct {
 	LBController    string
 	CNPG            string
 	Keycloak        string
+	// ExternalDNS writes the commons' DNS records (direct installs).
+	ExternalDNS string
+	// EBSCSI is the aws-ebs-csi-driver chart, the version gen3-helm's
+	// cluster-level-resources pins.
+	EBSCSI string
 }
 
 var DefaultVersions = Versions{
@@ -35,6 +40,8 @@ var DefaultVersions = Versions{
 	LBController:    "3.6.0",
 	CNPG:            "0.29.1",
 	Keycloak:        "26.6.1",
+	ExternalDNS:     "1.15.2",
+	EBSCSI:          "2.48.0",
 }
 
 // ChartSource is where ArgoCD gets the CSOC chart.
@@ -73,11 +80,14 @@ type CSOCInputs struct {
 	Repo   Repo
 	Region string
 
-	ClusterName  string
-	VPCID        string
-	LBRoleARN    string
-	ESORoleARN   string
-	APIRoleARN   string
+	ClusterName string
+	VPCID       string
+	LBRoleARN   string
+	ESORoleARN  string
+	APIRoleARN  string
+	// EBSRoleARN is the EBS CSI driver's IRSA role. Empty for environments
+	// applied while the driver was an EKS add-on: they have it already.
+	EBSRoleARN   string
 	CertARN      string
 	CSOCHost     string
 	KeycloakHost string
@@ -87,6 +97,9 @@ type CSOCInputs struct {
 
 	APIImage      *Image
 	FrontendImage *Image
+	// AgentImage is what the CSOC API deploys as the agent. Nil: its own
+	// default.
+	AgentImage *Image
 
 	Chart    ChartSource
 	Versions Versions
@@ -171,6 +184,12 @@ func (in *CSOCInputs) Validate() error {
 		{"chart path", in.Chart.Path, validRelPath},
 		{"chart revision", in.Chart.Revision, validRevision},
 	}
+	if in.EBSRoleARN != "" {
+		checks = append(checks, struct {
+			name, v string
+			re      *regexp.Regexp
+		}{"EBS CSI driver role", in.EBSRoleARN, validRoleARN})
+	}
 	for _, c := range checks {
 		if !c.re.MatchString(c.v) {
 			return fmt.Errorf("%s %q is not valid", c.name, c.v)
@@ -181,12 +200,12 @@ func (in *CSOCInputs) Validate() error {
 			return err
 		}
 	}
-	for _, v := range []string{in.Versions.ArgoCD, in.Versions.ExternalSecrets, in.Versions.LBController, in.Versions.CNPG, in.Versions.Keycloak} {
+	for _, v := range []string{in.Versions.ArgoCD, in.Versions.ExternalSecrets, in.Versions.LBController, in.Versions.CNPG, in.Versions.Keycloak, in.Versions.EBSCSI} {
 		if !validVersion.MatchString(v) {
 			return fmt.Errorf("component version %q is not valid", v)
 		}
 	}
-	for _, img := range []*Image{in.APIImage, in.FrontendImage} {
+	for _, img := range []*Image{in.APIImage, in.FrontendImage, in.AgentImage} {
 		if img != nil && (!validImageRep.MatchString(img.Repository) || !validImageTag.MatchString(img.Tag)) {
 			return fmt.Errorf("image %s:%s is not valid", img.Repository, img.Tag)
 		}
@@ -306,6 +325,10 @@ func RenderCSOC(in CSOCInputs) (*Rendered, error) {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		rel := strings.TrimSuffix(strings.TrimPrefix(p, root+"/"), ".tmpl")
+		// A template that renders nothing is a component this CSOC leaves out.
+		if len(bytes.TrimSpace(buf.Bytes())) == 0 {
+			return nil
+		}
 		if in.Direct() && gitOpsOnly(rel) {
 			return nil
 		}
