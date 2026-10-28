@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,7 +39,15 @@ func wasStopped(id string) bool {
 // alone.
 func ReconcileRun(ctx context.Context, store *environments.Store, e *environments.Environment) {
 	run := e.LastRun
-	if run == nil || run.Status != environments.RunRunning || run.Runner != runnerName(RuntimeDocker) {
+	if run == nil || run.Status != environments.RunRunning {
+		return
+	}
+	// Match the runtime, not the exact runner name: a recreated API
+	// container gets a new hostname, and its orphaned runs would otherwise
+	// never settle. The docker lookup below is keyed by execution ID, so
+	// any docker:* run is ours to settle; other runners (in-cluster CSOC)
+	// are left alone.
+	if !strings.HasPrefix(run.Runner, string(RuntimeDocker)+":") {
 		return
 	}
 	if _, ok := awaiting.Load(run.ID); ok {
