@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What is a CSOC? · Gen3 CSOC docs</title>
+<meta name="description" content="The terms, the purpose, who a CSOC suits, and the people involved in running one.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html" aria-current="page"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="index.html">Start here</a></li><li aria-current="page">What is a CSOC?</li></ol></nav>
+<h1>What is a CSOC?</h1>
+<p class="lead">The terms, the purpose, who a CSOC suits, and the people involved in running one.</p>
+
+
+<h2 id="gen3-and-data-commons">Gen3 and data commons</h2>
+<p>A <b>data commons</b> is a shared platform where a research community stores, describes, finds and analyzes data, with access controlled per user and per project. <b><a href="https://gen3.org/">Gen3</a></b> is open-source software for building data commons, developed by the <a href="https://ctds.uchicago.edu/">Center for Translational Data Science</a> (CTDS) at the University of Chicago and published on GitHub under the <code>uc-cdis</code> organization. A Gen3 commons runs as a set of Gen3 services on Kubernetes. The <a href="https://docs.gen3.org/">Gen3 documentation</a> describes them.</p>
+
+<h2 id="the-csoc">The CSOC</h2>
+<p>CSOC stands for Cloud Services Operations Center. It is a control plane: the CSOC portal, its API and a Keycloak sign-in service, running in their own Amazon EKS cluster in your AWS account. From the CSOC you deploy Gen3 commons, configure them and keep track of them.</p>
+<ul>
+  <li><b>It deploys commons through agents.</b> An <b>agent</b> is a small program that runs in a Kubernetes cluster, connects out to the CSOC, and carries out the CSOC's instructions there. To install a commons, the CSOC tells the agent to run <b>Helm</b>, the package manager for Kubernetes applications. The first cluster is the CSOC's own.</li>
+  <li><b>It provides sign-in.</b> Each commons can sign users in through the CSOC's Keycloak, so one identity setup serves every commons. What each user may do in a commons is set by that commons' <b>user.yaml</b>, a file that lists users by email and the permissions each one has.</li>
+  <li><b>It keeps a record.</b> Every environment and every change is recorded in an S3 state bucket in your account, alongside the Terraform state.</li>
+</ul>
+<p>The <b>bootstrap wizard</b> is a separate tool that runs on your computer, not in AWS. It creates the CSOC, and you use it again for the CSOC's own maintenance: changing the allowed addresses, upgrading the CSOC portal, resetting the administrator password and tearing down. Gen3 commons are managed from the CSOC portal. Keep the wizard's prerequisites, and access to the state bucket and the AWS account, for as long as the CSOC runs (see <a href="prerequisites.html#plan-who-keeps-access">Plan who keeps access</a>).</p>
+
+<h2 id="why-an-institution-would-use-one">Why an institution would use one</h2>
+<ul>
+  <li><b>Several commons, one way of running them.</b> Groups that host commons for several labs, consortia or projects deploy each one the same way, from one place.</li>
+  <li><b>Your account, your data.</b> Everything runs in an AWS account your institution owns, under your institution's agreements and controls.</li>
+  <li><b>One sign-in setup.</b> Keycloak can be connected to your campus identity provider once, and every commons uses it. See <a href="how-to/connect-identity-provider.html">Connect your institution's sign-in</a>.</li>
+  <li><b>Reviewable changes.</b> The wizard shows the Terraform plan before it changes anything.</li>
+</ul>
+
+<h2 id="is-this-right-for-you">Is this right for you?</h2>
+<p>A CSOC is a good fit if all of these are true:</p>
+<ul>
+  <li>You expect to run more than one Gen3 commons, or to offer commons as a service to research groups.</li>
+  <li>You can get a new AWS account with no other workloads, and administrator rights in it.</li>
+  <li>You can get a DNS subdomain delegated to that account (see <a href="how-to/request-dns-delegation.html">Request DNS delegation</a>).</li>
+  <li>Someone on your team can read Terraform plans, Kubernetes logs and AWS bills.</li>
+</ul>
+<p>Choose differently, or plan extra work, in these cases:</p>
+<ul>
+  <li><b>You need a single commons only.</b> Installing the Gen3 Helm chart (<a href="https://github.com/uc-cdis/gen3-helm">gen3-helm</a>) into an existing cluster is simpler.</li>
+  <li><b>You will hold controlled-access, regulated or protected health data.</b> Before you store such data, your security team must review the setup and harden it. Start with <a href="concepts/security.html#what-this-setup-is-not">What this setup is not</a>.</li>
+  <li><b>You cannot use AWS.</b> The bootstrap creates AWS resources only.</li>
+</ul>
+
+<h2 id="roles">Roles</h2>
+<p>At a university these roles are usually different people; at a small institute one person may hold several.</p>
+<div class="tw"><table><thead><tr><th>Role</th><th>Responsibilities</th></tr></thead><tbody><tr><td><b>Operator</b> (research-computing engineer)</td><td>Completes the prerequisites, runs the bootstrap wizard, operates the CSOC, deploys commons, and tears environments down.</td></tr><tr><td><b>Owner</b> (service or project lead)</td><td>Decides to adopt, owns the AWS account and its budget, and approves what data the commons may hold.</td></tr><tr><td><b>Security and compliance reviewer</b></td><td>Reviews the architecture, the access model and the data classification before real data arrives. Start at <a href="concepts/security.html">Security, cost and responsibilities</a>.</td></tr><tr><td><b>Cloud account administrators</b></td><td>Provide the AWS account and the administrator role, and set any organization-wide policies (Service Control Policies).</td></tr><tr><td><b>DNS administrators</b> (often central IT)</td><td>Delegate a subdomain of the institution's domain to the CSOC's account.</td></tr><tr><td><b>Commons administrators</b></td><td>Manage users and permissions within each commons, through its user.yaml.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="index.html" rel="prev"><small>Previous</small><b>← Overview</b></a>
+<a class="next" href="prerequisites.html" rel="next"><small>Next</small><b>Prerequisites →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

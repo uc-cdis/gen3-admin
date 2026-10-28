@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan: review what will be created · Gen3 CSOC docs</title>
+<meta name="description" content="Read the Terraform plan before anything is created in AWS.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html" aria-current="page"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Provision</li><li aria-current="page">Plan</li></ol></nav>
+<h1>Plan: review what will be created</h1>
+<p class="lead">Read the Terraform plan before anything is created in AWS.</p>
+<div class="meta"><span class="pill">Wizard step <b>Provision</b></span><span class="pill">Time <b>under 1 minute</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Review the plan: about 120 AWS resources, grouped by service, shown as a list and as a diagram. The plan changes nothing in AWS.</p>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Wait while the banner reads <b>Init in progress</b> and then <b>Plan in progress</b> ("Working out what to create. Under a minute.").</li>
+  <li>When the <b>Plan review</b> appears, read the badge. On a new account it reads <b>+120 to create</b>; any number from 110–130 is normal, and there are no other badges.</li>
+  <li>In the <b>List</b> view, click a group to open it: network, firewall rules, the Kubernetes cluster, IAM roles and policies, DNS, logging.</li>
+  <li>Click <b>Diagram</b> and try these:
+    <ul>
+      <li>Type <code class="cp">nat</code> in <b>Find a resource</b>. The diagram zooms to the match.</li>
+      <li>Click a resource. Its connections are drawn and named, everything else dims, and its details open. Press <kbd>Esc</kbd> to clear.</li>
+      <li>Click a service block, or <b>Open all blocks</b>. "Security, Identity &amp; Compliance" holds one IAM role for each controller.</li>
+    </ul></li>
+  <li>Check that there are no <b>−N to destroy</b> or <b>±N to replace</b> badges. On a new account there are none. Then press <span class="btn-ui">Apply</span> in the banner and continue with <a href="apply.html">Apply</a>.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> the banner reads <b>Plan ready</b>, "Review what the plan creates, then apply it. Nothing exists in AWS yet."</p>
+<figure class="shot"><img src="assets/img/10-plan-list.png" alt="The plan review as a list" loading="lazy"><figcaption>The plan review as a list, grouped by service.</figcaption></figure>
+<figure class="shot"><img src="assets/img/11-plan-diagram.png" alt="The plan review as a diagram" loading="lazy"><figcaption>The diagram view: the VPC, its availability zones and subnets, with account-wide services in blocks.</figcaption></figure>
+<figure class="shot"><img src="assets/img/15-selected.png" alt="The NAT gateway selected, with its connections named" loading="lazy"><figcaption>A selected resource, with its connections drawn and named.</figcaption></figure>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<div class="banner"><b>Plan ready</b><span>Review what the plan creates, then apply it. Nothing exists in AWS yet.</span><span class="acts">Buttons: [Plan again] [Edit configuration] <b>[Apply]</b></span></div>
+<p>The badges and labels mean:</p>
+<div class="tw"><table><thead><tr><th>Badge or label</th><th>Meaning</th></tr></thead><tbody><tr><td><code>+N to create</code> (green)</td><td>New resources. On a new account this is the only badge.</td></tr><tr><td><code>~N to update</code> (yellow)</td><td>Resources changed in place.</td></tr><tr><td><code>±N to replace</code> (orange)</td><td>Resources destroyed and created again. On a running CSOC, read each one before you apply.</td></tr><tr><td><code>−N to destroy</code> (red)</td><td>Resources removed. If the infrastructure already exists, an apply with any of these asks you to type the environment name.</td></tr><tr><td><code>+N</code> on a diagram card</td><td>Settings folded into the resource they configure, such as policy attachments and rules.</td></tr><tr><td>"Availability zone picked at apply · one subnet of each kind per zone"</td><td>Subnets whose availability zone Terraform chooses during the apply, so the plan cannot show which zone each one lands in.</td></tr></tbody></table></div>
+<h4>Time</h4><p>Under 1 minute from <b>Provision</b> to <b>Plan ready</b>, for the init and the plan together.</p>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>Terraform downloads the providers and the gen3-terraform modules it needs, connects to the state in your bucket, and compares the configuration with what exists, which on a new account is nothing. The plan is the complete list of changes. Only a summary reaches your browser; the full plan, which contains your settings, stays in the runner. <b>Apply</b> carries out exactly the plan you reviewed.</p>
+<figure class="anim" data-dg="plan" data-label="The init and the plan"><figcaption><b>Diagram: The init and the plan.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-plan-steps"><li>The runner downloads the Terraform providers and modules.</li><li>It connects to the state in your bucket, which Terraform locks while it works.</li><li>Terraform computes the changes: about 120 resources to create. Nothing in AWS changes.</li><li>The full plan stays in the runner. Only a summary is extracted.</li><li>Your browser draws the summary as the list and the diagram.</li></ol></figure>
+<p>For the state and the lock, see <a href="concepts/architecture.html#state-bucket-and-registry">State bucket and registry</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Banner: <b>The plan failed</b> or <b>The init failed</b></td><td>Nothing in AWS changed. The log shows its <code>Error:</code> lines first.</td><td>Read the first <code>Error:</code> line; it names the cause. Fix it, then press <b>Retry plan</b>, or <b>Edit configuration</b> to change the setup.</td></tr><tr><td>Banner: <b>The plan was stopped</b></td><td>Someone pressed <b>Stop this run</b>.</td><td>Press <b>Retry plan</b>.</td></tr><tr><td>Banner: <b>The plan's result is unknown</b></td><td>The wizard's API restarted while the plan ran, so its end was not recorded.</td><td>Press <b>Retry plan</b>.</td></tr><tr><td>Red box: <b>The plan did not start</b></td><td>Your SSO sign-in expired. Nothing ran.</td><td>In a terminal, run <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>, then try again.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="review-and-provision.html" rel="prev"><small>Previous</small><b>← Review and provision</b></a>
+<a class="next" href="apply.html" rel="next"><small>Next</small><b>Apply →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

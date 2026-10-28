@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security, cost and responsibilities · Gen3 CSOC docs</title>
+<meta name="description" content="For the people who approve a CSOC: what it stores and where, what is reachable from the internet, why it needs administrator rights, what it is not designed for, what it costs, and who is responsible for what.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="../how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html" aria-current="page"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../concepts/architecture.html">Concepts</a></li><li aria-current="page">Security, cost and responsibilities</li></ol></nav>
+<h1>Security, cost and responsibilities</h1>
+<p class="lead">For the people who approve a CSOC: what it stores and where, what is reachable from the internet, why it needs administrator rights, what it is not designed for, what it costs, and who is responsible for what.</p>
+
+
+<h2 id="what-the-csoc-stores-and-where">What the CSOC stores, and where</h2>
+<div class="tw"><table><thead><tr><th>What</th><th>Where</th><th>Notes</th></tr></thead><tbody><tr><td>Terraform state and the record of every environment and run</td><td>S3 bucket <code class="ex">gen3-csoc-csoc-dev-111122223333</code></td><td>Versioned, encrypted, TLS-only, public access blocked. The Terraform state contains resource identifiers and settings.</td></tr><tr><td>The CSOC's secrets: Keycloak's administration login, the portal's client secret, session keys</td><td>AWS Secrets Manager, under <code>gen3-csoc/<span class="ph">&lt;csoc-name&gt;</span>/</code></td><td>Copied into the cluster by External Secrets Operator. Deleted without a recovery window at teardown.</td></tr><tr><td>Users, sessions and sign-in settings</td><td>Keycloak, in its PostgreSQL database in the cluster</td><td>After the finish, the CSOC administrator's password lives only here.</td></tr><tr><td>The certificate authority for agents</td><td>The CSOC API's volume in the cluster</td><td>Issues each agent's client certificate.</td></tr><tr><td>Each commons' metadata and data files</td><td>The commons' own database, and the S3 bucket you configure for it</td><td>Governed by the commons, not by the CSOC. The tutorial's commons has no data bucket.</td></tr></tbody></table></div>
+<p>Everything is in the one AWS Region you choose on the <b>Setup</b> step (<code class="ex">us-east-1</code>); the bootstrap creates nothing in other Regions. The wizard on your computer keeps only run working directories (<code>~/.gen3-csoc/terraform</code>) and uses your existing AWS profiles.</p>
+
+<h2 id="internet-facing-endpoints">Internet-facing endpoints</h2>
+<div class="tw"><table><thead><tr><th>Endpoint</th><th>Port</th><th>Exposed through</th><th>Who can connect</th></tr></thead><tbody><tr><td>CSOC portal, <code class="ex">portal.csoc.example.org</code></td><td>443 (80 redirects to 443)</td><td>An internet-facing Application Load Balancer, shared with Keycloak</td><td>Only the allowlist: <b>Allowed addresses</b> plus the cluster's outbound address</td></tr><tr><td>Keycloak, <code class="ex">auth.csoc.example.org</code></td><td>443 (80 redirects to 443)</td><td>The same load balancer</td><td>The same allowlist</td></tr><tr><td>Agent endpoint (gRPC)</td><td>50051</td><td>An internet-facing Network Load Balancer</td><td>The same allowlist (<code>loadBalancerSourceRanges</code>); agents also need a client certificate from the CSOC (mutual TLS)</td></tr><tr><td>EKS Kubernetes API</td><td>443</td><td>The EKS public endpoint, alongside the private one</td><td>Any address: no CIDR restriction is set. Requests must be authenticated with IAM credentials that have EKS access.</td></tr><tr><td>Each commons, such as <code class="ex">commons-a.csoc.example.org</code></td><td>443</td><td>Its own Application Load Balancer</td><td>Not limited by the CSOC's allowlist; access is controlled by the commons' sign-in and user.yaml</td></tr><tr><td>SSH on EC2 nodes</td><td>22</td><td>The security group <code>ssh_eks_&lt;csoc-name&gt;</code>, which allows TCP 22 from <code>0.0.0.0/0</code> and which Karpenter attaches to every node</td><td>Not reachable from the internet, because the nodes are in private subnets without public addresses; reachable from anywhere inside the VPC</td></tr></tbody></table></div>
+<p>To restrict or close the EKS public endpoint, see <a href="https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html">Cluster API server endpoint</a>. The configuration sets <code>eks_public_access</code>, which the wizard does not expose; see <a href="../next-steps.html#known-gaps">Known gaps</a>.</p>
+
+<h2 id="why-administrator-rights">Why administrator rights</h2>
+<p>The bootstrap creates IAM roles and policies, a VPC with its gateways and routes, an EKS cluster with Fargate and EC2 capacity, an AWS Lambda function, CloudWatch log groups, load balancers, Route 53 zones and records, ACM certificates, Secrets Manager secrets and S3 buckets. Creating IAM roles alone requires broad permissions, so the operator needs an administrator role in the account. Use an account dedicated to the CSOC, so that these rights cover nothing else.</p>
+<p>The running CSOC does not use the operator's rights: each component uses its own IAM role (see <a href="#iam-roles">IAM roles</a>). The operator needs administrator rights again for anything done from the wizard: changing the allowlist, upgrading, resetting the administrator password and tearing down.</p>
+
+<h2 id="the-ip-allowlist">The IP allowlist</h2>
+<p>The CSOC's load balancers accept connections only from the address ranges in <b>Allowed addresses</b>, plus the cluster's own outbound address. This covers the CSOC portal, Keycloak and the agent endpoint. The allowlist is a network control in addition to sign-in, not instead of it. Plan which ranges you need: your operators' VPN, your campus network's outbound ranges, and any partner networks. See <a href="../how-to/allow-an-address.html">Allow a new IP address</a>.</p>
+
+<h2 id="identity">Identity</h2>
+<p>The install creates one local Keycloak user, <code>admin</code>. For real use, connect Keycloak to your institution's identity provider instead of creating local users; Keycloak supports identity brokering with SAML 2.0 and OpenID Connect providers, which includes campus single sign-on and federations such as <a href="https://incommon.org/">InCommon</a>. See <a href="../how-to/connect-identity-provider.html">Connect your institution's sign-in</a>. Each commons that uses <b>Use CSOC login</b> then accepts the same identities.</p>
+<p>Inside a commons, permissions come from its user.yaml, which maps each user's email to policies. The tutorial's user.yaml gives one email full control of the commons and gives everyone else nothing. Review each commons' user.yaml as part of its data access approval; see <a href="../how-to/edit-user-yaml.html">Edit a commons' user.yaml</a>.</p>
+
+<h2 id="what-this-setup-is-not">What this setup is not</h2>
+<ul>
+  <li><b>Not hardened for regulated data as delivered.</b> It has not been assessed for controlled-access data, protected health information, or frameworks such as NIST SP 800-171 or HIPAA. Holding such data requires your own security review and additional controls.</li>
+  <li><b>No backups are configured.</b> The bootstrap does not back up Keycloak's database, the CSOC API's volume, or any commons database, and a commons' local database is not even persistent unless you turn on persistence. Configure backups before you rely on the CSOC, for example CloudNativePG backups and EBS snapshots.</li>
+  <li><b>Not highly available.</b> The cluster spans three availability zones, but Keycloak, its database and the CSOC portal each run as a single instance. A node failure interrupts them until Kubernetes starts them elsewhere.</li>
+  <li><b>Not a managed service.</b> Upgrades of the cluster, the charts and the images are the operator's responsibility; see <a href="../next-steps.html#keep-it-up-to-date">Keep it up to date</a>.</li>
+</ul>
+
+<h2 id="shared-responsibility">Shared responsibility</h2>
+<p>AWS is responsible for the security of the cloud, such as its data centers and managed services; you are responsible for security in the cloud, including configuration, access and data (<a href="https://aws.amazon.com/compliance/shared-responsibility-model/">AWS shared responsibility model</a>). Within your institution:</p>
+<div class="tw"><table><thead><tr><th>Area</th><th>Responsible</th></tr></thead><tbody><tr><td>The AWS account, its budget, and organization policies</td><td>Owner, with the cloud account administrators</td></tr><tr><td>Running the CSOC: upgrades, the allowlist, backups, monitoring, teardown</td><td>Operator</td></tr><tr><td>Keeping access to the wizard, the state bucket and an administrator role, and handing it over</td><td>Operator, with the owner</td></tr><tr><td>Identity provider integration and who may sign in</td><td>Operator, with your identity team</td></tr><tr><td>Data classification and approval of what a commons may hold</td><td>Owner, with security and compliance</td></tr><tr><td>Permissions inside each commons (user.yaml)</td><td>Commons administrators</td></tr><tr><td>The parent domain and its delegation</td><td>DNS administrators</td></tr></tbody></table></div>
+
+<h2 id="cost">Cost</h2>
+<p>A running CSOC costs <b>$720–800 a month</b> in us-east-1, before commons and data transfer, on the default Kubernetes version 1.33. That version left EKS standard support on July 29, 2026, so the control plane is billed at the extended-support rate of $0.60 per hour, $438 a month instead of $73 a month, until extended support ends on July 29, 2027. On a Kubernetes version in standard support (1.35 or later; 1.34 leaves standard support on December 2, 2026) the CSOC costs $360–440 a month in us-east-1, before commons and data transfer. Sources: the <a href="https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html">Amazon EKS Kubernetes release calendar</a> and <a href="https://aws.amazon.com/eks/pricing/">Amazon EKS pricing</a>. The <b>Rough Monthly Cost Estimate</b> on the wizard's <b>Review</b> step shows the same figure, $720–800/month.</p>
+<div class="tw"><table><thead><tr><th>Item (us-east-1, 730 hours a month)</th><th>Estimate per month</th></tr></thead><tbody><tr><td>EKS control plane</td><td>$73 a month in standard support; $438 a month in extended support</td></tr><tr><td>Squid: 2 × t3.medium instances</td><td>$60 (approximate)</td></tr><tr><td>Karpenter's controller on AWS Fargate</td><td>$70 (approximate)</td></tr><tr><td>EC2 nodes started by Karpenter: 1–2 nodes for the CSOC alone, the cheapest type that fits</td><td>$60–140, depending on load (approximate)</td></tr><tr><td>NAT gateway</td><td>about $33, plus $0.045 per GB processed</td></tr><tr><td>Public IPv4 addresses: 6 × $3.65</td><td>about $22</td></tr><tr><td>Application Load Balancer</td><td>about $16, plus capacity units</td></tr><tr><td>EBS volumes</td><td>about $10</td></tr><tr><td>Route 53: 2 hosted zones (public and private)</td><td>$1</td></tr><tr><td>Secrets Manager: 3–4 secrets × $0.40</td><td>$1–2</td></tr><tr><td>CloudWatch Logs</td><td>small; the VPC's log group keeps logs for 3653 days by default</td></tr><tr><td>Data transfer</td><td>depends on use; not included above</td></tr></tbody></table></div>
+<p>To plan and control spending, model your configuration in the <a href="https://calculator.aws/">AWS Pricing Calculator</a>, see <a href="https://aws.amazon.com/vpc/pricing/">Amazon VPC pricing</a> for NAT gateways and public IPv4 addresses, and set up <a href="https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html">AWS Budgets</a> alerts on the account before you start.</p>
+
+<h3 id="what-a-commons-adds">What a commons adds</h3>
+<p>Each commons adds its own resources to the bill. Their size depends on the services you enable and on use:</p>
+<ul>
+  <li>EC2 nodes that Karpenter starts for the commons' services, usually the largest part.</li>
+  <li>An Application Load Balancer, about $16 a month in us-east-1 plus capacity units, and its public IPv4 addresses.</li>
+  <li>An EBS volume for the local database, if you turn on persistence, or a managed database if you use an external one.</li>
+  <li>S3 storage and requests for data files, once you configure a data bucket.</li>
+</ul>
+<p>Check the actual figures in AWS Cost Explorer a day after you deploy, filtered by the commons' resources.</p>
+
+<h3 id="what-remains-after-teardown">What remains after teardown</h3>
+<p>A teardown removes everything Terraform and the bootstrap created. These remain unless you remove them; the wizard's <b>What is left</b> list offers to delete the first three:</p>
+<ul>
+  <li>The hosted zone <code class="ex">csoc.example.org</code>, $0.50 a month, if you did not select it for deletion.</li>
+  <li>The CSOC's ACM certificate, which is free, if the zone was kept.</li>
+  <li>The state bucket <code class="ex">gen3-csoc-csoc-dev-111122223333</code>, a few cents a month, if you did not select it for deletion.</li>
+  <li>Each commons' ACM certificate, which the portal requested. Certificates are free; delete them in the ACM console.</li>
+</ul>
+
+<h2 id="campus-realities">Campus realities</h2>
+<ul>
+  <li><b>The parent domain belongs to central IT.</b> Delegation of <code class="ex">csoc.example.org</code> usually needs a ticket and can take days. Send the request early; <a href="../how-to/request-dns-delegation.html">Request DNS delegation</a> has a template.</li>
+  <li><b>Service Control Policies may block services.</b> Institutional AWS organizations often limit Regions or services with <a href="https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html">Service Control Policies</a>. Ask your cloud administrators to confirm that EKS, Fargate, EC2, AWS Lambda, Route 53, ACM, Secrets Manager and IAM role creation are allowed in <code class="ex">us-east-1</code>. An SCP denial looks like an access error even with administrator rights.</li>
+  <li><b>Campus and VPN outbound addresses.</b> The allowlist needs the public addresses your traffic leaves from, which are not your computer's local address. Ask your network team for the outbound ranges of the campus network and the VPN.</li>
+  <li><b>Short sign-in sessions.</b> The wizard asks for at least 45 minutes left on your AWS sign-in before an apply or a teardown. If your institution sets short sessions, sign in again just before each long step.</li>
+</ul>
+
+<h2 id="for-security-reviewers">For security reviewers</h2>
+<p>The answers below come from the code: gen3-admin and the gen3-terraform configuration in <code>examples/csoc</code>. Open questions are collected in <a href="../next-steps.html#known-gaps">Known gaps</a>.</p>
+
+<h3 id="iam-roles">IAM roles</h3>
+<p>Each role below is an IRSA role, trusted only by one Kubernetes service account in one namespace.</p>
+<div class="tw"><table><thead><tr><th>Role</th><th>Used by</th><th>Permissions</th></tr></thead><tbody><tr><td><code>&lt;csoc-name&gt;-csoc-api</code></td><td>The CSOC API</td><td>Read and write objects in the state bucket. Read and replace only the GitHub App secret under <code>gen3-csoc/&lt;csoc-name&gt;/github-app-*</code>. Request, describe, list and tag ACM certificates (any). Read and change records only in the CSOC's hosted zone. No other policies are attached by default (<code>csoc_api_policy_arns</code> is empty).</td></tr><tr><td><code>&lt;csoc-name&gt;-external-secrets</code></td><td>External Secrets Operator</td><td>Read the secrets under <code>gen3-csoc/&lt;csoc-name&gt;/</code>, and no others.</td></tr><tr><td><code>&lt;csoc-name&gt;-external-dns</code></td><td>external-dns</td><td>Change and list records in the CSOC's hosted zone only; list hosted zones.</td></tr><tr><td><code>&lt;csoc-name&gt;-lb-controller</code></td><td>AWS Load Balancer Controller</td><td>The controller's upstream IAM policy, shipped with the configuration.</td></tr><tr><td><code>&lt;csoc-name&gt;-ebs-csi</code></td><td>EBS CSI driver</td><td>The AWS managed policy <code>AmazonEBSCSIDriverPolicy</code>.</td></tr><tr><td>Karpenter's controller role</td><td>Karpenter</td><td>EC2 instance and launch-template management, limited by tags, and <code>kms:*</code> on all resources. The broad KMS grant is worth reviewing.</td></tr></tbody></table></div>
+<p>The roles for the EKS cluster, its nodes, Fargate, Squid and the route-check function are defined in the <code>eks</code> and <code>vpc</code> modules of <a href="https://github.com/uc-cdis/gen3-terraform">gen3-terraform</a>.</p>
+
+<h3 id="kubernetes-permissions-of-the-csoc-api">Kubernetes permissions of the CSOC API</h3>
+<p>The CSOC API's service account has a cluster role that can create, change and delete namespaces, Secrets, ServiceAccounts, ConfigMaps, Deployments and other workloads, roles and role bindings (including cluster-wide ones), Services, ingresses and Jobs, and can exec into pods. It uses these to install agents. In effect, the CSOC API is an administrator of its own cluster, so access to the CSOC portal should be treated as administrative access.</p>
+
+<h3 id="encryption-at-rest">Encryption at rest</h3>
+<ul>
+  <li><b>Volumes.</b> The default storage class (<code>gp3</code>) creates encrypted EBS volumes, so Keycloak's database and the CSOC API's volume are encrypted, with the AWS managed key. Node root volumes are encrypted too.</li>
+  <li><b>State bucket.</b> Encrypted by default.</li>
+  <li><b>Secrets Manager.</b> Encrypted with the AWS managed key.</li>
+  <li><b>Kubernetes Secrets.</b> The configuration does not set up envelope encryption with a customer managed KMS key. What EKS applies by default is described in the <a href="https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html">Amazon EKS documentation</a>.</li>
+</ul>
+
+<h3 id="audit-logs">Audit logs</h3>
+<ul>
+  <li><b>VPC flow logs</b> are off by default (<code>vpc_flow_logs = false</code>). See <a href="https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html">VPC flow logs</a> to enable them.</li>
+  <li><b>EKS control-plane logs</b>, including the Kubernetes audit log, are not enabled. See <a href="https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html">control plane logging</a>.</li>
+  <li><b>AWS API activity</b> is recorded by <a href="https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-user-guide.html">AWS CloudTrail</a> if your account or organization has it on; the bootstrap does not configure it.</li>
+  <li><b>The wizard's runs</b> are recorded in the state bucket, with their logs.</li>
+</ul>
+
+<h3 id="outbound-traffic">Outbound traffic</h3>
+<p>The cluster reaches the internet only through Squid. Each Squid instance, as it boots, clones the <code>uc-cdis/cloud-automation</code> repository from GitHub (branch <code>master</code>) and uses its <a href="https://github.com/uc-cdis/cloud-automation/tree/master/files/squid_whitelist">default allowlist files</a>: <code>web_whitelist</code>, about 190 exact hostnames, and <code>web_wildcard_whitelist</code>, about 120 domain wildcards. The wildcards include all of <code>.amazonaws.com</code>, <code>.github.com</code>, <code>.githubusercontent.com</code>, <code>.quay.io</code>, <code>.docker.io</code> and <code>.gen3.org</code>, package repositories such as <code>.anaconda.org</code>, <code>.bioconductor.org</code> and <code>.cpan.org</code>, and the domains of other research data commons. The list therefore allows far more than the CSOC needs, and it changes when that repository changes. The configuration can point at another repository or files (<code>whitelist_repo</code>, <code>web_whitelist_file</code>, <code>web_wildcard_whitelist_file</code>); the wizard does not expose them.</p>
+
+<h3 id="ssh-access-to-nodes">SSH access to nodes</h3>
+<p>Each EC2 node that Karpenter starts runs a startup script that appends the public keys in <a href="https://github.com/uc-cdis/cloud-automation/blob/master/files/authorized_keys/ops_team">cloud-automation's <code>files/authorized_keys/ops_team</code></a> to the node's <code>ec2-user</code> account, and every node carries the security group <code>ssh_eks_&lt;csoc-name&gt;</code>, which allows SSH from <code>0.0.0.0/0</code>. The nodes have no public addresses, so this allows SSH from inside the VPC only, by the holders of those keys. Reviewers should decide whether to remove the keys and the rule; both are in the gen3-terraform <code>eks</code> module.</p>
+
+<h3 id="images-and-pinning">Images and pinning</h3>
+<div class="tw"><table><thead><tr><th>Image</th><th>Runs</th><th>Default tag</th></tr></thead><tbody><tr><td><code>quay.io/cdis/csoc-api</code></td><td>The CSOC API, in the cluster</td><td><code>master</code>, unless set under <b>Images</b> on the <b>Install</b> step</td></tr><tr><td><code>quay.io/cdis/csoc-frontend</code></td><td>The CSOC portal, in the cluster</td><td><code>master</code>, unless set under <b>Images</b></td></tr><tr><td><code>quay.io/cdis/csoc-agent</code></td><td>Each agent</td><td>Set by the CSOC API; not configurable from the portal</td></tr><tr><td>Keycloak, its operator, CloudNativePG, External Secrets, the AWS Load Balancer Controller, external-dns, the EBS CSI driver</td><td>In the cluster</td><td>Chart and manifest versions pinned by the bootstrap</td></tr><tr><td>Gen3 services</td><td>Each commons</td><td>Set by the <code>gen3</code> chart version</td></tr><tr><td><code>public.ecr.aws/docker/library/busybox:1.37</code></td><td>Briefly, to find the outbound address</td><td>Pinned</td></tr></tbody></table></div>
+<p>A <code>master</code> tag changes whenever the branch changes, so a restarted pod can run different code. For real use, set fixed release tags for the CSOC images. The wizard's own images, which run only on your computer, are listed on <a href="../prerequisites.html#install-the-tools">Prerequisites</a>.</p>
+
+<h3 id="third-party-sources">Third-party sources</h3>
+<p>Building, installing and running the CSOC downloads from these sources:</p>
+<ul>
+  <li><b>quay.io</b> (<code>quay.io/cdis/…</code>): the CSOC, agent and Gen3 images, and the wizard's base images.</li>
+  <li><b>Docker Hub</b>: <code>hashicorp/terraform</code> and <code>tecnativa/docker-socket-proxy</code>, on your computer.</li>
+  <li><b>public.ecr.aws</b>: the busybox image.</li>
+  <li><b>GitHub</b>: the gen3-terraform modules, <code>cloud-automation</code> (Squid's startup scripts and allowlist), and the Keycloak operator's manifests (<code>keycloak/keycloak-k8s-resources</code>).</li>
+  <li><b>Helm repositories</b>: <code>charts.external-secrets.io</code>, <code>aws.github.io/eks-charts</code>, <code>kubernetes-sigs.github.io/external-dns</code>, <code>kubernetes-sigs.github.io/aws-ebs-csi-driver</code>, <code>cloudnative-pg.github.io/charts</code>, <code>argoproj.github.io/argo-helm</code> (GitOps only) and <code>helm.gen3.org</code>.</li>
+  <li><b>checkip.amazonaws.com</b>, to find the cluster's outbound address.</li>
+</ul>
+
+<h3 id="the-wizard-on-your-computer">The wizard on your computer</h3>
+<p>The wizard's API acts with your AWS administrator credentials, and it does not ask anyone to sign in: every request it receives is treated as coming from you. That is acceptable only because it listens on <code>127.0.0.1</code>, so only programs on your own computer can reach it. It starts containers through a proxy that allows container and image operations and blocks the rest of the Docker API. Do not change the port bindings, do not run the wizard on a shared or remote machine, and stop it (<code>docker compose -f docker-compose-bootstrap-csoc.yml down</code>) when you are not using it.</p>
+
+<h3 id="administrator-accounts">Administrator accounts</h3>
+<p>Two administrator logins exist: the CSOC's <code>admin</code> user in <code>csoc-realm</code>, and Keycloak's own administration login, stored in Secrets Manager. Neither has a second factor by default. Keycloak supports one-time passwords as a required action and in authentication flows; see the <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak Server Administration Guide</a>.</p>
+
+<h3 id="reporting-vulnerabilities-and-license">Reporting vulnerabilities and license</h3>
+<p>The gen3-admin repository has no security policy file. Do not report a vulnerability in a public GitHub issue; contact the maintainers privately, for example with <a href="https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability">GitHub private vulnerability reporting</a> if the repository has it enabled. gen3-admin is licensed under the Apache License 2.0.</p>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../concepts/architecture.html" rel="prev"><small>Previous</small><b>← Architecture</b></a>
+<a class="next" href="../reference/wizard-states.html" rel="next"><small>Next</small><b>Wizard states →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apply: create the infrastructure · Gen3 CSOC docs</title>
+<meta name="description" content="Terraform creates the network and the EKS cluster. This is the longest wait in the tutorial.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html" aria-current="page"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Provision</li><li aria-current="page">Apply</li></ol></nav>
+<h1>Apply: create the infrastructure</h1>
+<p class="lead">Terraform creates the network and the EKS cluster. This is the longest wait in the tutorial.</p>
+<div class="meta"><span class="pill">Wizard step <b>Provision</b></span><span class="pill">Time <b>15–20 minutes</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Let Terraform create the VPC, the NAT gateway, the Squid proxy, the EKS cluster with Karpenter, and the IAM roles. The apply carries out exactly the plan you reviewed.</p>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Press <span class="btn-ui">Apply</span> in the banner. If less than 45 minutes are left on your SSO sign-in, the wizard does not start the apply; it asks you to sign in again and shows the <code>aws sso login</code> command. <span class="where">Terminal</span> Run it, then press <b>Apply</b> again.</li>
+  <li>Watch the plan review become a progress view. Each resource shows waiting, in progress with its elapsed time, done, or failed, and a bar shows overall progress. The blue <b>Right now</b> box above the list names the resources Terraform is working on at this moment; click one to open its group.</li>
+  <li>Read <a href="#whats-happening">What's happening</a> while you wait. You can close the tab and come back; the wizard follows a run that is still in progress.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> every resource in the progress view is done, and the banner changes from <b>Apply in progress</b> to <b>Infrastructure up; the CSOC needs a certificate</b>.</p>
+<figure class="shot"><img src="assets/img/20-applying-list.png" alt="Apply progress in the list" loading="lazy"><figcaption>Progress during an apply, with a done count for each group and an overall bar.</figcaption></figure>
+<figure class="shot"><img src="assets/img/21-applying-diagram.png" alt="Apply progress on the diagram" loading="lazy"><figcaption>The same progress on the diagram.</figcaption></figure>
+<div class="adm warning" role="note"><p class="adm-t">Let the apply finish</p><p>Stopping an apply leaves the environment <code>partial</code>, with some resources created. The EKS control plane takes about 10 minutes with little visible progress; the <b>Right now</b> box shows it is still being created.</p></div>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<div class="banner"><b>Apply in progress</b><span>Creating the infrastructure. 15–20 minutes; you can close this page and come back.</span><span class="acts">Buttons: [Stop this run]</span></div>
+<p>The network, the NAT gateway and Squid come first. The EKS control plane follows and takes about 10 minutes. Karpenter is installed last. The apply does not wait for EC2 nodes: Karpenter starts the first one when the bootstrap needs it, and it joins the cluster in under 1 minute.</p>
+<div class="banner"><b>Infrastructure up; the CSOC needs a certificate</b><span>Request a public certificate from ACM, import one, or use one the account already has. The install serves it on the load balancer.</span></div>
+<h4>Time</h4><p>15–20 minutes from <b>Apply</b> until the banner above appears; normal up to 30 minutes.</p>
+<div class="timer noprint" data-t="apply" data-typ="20" data-hi="30" data-label="apply" data-typtext="15–20 minutes"></div>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>Terraform builds a small, locked-down network and a Kubernetes cluster without fixed worker nodes. The cluster's private subnets have no direct route to the internet: all outbound traffic passes through the Squid proxy, which allows only listed destinations. Each controller that will run in the cluster gets its own narrowly scoped IAM role. Karpenter, which starts EC2 nodes when workloads need them, runs on AWS Fargate so that it needs no nodes of its own. Storage drivers and the other cluster services are installed later, on the <b>Install</b> step.</p>
+<figure class="anim" data-dg="apply" data-label="What the apply creates"><figcaption><b>Diagram: What the apply creates.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-apply-steps"><li>The VPC, across three availability zones, with public and private subnets.</li><li>The internet gateway and the NAT gateway, with a private DNS zone and a CloudWatch log group.</li><li>Squid, the outbound proxy, in an auto-scaling group.</li><li>A small AWS Lambda function that keeps the private subnets' outbound route pointed at a healthy Squid instance.</li><li>The EKS control plane, Kubernetes 1.33. Creating it takes about 10 minutes.</li><li>IAM roles: one for each controller, trusted only by that controller.</li><li>Karpenter, running on Fargate.</li><li>EC2 nodes, which Karpenter starts later, when the bootstrap needs them.</li></ol></figure>
+<div class="adm warning" role="note"><p class="adm-t">Kubernetes version and cost</p><p>The cluster runs Kubernetes 1.33, the configuration's default. Its EKS standard support ended on July 29, 2026, so AWS bills the control plane at the extended-support rate of $0.60 per hour ($438 a month instead of $73 a month) until extended support ends on July 29, 2027. That makes the CSOC cost $720–800 a month in us-east-1, before commons and data transfer. See the <a href="https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html">Amazon EKS Kubernetes release calendar</a>, <a href="https://aws.amazon.com/eks/pricing/">Amazon EKS pricing</a> and <a href="next-steps.html#upgrade-kubernetes">Upgrade Kubernetes</a>.</p></div>
+<p>The certificate is not part of the apply; you choose it on the next step. For every component, see <a href="concepts/architecture.html#network-and-outbound-traffic">Network and outbound traffic</a> and <a href="concepts/architecture.html#the-eks-cluster">The EKS cluster</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Banner: <b>The apply failed</b> or <b>Part of the infrastructure exists</b></td><td>The environment is <code>partial</code>. The plan review marks each failed resource with its error. Terraform keeps what it created.</td><td>Fix the cause named in the error, press <b>Plan again</b> (the new plan lists only what is missing), then <b>Apply</b>. Or tear down.</td></tr><tr><td>A prompt to sign in again before the apply starts</td><td>Less than 45 minutes are left on your SSO sign-in, and an apply takes 15–20 minutes.</td><td>In a terminal, run the <code>aws sso login</code> command shown, then press <b>Apply</b>.</td></tr><tr><td>A prompt to type the environment name</td><td>The plan destroys or replaces existing infrastructure.</td><td>Read the plan first. Type the name only if you intend those changes.</td></tr><tr><td>The page reloaded during the apply</td><td>Nothing is lost; the apply keeps running.</td><td>Open <code>localhost:3000/bootstrap</code>. The wizard returns to the step and follows the run.</td></tr><tr><td>No change in the <b>Right now</b> box for 30 minutes</td><td>Terraform is waiting on one resource.</td><td>Open the run log and read the last lines: they name the resource. If it is Karpenter or a Helm release, search the log for <code>timed out</code>. Do not press <b>Stop this run</b> while Terraform is still working; if the run fails, follow the first row of this table.</td></tr></tbody></table></div>
+<figure class="shot"><img src="assets/img/18-apply-failed.png" alt="An apply failure in the plan review" loading="lazy"><figcaption>A failed apply names each failed resource and its error.</figcaption></figure>
+<div class="adm tip" role="note"><p class="adm-t">A failed apply can be resumed</p><p>Terraform keeps what it created. Fix the cause and press <b>Plan again</b>: the new plan lists only what is still missing. Then press <b>Apply</b>.</p></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="plan.html" rel="prev"><small>Previous</small><b>← Plan</b></a>
+<a class="next" href="certificate-and-dns.html" rel="next"><small>Next</small><b>Certificate →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hands-on: a CSOC in AWS, then a Gen3 commons on it</title>
+<style>
+:root{
+  --accent:#3b5bdb; --accent-2:#edf2ff; --accent-3:#bac8ff;
+  --ink:#1f2433; --ink-2:#4a5168; --ink-3:#7a8199; --line:#e3e6ef; --bg:#f7f8fb; --card:#fff;
+  --ok:#2b8a3e; --ok-bg:#ebfbee; --warn:#b35c00; --warn-bg:#fff4e6; --bad:#c92a2a; --bad-bg:#fff5f5; --info-bg:#e7f5ff;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+a{color:var(--accent)}
+code,pre,kbd{font-family:var(--mono);font-size:.88em}
+code{background:#f1f3f8;border:1px solid var(--line);border-radius:5px;padding:.05em .35em;overflow-wrap:anywhere}
+pre code{white-space:pre;border:0;background:none;padding:0}
+kbd{border:1px solid #c9cedb;border-bottom-width:2px;border-radius:4px;padding:0 .35em;background:#fff}
+.skip{position:absolute;left:-999px;top:0;background:#fff;padding:8px 12px;z-index:9}
+.skip:focus{left:8px}
+:focus-visible{outline:3px solid var(--accent-3);outline-offset:2px;border-radius:4px}
+
+/* layout */
+.layout{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:100vh}
+aside.side{position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);background:#fff;padding:18px 16px 28px}
+main{padding:28px clamp(16px,4vw,48px) 80px;max-width:1080px}
+.brand{font-weight:700;font-size:15px;line-height:1.3;margin:0 0 2px}
+.brand small{display:block;font-weight:400;color:var(--ink-3);font-size:12.5px}
+.prog{margin:14px 0 6px;font-size:13px;color:var(--ink-2);display:flex;justify-content:space-between;align-items:center}
+.bar{height:6px;background:#eceff6;border-radius:4px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+ol.nav{list-style:none;margin:14px 0 10px;padding:0}
+ol.nav li{display:flex;align-items:flex-start;gap:8px;padding:5px 6px;border-radius:7px}
+ol.nav li.here{background:var(--accent-2)}
+ol.nav input{margin-top:3px;accent-color:var(--accent);width:16px;height:16px;flex:none}
+ol.nav a{color:var(--ink);text-decoration:none;font-size:13.5px;line-height:1.35}
+ol.nav a:hover{color:var(--accent)}
+ol.nav li.done a{color:var(--ink-3);text-decoration:line-through;text-decoration-color:#c3c8d6}
+ol.nav .n{display:inline-block;min-width:1.6em;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit;font-size:13px;text-decoration:underline}
+.side .small{font-size:12px;color:var(--ink-3)}
+.navtoggle{display:none}
+
+/* header */
+header.top h1{font-size:clamp(24px,3vw,32px);line-height:1.2;margin:0 0 6px}
+header.top p.lead{color:var(--ink-2);margin:0 0 18px;max-width:780px}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.pill{font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 10px;color:var(--ink-2)}
+
+/* boxes */
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin:0 0 18px}
+.box h2{font-size:18px;margin:0 0 10px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.note,.warn,.tip,.bad{border-radius:8px;padding:10px 14px;margin:10px 0;font-size:14px}
+.note{background:var(--info-bg);border-left:4px solid #339af0}
+.tip{background:var(--ok-bg);border-left:4px solid var(--ok)}
+.warn{background:var(--warn-bg);border-left:4px solid #f08c00}
+.bad{background:var(--bad-bg);border-left:4px solid var(--bad)}
+.note>:first-child,.warn>:first-child,.tip>:first-child,.bad>:first-child{margin-top:0}
+.note>:last-child,.warn>:last-child,.tip>:last-child,.bad>:last-child{margin-bottom:0}
+ul.check{list-style:none;padding:0;margin:0}
+ul.check li{padding:6px 0 6px 28px;position:relative;border-bottom:1px dashed var(--line)}
+ul.check li:last-child{border-bottom:0}
+ul.check li::before{content:"";position:absolute;left:2px;top:10px;width:14px;height:14px;border:2px solid var(--accent-3);border-radius:4px}
+
+/* your values */
+.vals{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 14px}
+.vals label{display:block;font-size:12.5px;color:var(--ink-2);font-weight:600}
+.vals input{width:100%;margin-top:3px;padding:7px 9px;border:1px solid #cfd4e2;border-radius:7px;font:inherit;font-size:14px;background:#fff}
+.vals input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-2)}
+.vals .hint{font-weight:400;color:var(--ink-3)}
+.derived{font-size:13px;color:var(--ink-2);margin-top:10px}
+.v{font-family:var(--mono);font-size:.92em;background:#fff8db;border-radius:3px;padding:0 2px}
+pre .v,code .v{background:#fff3bf;font-size:1em;padding:0}
+
+/* step cards */
+section.step{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 26px;overflow:hidden}
+section.step>header{display:flex;gap:14px;align-items:flex-start;padding:18px 20px 12px}
+.num{flex:none;width:36px;height:36px;border-radius:50%;background:var(--accent-2);color:var(--accent);font-weight:700;display:grid;place-items:center;font-size:15px}
+section.step.done .num{background:var(--ok);color:#fff}
+section.step>header h2{margin:0;font-size:20px;line-height:1.25}
+section.step>header .sub{color:var(--ink-2);font-size:14px;margin:3px 0 0}
+section.step>header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
+.dur{font-size:12.5px;border-radius:999px;padding:2px 9px;background:#f1f3f8;color:var(--ink-2);white-space:nowrap}
+.donebox{font-size:13px;display:flex;gap:6px;align-items:center;cursor:pointer;user-select:none;white-space:nowrap}
+.donebox input{accent-color:var(--ok);width:16px;height:16px}
+.tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:9px 12px 8px;font:inherit;font-size:14px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tabs button:hover{color:var(--ink)}
+.panel{padding:16px 22px 20px}
+.panel[hidden]{display:none}
+.panel h3{font-size:16px;margin:18px 0 8px}
+.panel h3:first-child{margin-top:4px}
+.ptitle{display:none}
+ol.do{padding-left:0;list-style:none;counter-reset:d;margin:8px 0}
+ol.do>li{counter-increment:d;position:relative;padding:4px 0 10px 38px}
+ol.do>li::before{content:counter(d);position:absolute;left:0;top:3px;width:26px;height:26px;border-radius:50%;border:2px solid var(--accent-3);color:var(--accent);font-weight:700;font-size:13px;display:grid;place-items:center;background:#fff}
+.btn-ui{display:inline-block;font-weight:600;font-size:.9em;background:var(--accent);color:#fff;border-radius:6px;padding:0 .5em;white-space:nowrap}
+.btn-ui.light{background:var(--accent-2);color:var(--accent)}
+.btn-ui.red{background:#fa5252}
+.field{font-weight:600;color:var(--ink)}
+.banner{border:1px solid var(--line);border-left:4px solid #339af0;border-radius:8px;padding:9px 13px;margin:8px 0;background:#fff}
+.banner.green{border-left-color:var(--ok)} .banner.yellow{border-left-color:#f59f00} .banner.red{border-left-color:var(--bad)} .banner.gray{border-left-color:#adb5bd}
+.banner b{display:block}
+.banner span{color:var(--ink-2);font-size:13.5px}
+.cmdwrap{position:relative;margin:8px 0}
+pre.code{background:#101524;color:#e6e9f2;border-radius:8px;padding:12px 14px;overflow:auto;margin:0;line-height:1.5}
+pre.code .v{background:#3d3410;color:#ffe8a3}
+pre.code.yaml{max-height:420px}
+.copy{position:absolute;top:6px;right:6px;font:600 12px system-ui,sans-serif;border:1px solid #39415a;background:#1e2538;color:#cfd5e6;border-radius:6px;padding:3px 8px;cursor:pointer}
+.copy:hover{background:#2a3350}
+.copy.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.cpi{font:600 11px system-ui,sans-serif;border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:5px;padding:0 5px;margin-left:4px;cursor:pointer;vertical-align:1px}
+.cpi:hover{border-color:var(--accent);color:var(--accent)}
+.cpi.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-3);font-weight:600;background:#fafbfd}
+.tw{overflow-x:auto}
+figure.shot{margin:12px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fafbfd}
+figure.shot img{display:block;width:100%;height:auto}
+figure.shot figcaption{font-size:12.5px;color:var(--ink-3);padding:6px 10px;border-top:1px solid var(--line)}
+details.more{margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:#fcfcfe}
+details.more summary{cursor:pointer;font-weight:600;font-size:14px}
+
+/* timer */
+.timer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;border:1px dashed var(--accent-3);background:#f8f9ff;border-radius:9px;padding:9px 12px;margin:12px 0}
+.timer button{font:600 13px system-ui,sans-serif;border:1px solid var(--accent);background:#fff;color:var(--accent);border-radius:6px;padding:4px 10px;cursor:pointer}
+.timer button.run{background:var(--accent);color:#fff}
+.timer .clock{font:600 18px var(--mono);font-variant-numeric:tabular-nums;min-width:4.2em}
+.timer .tbar{flex:1 1 140px;height:8px;background:#e6e9f5;border-radius:5px;overflow:hidden;min-width:120px;position:relative}
+.timer .tbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--ok);transition:width .5s}
+.timer .tbar b{position:absolute;top:-2px;bottom:-2px;width:2px;background:#868e96}
+.timer.slow .tbar i{background:#f59f00} .timer.late .tbar i{background:var(--bad)}
+.timer .tmsg{font-size:13px;color:var(--ink-2);flex-basis:100%}
+
+/* diagrams */
+figure.anim{margin:12px 0 6px;border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:10px 12px 12px}
+figure.anim svg{display:block;width:100%;height:auto;max-height:520px}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+.ctl button{font:600 12.5px system-ui,sans-serif;border:1px solid #cfd4e2;background:#fff;color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer;min-width:34px}
+.ctl button:hover{border-color:var(--accent);color:var(--accent)}
+.ctl button.play{background:var(--accent);color:#fff;border-color:var(--accent);min-width:78px}
+.ctl .fr{font-size:12.5px;color:var(--ink-3);margin-left:4px;font-variant-numeric:tabular-nums}
+ol.caps{margin:6px 0 0;padding-left:22px;font-size:14px;color:var(--ink-2)}
+ol.caps li{padding:3px 6px;border-radius:6px;cursor:pointer}
+ol.caps li.cur{background:var(--accent-2);color:var(--ink)}
+ol.caps li.seen{color:var(--ink)}
+.dg .n rect{fill:#fff;stroke:#c3c9dc;stroke-width:1.3}
+.dg .n .t{font:600 13px system-ui,sans-serif;fill:var(--ink)}
+.dg .n .s{font:11px system-ui,sans-serif;fill:var(--ink-3)}
+.dg .n{transition:opacity .45s}
+.dg .n.pend{opacity:.18}
+.dg .n.act rect{stroke:var(--accent);stroke-width:2.6;fill:var(--accent-2)}
+.dg .n.act{animation:pulse 1.6s ease-in-out infinite}
+.dg .n.done.b rect{fill:#f3fbf4;stroke:#8fd19e}
+.dg .grp rect{fill:none;stroke:#b9c0d6;stroke-dasharray:5 4;stroke-width:1.2}
+.dg .grp.solid rect{stroke-dasharray:none;fill:#f5f7fc}
+.dg .grp text{font:600 11.5px system-ui,sans-serif;fill:var(--ink-3);letter-spacing:.03em;text-transform:uppercase}
+.dg .grp{transition:opacity .45s}
+.dg .grp.pend{opacity:.25}
+.dg .e path{fill:none;stroke:#a3abc4;stroke-width:1.6;marker-end:url(#m-dim);transition:opacity .45s}
+.dg .e text{font:11px system-ui,sans-serif;fill:var(--ink-2);paint-order:stroke;stroke:#fcfdff;stroke-width:4px;stroke-linejoin:round}
+.dg .e.pend{opacity:.1}
+.dg .e.act path{stroke:var(--accent);stroke-width:2.6;stroke-dasharray:7 5;animation:flow .9s linear infinite;marker-end:url(#m-act)}
+.dg .e.act text{fill:var(--accent);font-weight:600}
+.dg .e.back path{stroke-dasharray:3 4}
+.dg .e.act.back path{stroke:#0c8599;marker-end:url(#m-back)}
+.dg .e.act.back text{fill:#0c8599}
+.dg a .n:hover rect,.dg [role=link]:hover rect,.dg [role=link]:focus rect{stroke:var(--accent);stroke-width:2.4}
+.dg [role=link]{cursor:pointer}
+.dg [role=link]:focus{outline:none}
+@keyframes flow{to{stroke-dashoffset:-24}}
+@keyframes pulse{50%{opacity:.78}}
+@media (prefers-reduced-motion:reduce){
+  .dg .e.act path{animation:none}
+  .dg .n.act{animation:none}
+  .dg .n,.dg .e path,.dg .grp,.bar>i,.timer .tbar i{transition:none}
+}
+.overview-hint{font-size:13px;color:var(--ink-3);margin:2px 0 0}
+
+/* glossary */
+dl.gloss{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:6px 16px;margin:6px 0}
+dl.gloss dt{font-weight:700}
+dl.gloss dd{margin:0;color:var(--ink-2)}
+
+/* responsive */
+@media (max-width:900px){
+  .layout{display:block}
+  aside.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .navtoggle{display:inline-block;margin-top:8px}
+  aside.side.closed ol.nav,aside.side.closed .navextra{display:none}
+  section.step>header{flex-wrap:wrap}
+  section.step>header .right{margin-left:50px}
+  dl.gloss{grid-template-columns:1fr}
+}
+
+/* print */
+@media print{
+  body{background:#fff;font-size:11pt}
+  .layout{display:block}
+  aside.side,.tabs,.ctl,.copy,.cpi,.timer,.navtoggle,.donebox,.skip,.noprint{display:none!important}
+  main{max-width:none;padding:0}
+  section.step{break-inside:auto;border:1px solid #ccc;page-break-before:auto}
+  .panel,.panel[hidden]{display:block!important}
+  .ptitle{display:block;font-size:13pt;margin:10px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px}
+  .dg .n.pend,.dg .e.pend,.dg .grp.pend{opacity:1}
+  .dg .n.act{animation:none}
+  .dg .e.act path{animation:none;stroke-dasharray:none}
+  pre.code{background:#f4f4f4;color:#111;border:1px solid #ddd;white-space:pre-wrap}
+  pre.code .v{background:none;color:#111}
+  figure.shot,figure.anim{break-inside:avoid}
+  a{color:#111}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the guide</a>
+
+<!-- Arrowheads shared by every diagram -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="m-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a3abc4"/></marker>
+    <marker id="m-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b5bdb"/></marker>
+    <marker id="m-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0c8599"/></marker>
+  </defs>
+</svg>
+
+<div class="layout">
+<aside class="side" id="side" aria-label="Steps">
+  <p class="brand">CSOC hands-on workshop<small>CSOC WG · Wed Oct 28, 2026 · 3–4pm CT</small></p>
+  <button class="linkbtn navtoggle" id="navtoggle" aria-expanded="true" aria-controls="navlist">Hide steps</button>
+  <div class="prog"><span id="progtext">0 of 15 done</span><button class="linkbtn" id="resetprog" type="button">reset progress</button></div>
+  <div class="bar" aria-hidden="true"><i id="progbar"></i></div>
+  <ol class="nav" id="navlist"></ol>
+  <div class="navextra">
+    <p class="small">Ticks and timers are saved in this browser only (localStorage). Nothing leaves your laptop.</p>
+    <p class="small"><a href="#overview">How it fits together</a> · <a href="#values">Your values</a> · <a href="#s14">Glossary</a></p>
+  </div>
+</aside>
+
+<main id="main">
+<header class="top">
+  <h1>A CSOC in your AWS account, then a Gen3 commons on it</h1>
+  <p class="lead">You take an empty AWS account to a running <b>CSOC</b> (the control plane for Gen3 commons) with the bootstrap wizard on your laptop. Then you deploy a Gen3 commons from that CSOC, and finally you tear it all down. Every step has four parts: <b>Do this</b>, <b>What you should see</b>, <b>What's happening</b> (with an animated diagram to read while you wait) and <b>If something goes wrong</b>.</p>
+  <div class="meta">
+    <span class="pill">About 45–60 min to a running CSOC</span>
+    <span class="pill">Apply ≈ 20–25 min</span>
+    <span class="pill">Bootstrap ≈ 5 min · Finish ≈ 5 min</span>
+    <span class="pill">Gen3 commons ≈ 10 min</span>
+    <span class="pill">Teardown ≈ 25–30 min</span>
+    <span class="pill">Cost while running ≈ $300–400 / month</span>
+  </div>
+</header>
+
+<div class="box" id="before">
+  <h2>Before you start</h2>
+  <div class="grid2">
+    <ul class="check">
+      <li><b>Docker is running</b> (Docker Desktop, OrbStack or Colima).</li>
+      <li><b>The repo is checked out:</b> <code class="cp">git clone https://github.com/uc-cdis/gen3-admin &amp;&amp; cd gen3-admin</code></li>
+      <li><b>The images are on your laptop</b> before the session (see <a href="#s0">step 0</a>): building them over venue Wi-Fi is slow.</li>
+    </ul>
+    <ul class="check">
+      <li><b>An AWS account you can admin</b>, with a profile for it in <code>~/.aws/config</code> (SSO works).</li>
+      <li><b>A fresh SSO sign-in:</b> <code class="cp">aws sso login --profile <span class="v" data-v="ssoprofile">default</span></code>. The apply wants at least 45 minutes left on it.</li>
+      <li><b>A domain you can delegate a subdomain from</b>, e.g. <code>workshop.<i>your-domain</i></code>. Its parent zone is either in Route 53 (reachable with one of your profiles) or somewhere you can add 4 NS records.</li>
+    </ul>
+  </div>
+  <p class="note" style="margin-top:12px">Screenshots in this guide come from the dry run, and some were taken before the UI changed. The wizard now has a <b>sticky 7-step stepper</b> (Welcome · Setup · Review · Provision · Certificate · Install · Done) with a <b>banner</b> under it. The banner always says where you stand and has the one button to press next. If a screenshot and the banner disagree, go by the banner.</p>
+</div>
+
+<div class="box" id="values">
+  <h2>Your values</h2>
+  <p style="margin-top:0;color:var(--ink-2);font-size:14px">Type your own values here and every command and field value on this page uses them. Copy buttons copy them too. They are saved in this browser only.</p>
+  <div class="vals">
+    <label>AWS profile for the CSOC account <span class="hint">(the one you deploy into)</span><input id="in-profile" data-k="profile" placeholder="csoc-workshop" autocomplete="off"></label>
+    <label>SSO profile you sign in with <span class="hint">(often <code>default</code>)</span><input id="in-ssoprofile" data-k="ssoprofile" placeholder="default" autocomplete="off"></label>
+    <label>AWS account ID <span class="hint">(12 digits)</span><input id="in-account" data-k="account" placeholder="123456789012" inputmode="numeric" autocomplete="off"></label>
+    <label>Region<input id="in-region" data-k="region" placeholder="us-east-1" autocomplete="off"></label>
+    <label>CSOC name <span class="hint">(lowercase, digits, hyphens)</span><input id="in-name" data-k="name" placeholder="workshop" autocomplete="off"></label>
+    <label>Zone for the CSOC <span class="hint">(subdomain you delegate)</span><input id="in-zone" data-k="zone" placeholder="workshop.example.org" autocomplete="off"></label>
+    <label>Profile that reaches the parent zone<input id="in-parent" data-k="parent" placeholder="default" autocomplete="off"></label>
+    <label>Your email <span class="hint">(CSOC admin email)</span><input id="in-email" data-k="email" placeholder="you@example.org" autocomplete="off"></label>
+  </div>
+  <p class="derived">Derived: state bucket <span class="v" data-v="bucket"></span> · portal <span class="v" data-v="portal"></span> · Keycloak <span class="v" data-v="auth"></span> · commons <span class="v" data-v="commons"></span></p>
+</div>
+
+<div class="box" id="overview">
+  <h2>How it fits together</h2>
+  <p class="overview-hint">Click a box to jump to the step that explains it. <b>Play</b> walks through the order things get built.</p>
+  <figure class="anim" data-dg="overview" data-final="1">
+    <div class="svgwrap"></div>
+    <div class="ctl"></div>
+    <ol class="caps">
+      <li>On your laptop, Docker runs the wizard (frontend), the bootstrap API and a socket proxy. Your AWS credentials never leave the laptop.</li>
+      <li>Setup creates the S3 state bucket (Terraform state and the record of every run) and a Route 53 zone delegated from your domain.</li>
+      <li>Each Terraform or install run happens in a fresh runner container. The apply builds the VPC, NAT, Squid and the EKS cluster with Karpenter.</li>
+      <li>After the apply, ACM issues a certificate for the portal and Keycloak hostnames. Its proof of ownership is DNS records in your zone.</li>
+      <li>Bootstrap stores the CSOC's secrets in Secrets Manager and installs the controllers, Keycloak and the CSOC portal into the cluster.</li>
+      <li>Finish waits for the load balancer and points <span class="v" data-v="portal"></span> and <span class="v" data-v="auth"></span> at it. Only your allowed addresses get through.</li>
+      <li>In the portal you deploy an agent into the CSOC's own cluster. It connects back to the CSOC API over gRPC with mutual TLS.</li>
+      <li>The portal asks the agent to Helm-install a Gen3 commons. external-dns gives it <span class="v" data-v="commons"></span>.</li>
+    </ol>
+  </figure>
+</div>
+
+<!-- ================================================================ STEP 0 -->
+<section class="step" id="s0" data-title="Before you start">
+  <header><div class="num">0</div><div><h2>Before you start</h2><p class="sub">Docker, the repo, images, an AWS profile and a domain. Do this before the session.</p></div>
+    <div class="right"><span class="dur">10 min, ahead of time</span><label class="donebox"><input type="checkbox" data-step="s0"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li><b>Docker running.</b> Docker Desktop, OrbStack or Colima. Check it: <code class="cp">docker info --format '{{.ServerVersion}}'</code></li>
+      <li><b>Clone the repo:</b>
+        <div class="cmdwrap"><pre class="code">git clone https://github.com/uc-cdis/gen3-admin
+cd gen3-admin</pre></div></li>
+      <li><b>Get the images onto your laptop.</b> Use the organizer's instructions if quay images were published for the workshop. With the compose file as it is in the repo today, the API and frontend are built from source and the Terraform runner image (<code>gen3-terraform:latest</code>) is local only, so build them once ahead of time:
+        <div class="cmdwrap"><pre class="code">./scripts/build-terraform-image.sh
+docker compose -f docker-compose-bootstrap-csoc.yml build</pre></div></li>
+      <li><b>A profile for the account you deploy into</b>, in <code>~/.aws/config</code>. An SSO profile works. If you reach the account by assuming a role, a profile like this does it:
+        <div class="cmdwrap"><pre class="code">[profile <span class="v" data-v="profile"></span>]
+role_arn = arn:aws:iam::<span class="v" data-v="account"></span>:role/&lt;admin-role&gt;
+source_profile = <span class="v" data-v="ssoprofile"></span>
+region = <span class="v" data-v="region"></span></pre></div></li>
+      <li><b>Sign in and check the account:</b>
+        <div class="cmdwrap"><pre class="code">aws sso login --profile <span class="v" data-v="ssoprofile"></span>
+aws sts get-caller-identity --profile <span class="v" data-v="profile"></span></pre></div>
+        The <code>Account</code> it prints is the one the CSOC goes in. Write it into <a href="#values">Your values</a>.</li>
+      <li><b>Pick your zone:</b> a subdomain of a domain you control, e.g. <span class="v" data-v="zone"></span>. The wizard creates it in your account and delegates it. If the parent zone is in Route 53, a profile that can reach it lets the wizard add the NS records for you. Otherwise you add 4 NS records at your DNS host.</li>
+    </ol>
+  </div>
+  <div class="panel" data-p="see">
+    <ul>
+      <li><code>docker info</code> prints a version, with no "Cannot connect to the Docker daemon".</li>
+      <li><code>docker images</code> lists <code>gen3-terraform</code> (and the compose project's api and frontend images, if you built them).</li>
+      <li><code>aws sts get-caller-identity</code> prints the account you meant, not the account that holds your parent DNS zone.</li>
+    </ul>
+  </div>
+  <div class="panel" data-p="why">
+    <p>The wizard drives everything from your laptop with your own AWS credentials. Nothing is installed on your machine but Docker: Terraform, Helm, kubectl and the AWS CLI live in the runner image, and the API starts one runner container per run.</p>
+    <p>The domain matters because the CSOC is served over HTTPS at real public names (<span class="v" data-v="portal"></span>, <span class="v" data-v="auth"></span>). ACM only issues the certificate once public DNS can find your zone.</p>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td><code>The SSO session associated with this profile has expired</code></td><td>Your SSO token ran out.</td><td><code class="cp">aws sso login --profile <span class="v" data-v="ssoprofile"></span></code></td></tr>
+      <tr><td><code>Cannot connect to the Docker daemon</code></td><td>Docker is not running.</td><td>Start Docker Desktop / OrbStack, or run <code>colima start</code>.</td></tr>
+      <tr><td><code>get-caller-identity</code> shows the wrong account</td><td>The profile points elsewhere (often the default profile is the DNS account).</td><td>Fix <code>role_arn</code> in the profile, or pick another profile.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 1 -->
+<section class="step" id="s1" data-title="Start the wizard">
+  <header><div class="num">1</div><div><h2>Start the wizard</h2><p class="sub">Three containers on your laptop, reachable from your laptop only.</p></div>
+    <div class="right"><span class="dur">≈ 1 min</span><label class="donebox"><input type="checkbox" data-step="s1"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>In the <code>gen3-admin</code> directory:
+        <div class="cmdwrap"><pre class="code">docker compose -f docker-compose-bootstrap-csoc.yml up -d</pre></div>
+        If you did not build the images beforehand, add <code>--build</code> (and run <code>./scripts/build-terraform-image.sh</code> first).</li>
+      <li>Open the wizard: <code class="cp">http://localhost:3000/bootstrap</code> (on macOS: <code class="cp">open http://localhost:3000/bootstrap</code>).</li>
+      <li>Optional: check that all three are up: <code class="cp">docker compose -f docker-compose-bootstrap-csoc.yml ps</code></li>
+    </ol>
+    <details class="more"><summary>Developers: testing unpublished gen3-terraform modules</summary>
+      <p>Set <code>TERRAFORM_MODULES_DIR=~/path/to/gen3-terraform</code> (it goes in the gitignored <code>.env</code>) before <code>up</code>, so plan, apply and destroy all use the same local modules.</p></details>
+  </div>
+  <div class="panel" data-p="see">
+    <ul>
+      <li><code>ps</code> lists <b>api</b>, <b>frontend</b> and <b>docker-proxy</b>, all running.</li>
+      <li>The browser shows <b>Welcome to the Gen3 CSOC Bootstrap</b> and the stepper <i>Welcome · Setup · Review · Provision · Certificate · Install · Done</i>.</li>
+    </ul>
+  </div>
+  <div class="panel" data-p="why">
+    <p>Three containers start. The <b>frontend</b> (port 3000) is the wizard. The <b>API</b> (port 8002) runs without a login, as an admin that uses your AWS credentials, so both are published on <code>127.0.0.1</code> only and nothing listens on your network. The <b>docker socket proxy</b> lets the API create, start, inspect, read logs of, wait for and stop containers, and nothing else.</p>
+    <p>For each run (init, plan, apply, bootstrap, finish, uninstall, destroy) the API starts a <b>runner container</b> from the Terraform image. Your <code>~/.aws</code> is mounted into it read-only and copied to a writable home inside, so the AWS CLI can refresh an SSO token without touching your files. The runner's log streams back to the page as it runs.</p>
+    <figure class="anim" data-dg="stack"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li>You open <code>localhost:3000/bootstrap</code>. The frontend serves the wizard.</li>
+        <li>Each click calls the API at <code>/api/…</code>, which is published on 127.0.0.1:8002 only.</li>
+        <li>The API reads your profiles from <code>~/.aws</code> to check who you are (the blue identity box).</li>
+        <li>To run Terraform, the API asks the socket proxy to start a container. The proxy allows container operations only.</li>
+        <li>A fresh runner container starts with your <code>~/.aws</code> copied in and <code>AWS_PROFILE</code> set to the profile you chose.</li>
+        <li>The runner calls AWS: Terraform, the AWS CLI, kubectl and Helm all run inside it.</li>
+        <li>Its log streams back through the API to your browser, so you watch the run live.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td>localhost:3000 does not load</td><td>The frontend is not up yet, or failed.</td><td><code class="cp">docker compose -f docker-compose-bootstrap-csoc.yml logs frontend api</code></td></tr>
+      <tr><td><code>port is already allocated</code></td><td>Something else uses 3000 or 8002.</td><td>Stop it (often another <code>npm run dev</code>), then <code>up -d</code> again.</td></tr>
+      <tr><td>Later, a red box: <b>The init did not start</b></td><td>The runner image is missing, or AWS refused the credentials.</td><td>Run <code>./scripts/build-terraform-image.sh</code>, or sign in again. Nothing ran, so nothing changed.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 2 -->
+<section class="step" id="s2" data-title="Welcome">
+  <header><div class="num">2</div><div><h2>Welcome</h2><p class="sub">What will be built, and how the pieces relate.</p></div>
+    <div class="right"><span class="dur">1 min</span><label class="donebox"><input type="checkbox" data-step="s2"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Read the list: a VPC with NAT and a Squid egress proxy, an EKS cluster, a certificate and DNS records, the CSOC portal and Keycloak behind an allowlisted load balancer.</li>
+      <li>Click <span class="btn-ui">Next</span> (top right, next to <i>Back</i>).</li>
+    </ol>
+    <figure class="shot"><img src="../img/01-welcome.png" alt="The wizard's Welcome page" loading="lazy"><figcaption>Welcome (dry-run screenshot; the stepper now has 7 steps).</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <p><b>Welcome to the Gen3 CSOC Bootstrap</b>, the list above, a diagram, and "Estimated time: 45-60 minutes".</p>
+  </div>
+  <div class="panel" data-p="why">
+    <p>Everything the wizard does is recorded in your <b>state bucket</b>: the Terraform state and a record of every environment and run. That is why you can close the tab and come back, here or later from the CSOC itself, which reads the same bucket.</p>
+    <p>See <a href="#overview">How it fits together</a> for the whole picture.</p>
+  </div>
+  <div class="panel" data-p="wrong">
+    <p>Nothing can go wrong here. If the page is blank, see <a href="#s1">step 1</a>.</p>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 3 -->
+<section class="step" id="s3" data-title="Setup">
+  <header><div class="num">3</div><div><h2>Setup: account, state bucket, names, DNS zone</h2><p class="sub">Environment Setup. Only the bucket and the DNS zone are created at this point.</p></div>
+    <div class="right"><span class="dur">≈ 5 min</span><label class="donebox"><input type="checkbox" data-step="s3"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <h3>A. The account</h3>
+    <ol class="do">
+      <li><span class="field">AWS Credentials</span>: choose <b>Select AWS profile (including SSO profiles)</b>.</li>
+      <li><span class="field">AWS Profile</span>: <code class="cp"><span class="v" data-v="profile"></span></code>. Leave <span class="field">Assume role (optional)</span> empty.</li>
+      <li><b>Read the blue box:</b> "Deploying into AWS account <span class="v" data-v="account"></span>". In the dry run, <i>Auto-detect</i> found the parent-DNS account instead. If the number is wrong, stop and pick the right profile.</li>
+    </ol>
+    <figure class="shot"><img src="../img/02b-account.png" alt="Environment Setup with the profile chosen and the blue account box" loading="lazy"><figcaption>The blue box names the account and the role you reach it through.</figcaption></figure>
+    <h3>B. The state bucket</h3>
+    <ol class="do">
+      <li><span class="field">Terraform State Bucket</span>: <code class="cp"><span class="v" data-v="bucket"></span></code> (bucket names are global, so the account ID keeps yours unique). Wait for the blue box to update first.</li>
+      <li>Click <span class="btn-ui light">Check</span>. You get "Bucket does not exist". Click <span class="btn-ui light">Create bucket</span>.</li>
+    </ol>
+    <figure class="shot"><img src="../img/03-bucket-missing.png" alt="Bucket does not exist, with a Create bucket button" loading="lazy"><figcaption>The bucket is created versioned, encrypted, TLS-only and with public access blocked.</figcaption></figure>
+    <h3>C. Name, region, hostname</h3>
+    <ol class="do">
+      <li><span class="field">CSOC Name</span>: <code class="cp"><span class="v" data-v="name"></span></code>. It names the VPC, the cluster and the state key.</li>
+      <li><span class="field">AWS Region</span>: <code class="cp"><span class="v" data-v="region"></span></code>. It needs at least 3 availability zones.</li>
+      <li><span class="field">CSOC Hostname</span>: <code class="cp"><span class="v" data-v="portal"></span></code></li>
+      <li><span class="field">DNS for the hostnames</span>: keep <b>A Route 53 hosted zone in this account</b>. <i>I manage DNS myself</i> also works, but then you create the certificate's validation records and the final two CNAMEs yourself.</li>
+      <li>Click <span class="btn-ui">Validate</span> (inside the hostname field).</li>
+    </ol>
+    <h3>D. Create and delegate the zone</h3>
+    <ol class="do">
+      <li>A yellow box says <b>No hosted zone yet</b>. <span class="field">Hosted zone to create</span> is filled in: <code class="cp"><span class="v" data-v="zone"></span></code></li>
+      <li><span class="field">Delegate it from the parent zone using</span>: <b>Profile: <span class="v" data-v="parent"></span></b> (the profile that reaches your domain's zone), <i>The credentials above</i> if the parent is in this account, or <b>I'll add the NS records myself</b> if your domain is not in Route 53.</li>
+      <li>Click <span class="btn-ui">Set up zone and delegation</span>. If you chose "myself", add the 4 NS records it shows at your DNS host.</li>
+      <li>Wait for <b>Delegation is live</b>, then the green <b>Domain Verified</b>. Until then the button reads <span class="btn-ui light">Check again</span>, and the page also re-checks by itself every 20 seconds.</li>
+    </ol>
+    <figure class="shot"><img src="../img/05-zone-delegate-from.png" alt="Hosted zone to create, and the Delegate it from the parent zone using select" loading="lazy"><figcaption>Choose how the wizard reaches the parent zone.</figcaption></figure>
+    <figure class="shot"><img src="../img/06-zone-ready.png" alt="Domain Verified" loading="lazy"><figcaption>Domain Verified: public DNS finds the new zone.</figcaption></figure>
+    <h3>E. Advanced Options (leave as they are)</h3>
+    <ul>
+      <li><span class="field">Keycloak Hostname</span>: <span class="v" data-v="auth"></span> by default.</li>
+      <li><span class="field">VPC CIDR Block</span>: <code>172.24.16.0/20</code>. Remember it: a commons VPC you peer with later must not overlap it.</li>
+      <li><span class="field">Commons data bucket</span>: off. A CSOC does not need one.</li>
+    </ul>
+    <p>Click <span class="btn-ui">Next</span>.</p>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner green"><b>Bucket created</b><span>Then "Environments in this bucket" is empty (or lists yours, with <i>Resume</i>, if you come back later).</span></div>
+    <div class="banner green"><b>Domain Verified</b><span>Served by Route53 hosted zone <span class="v" data-v="zone"></span>, plus its zone ID.</span></div>
+    <p>Delegation was immediate in the dry run. Allow a few minutes. <b>Next</b> stays disabled until the identity, bucket, name and hostname all check out.</p>
+    <div class="timer" data-t="zone" data-typ="2" data-hi="10" data-label="delegation"></div>
+  </div>
+  <div class="panel" data-p="why">
+    <h3>Where your credentials go</h3>
+    <p>The wizard never asks for keys. Your SSO session signs the <code>default</code> profile in. The <code><span class="v" data-v="profile"></span></code> profile assumes the admin role in the CSOC account on top of it. Every run gets that profile name as <code>AWS_PROFILE</code>, plus a writable copy of <code>~/.aws</code>.</p>
+    <figure class="anim" data-dg="creds"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><code>aws sso login</code> caches a short-lived SSO token in <code>~/.aws/sso/cache</code>.</li>
+        <li>The <code>default</code> (SSO) profile turns that token into credentials for its own account.</li>
+        <li><code><span class="v" data-v="profile"></span></code> has <code>source_profile = default</code> and a <code>role_arn</code>. The AWS SDK assumes that role in the CSOC account.</li>
+        <li>The API asks STS "who am I?" with that profile, and the blue box shows the account and the assumed role.</li>
+        <li>Each runner container gets <code>AWS_PROFILE=<span class="v" data-v="profile"></span></code> and the same chain, so Terraform acts as that role.</li>
+      </ol></figure>
+    <h3>Why a delegated zone</h3>
+    <p>The portal, Keycloak and later every commons get names under <span class="v" data-v="zone"></span>. ACM proves you own them by looking up DNS records in that zone, so public DNS must be able to find it. Delegation is 4 NS records in the parent zone that say "ask these name servers about <span class="v" data-v="zone"></span>". The wizard refuses if the parent already has records under that name, and it creates the zone with a 60-second negative-caching time, so a lookup made too early is not remembered for a day.</p>
+    <figure class="anim" data-dg="dns"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li>The wizard creates the hosted zone <span class="v" data-v="zone"></span> in the CSOC account. Route 53 assigns it 4 name servers.</li>
+        <li>With the parent profile, it adds one NS record set to the parent zone that points at those name servers.</li>
+        <li>A public resolver asked about the zone goes to the parent, follows the NS records, and gets an answer from the new zone.</li>
+        <li>The wizard sees that answer and shows <b>Domain Verified</b>.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td>Yellow <b>AWS SSO session expired</b> with an <code>aws sso login</code> command</td><td>The token ran out. Every button is disabled until you sign in.</td><td>Run the command shown, e.g. <code class="cp">aws sso login --profile <span class="v" data-v="ssoprofile"></span></code>, then press <b>Check again</b>.</td></tr>
+      <tr><td>Blue box shows the wrong account</td><td>Auto-detect used your default credentials.</td><td>Choose <b>Select AWS profile</b> and pick <span class="v" data-v="profile"></span>.</td></tr>
+      <tr><td>"Bucket not available"</td><td>The name is taken by someone else (names are global), or you cannot reach it.</td><td>Change the name, e.g. add a suffix.</td></tr>
+      <tr><td>Bucket check result wiped right after picking a profile</td><td>The identity check landed after the bucket check.</td><td>Wait for the blue box, then click <b>Check</b> again.</td></tr>
+      <tr><td>Red <b>Not delegated: the parent already uses this name</b></td><td>The parent zone has records under that name. Nothing was changed.</td><td>Choose another zone name (e.g. <code>ws2.<i>your-domain</i></code>).</td></tr>
+      <tr><td><b>The zone is not delegated yet</b> / banner "… is not delegated yet"</td><td>The zone exists, but public DNS does not find it yet.</td><td>If you added the NS records, wait: the page re-checks every 20 s and carries on by itself. If not, delegate it from the box shown.</td></tr>
+      <tr><td><b>Domain Validation Failed</b></td><td>No public zone in this account serves the name or a parent of it.</td><td>Check the hostname spelling and that you are in the right account.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 4 -->
+<section class="step" id="s4" data-title="Review & Provision">
+  <header><div class="num">4</div><div><h2>Review &amp; Provision</h2><p class="sub">Last look before Terraform starts. Provision registers the environment and plans it.</p></div>
+    <div class="right"><span class="dur">1 min</span><label class="donebox"><input type="checkbox" data-step="s4"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Check <b>Review &amp; Confirm</b>: <b>AWS Account</b> <span class="v" data-v="account"></span>, <b>Portal</b> https://<span class="v" data-v="portal"></span>, <b>Keycloak</b> https://<span class="v" data-v="auth"></span>, <b>DNS</b> Route 53 zone <span class="v" data-v="zone"></span>, <b>State</b> s3://<span class="v" data-v="bucket"></span>/gen3-csoc/environments/<span class="v" data-v="name"></span>/, <b>Data bucket</b> none.</li>
+      <li><b>Certificate</b> reads "chosen after the infrastructure is up". That is expected: you choose it on the Certificate step.</li>
+      <li>Click <span class="btn-ui">Provision</span> (top right, where <i>Next</i> was).</li>
+    </ol>
+    <figure class="shot"><img src="../img/08-review.png" alt="Review and Confirm page" loading="lazy"><figcaption>Older screenshot: its Certificate line says "created by Terraform". The certificate is now chosen on its own step, after the apply.</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <p>"Rough Monthly Cost Estimate" of about <b>$340/month</b> (us-east-1 ballpark). After <b>Provision</b> the page moves to <b>Provision</b> and the banner says:</p>
+    <div class="banner"><b>Init in progress</b><span>Downloading the modules and providers. About 30 seconds.</span></div>
+    <p>Then, without you pressing anything, <b>Plan in progress</b>. See <a href="#s5">step 5</a>.</p>
+  </div>
+  <div class="panel" data-p="why">
+    <p>So far AWS has only the bucket and the zone. <b>Provision</b> writes an environment record for <span class="v" data-v="name"></span> into the state bucket's registry, the record every later screen is derived from. It then starts <code>terraform init</code>, and once that succeeds, <code>terraform plan</code>. Plan always initialises first: init is quick, and a changed module or a fresh work directory needs it.</p>
+    <p>The wizard has one state machine: the banner is computed from the record's settled status (<code>new</code>, <code>planned</code>, <code>applied</code>, <code>bootstrapped</code>, <code>installed</code>, <code>partial</code>, <code>destroyed</code>) and its last run (<code>running</code>, <code>succeeded</code>, <code>failed</code>, <code>stopped</code>, <code>lost</code>). A failed run never forgets what was settled before it, so every failure can be retried from where it stopped.</p>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td>Yellow <b>Configuration Incomplete</b> with a list</td><td>Something on Setup was not checked (identity, bucket, name, hostname, or fewer than 3 AZs).</td><td>Click <b>Back</b> and fix the item listed.</td></tr>
+      <tr><td>Red <b>Could not register the environment</b></td><td>Writing to the bucket failed, usually expired credentials.</td><td>Sign in again, then <b>Provision</b> again.</td></tr>
+      <tr><td>Banner <b>Nothing created yet</b></td><td>Saved, but no plan ran.</td><td>Press <b>Plan</b> in the banner.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 5 -->
+<section class="step" id="s5" data-title="Plan">
+  <header><div class="num">5</div><div><h2>Plan: read what will be built</h2><p class="sub">Init and plan run by themselves. The plan changes nothing in AWS.</p></div>
+    <div class="right"><span class="dur">≈ 1–2 min</span><label class="donebox"><input type="checkbox" data-step="s5"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Wait for "Working out the plan…" to turn into the <b>Plan review</b>. The badges show about <b>+100 to create</b> and nothing else.</li>
+      <li>Open the groups in the <b>List</b> view: networking, firewall rules, the cluster, IAM, DNS, storage, logging.</li>
+      <li>Switch to <b>Diagram</b>. Try:
+        <ul>
+          <li><b>Find a resource</b>: type <code class="cp">nat</code>, <code class="cp">eks clus</code> or <code class="cp">csoc api</code>. The diagram zooms to it.</li>
+          <li><b>Click a resource</b> to draw its connections (NAT, Route, IAM Role, DNS, Secured By) and open its details. <kbd>Esc</kbd> clears.</li>
+          <li><b>Click a service block</b>, or <b>Open all blocks</b>. "Security, Identity &amp; Compliance" holds one IAM role per controller.</li>
+        </ul></li>
+      <li>When you have looked, press <span class="btn-ui">Apply</span> in the banner and go on to <a href="#s6">step 6</a>.</li>
+    </ol>
+    <figure class="shot"><img src="../img/10-plan-list.png" alt="Plan review as a list" loading="lazy"><figcaption>Plan review, List view.</figcaption></figure>
+    <figure class="shot"><img src="../img/11-plan-diagram.png" alt="Plan review as a diagram" loading="lazy"><figcaption>Diagram view: the VPC, its zones and subnets, with account-wide services in blocks.</figcaption></figure>
+    <figure class="shot"><img src="../img/15-selected.png" alt="The NAT gateway selected, with its connections named" loading="lazy"><figcaption>A selected resource: its connections are drawn and named, and everything else dims.</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner"><b>Plan ready</b><span>Review what the plan creates, then apply it. Nothing exists in AWS yet. &nbsp;[Plan again] [Edit configuration] <b style="display:inline">[Apply]</b></span></div>
+    <p><b>The chips:</b></p>
+    <table><tbody>
+      <tr><td><code>+N to create</code> (green)</td><td>new resources. On a blank account this is the only chip.</td></tr>
+      <tr><td><code>~N to update</code> (yellow)</td><td>changed in place.</td></tr>
+      <tr><td><code>±N to replace</code> (orange)</td><td>destroyed and created again. Worth reading on a running CSOC.</td></tr>
+      <tr><td><code>−N to destroy</code> (red)</td><td>removed. An apply with any of these on existing infrastructure asks you to type the environment name.</td></tr>
+      <tr><td><code>+N</code> on a diagram card</td><td>settings folded into the resource they configure (policy attachments, rules).</td></tr>
+      <tr><td>"availability zone picked at apply"</td><td>the EKS subnets: the module shuffles zones at apply time, so the plan knows one per zone, not which is where.</td></tr>
+    </tbody></table>
+    <p>The dry run planned about 101 to add. Older notes say 133, from when the certificate and a data bucket were in Terraform.</p>
+    <div class="timer" data-t="plan" data-typ="2" data-hi="5" data-label="init + plan"></div>
+  </div>
+  <div class="panel" data-p="why">
+    <p><code>terraform init</code> downloads the AWS, Helm and kubectl providers and the gen3-terraform <code>vpc</code> and <code>eks</code> modules, and connects to the S3 backend (state locked with an S3 lock file, no DynamoDB). <code>terraform plan</code> compares the configuration with the empty state and lists everything it would create.</p>
+    <p>Only a <b>summary</b> reaches your browser: addresses, types, actions and names. The full plan holds your variable values and never leaves the runner. Apply uses exactly the plan you reviewed.</p>
+    <figure class="anim" data-dg="plan"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>init</b>: the runner downloads providers and the vpc / eks modules from GitHub.</li>
+        <li>It connects to the S3 backend: <code>s3://<span class="v" data-v="bucket"></span>/…/<span class="v" data-v="name"></span></code>, with an S3 lock file.</li>
+        <li><b>plan</b>: Terraform works out about 100 resources to create. Nothing in AWS changes.</li>
+        <li>The full plan file stays in the runner's work directory. Only a summary is extracted.</li>
+        <li>The browser draws the summary as the List and the Diagram.</li>
+      </ol></figure>
+    <details class="more"><summary>Closed the tab? Nothing is lost.</summary>
+      <p>Open <code>/bootstrap</code> again, pick the same profile and bucket, and click <b>Check</b>. The bucket lists its environments. Click <b>Resume</b> on yours.</p>
+      <figure class="shot"><img src="../img/12-resume.png" alt="Environments in this bucket, with Resume" loading="lazy"><figcaption>Resume from the bucket's list of environments.</figcaption></figure></details>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td><b>The plan failed</b> / <b>The init failed</b></td><td>Nothing in AWS changed. The log below (with its <code>Error:</code> lines pulled out) says why.</td><td><b>Retry plan</b>, or <b>Edit configuration</b>.</td></tr>
+      <tr><td><b>… was stopped</b></td><td>Someone pressed <b>Stop this run</b>.</td><td>Retry that step.</td></tr>
+      <tr><td><b>…'s result is unknown</b></td><td>The API restarted while it ran, so its end was not recorded.</td><td>Retry that step.</td></tr>
+      <tr><td>Red <b>The plan did not start</b> (SSO)</td><td>Expired session. Nothing ran.</td><td><code class="cp">aws sso login --profile <span class="v" data-v="ssoprofile"></span></code>, then retry.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 6 -->
+<section class="step" id="s6" data-title="Apply">
+  <header><div class="num">6</div><div><h2>Apply: Terraform builds the infrastructure</h2><p class="sub">The long one. Watch it in the list and on the diagram, and read along here.</p></div>
+    <div class="right"><span class="dur">≈ 20–25 min</span><label class="donebox"><input type="checkbox" data-step="s6"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Make sure your SSO session has at least 45 minutes left. If it has less, the wizard asks you to sign in again and shows the command.</li>
+      <li>Press <span class="btn-ui">Apply</span> in the banner. Start the timer below.</li>
+      <li>Watch the plan review turn into progress: every resource shows waiting, in progress (with how long), done or failed, and a bar shows the whole.</li>
+      <li>Read <b>What's happening</b> while you wait. You can close the tab and come back: the wizard follows a run that is still going and never starts a second one.</li>
+    </ol>
+    <div class="timer" data-t="apply" data-typ="22" data-hi="32" data-label="apply"></div>
+    <figure class="shot"><img src="../img/20-applying-list.png" alt="Apply progress in the list" loading="lazy"><figcaption>Applying: per-group "x/y done" chips and an overall bar.</figcaption></figure>
+    <figure class="shot"><img src="../img/21-applying-diagram.png" alt="Apply progress on the diagram" loading="lazy"><figcaption>The same progress on the diagram.</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner"><b>Apply in progress</b><span>Creating the infrastructure. About 20 to 25 minutes; you can close this page and come back. &nbsp;[Stop this run]</span></div>
+    <p>Roughly: VPC, NAT gateway and Squid in the first few minutes. Then the EKS control plane, about 10 minutes of apparently nothing. Then Karpenter, nodes and the EBS CSI add-on. When it ends:</p>
+    <div class="banner"><b>Infrastructure up; the CSOC needs a certificate</b><span>Request a public certificate from ACM, import one, or use one the account already has. The install serves it on the load balancer.</span></div>
+    <p>The page moves to <b>Certificate</b>. If you are on an earlier step, the banner offers <span class="btn-ui">Continue to Certificate</span>.</p>
+  </div>
+  <div class="panel" data-p="why">
+    <p>Terraform builds a small, locked-down network and a Kubernetes cluster with no fixed worker nodes. Step through the layers:</p>
+    <figure class="anim" data-dg="apply"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>VPC</b> across 3 availability zones (172.24.16.0/20): public and private subnets, route tables, flow logs. Plus <b>int_services</b>, a small subnet routed through the NAT gateway for the Squid lambda.</li>
+        <li><b>Internet + NAT gateway</b> in the public subnet. A private Route 53 zone and a KMS key are created alongside.</li>
+        <li><b>Squid</b>, an autoscaling egress proxy. The cluster's private subnets have no internet route of their own. Everything they fetch goes through Squid's allowlist.</li>
+        <li><b>gw_checks lambda</b> (in int_services, out via NAT): finds a healthy Squid, points the private subnets' default route at it, and names it <code>cloud-proxy.internal.io</code>.</li>
+        <li><b>EKS control plane</b> (v1.33), private and public API endpoint. This is the ≈10-minute wait.</li>
+        <li><b>IAM</b>: the cluster's OIDC provider, and IRSA roles for the load balancer controller, External Secrets, the EBS CSI driver, the CSOC API and external-dns. Each pod gets AWS rights only through its own role.</li>
+        <li><b>Karpenter</b> runs on <b>Fargate</b>, so it needs no nodes itself. Its image is pulled through Squid.</li>
+        <li>Karpenter sees pods with nowhere to run and <b>starts EC2 nodes</b> (Amazon Linux 2023, on-demand c/m/t types for a CSOC).</li>
+        <li>The <b>EBS CSI driver</b> add-on comes up on those nodes, so volumes (Keycloak's Postgres, the CSOC API) can be created. Terraform waits for it last.</li>
+      </ol></figure>
+    <p>The certificate is <b>not</b> Terraform's (<code>create_certificate = false</code>). The wizard handles it next, the way the ACM console does. The Terraform lives in gen3-terraform's <code>examples/csoc</code> (<code>main.tf</code> for vpc + eks, <code>bootstrap.tf</code> for IRSA, EBS CSI and EKS access).</p>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td><b>The apply failed</b> / <b>Part of the infrastructure exists</b></td><td>Status <code>partial</code>. The list says which resource failed and why. Terraform keeps what it created.</td><td>Fix the cause, then <b>Plan again</b> (it shows only what is left), then <b>Apply</b>. Or <b>Tear down</b>.</td></tr>
+      <tr><td>Before it starts: "sign in again" prompt</td><td>Short SSO guard: under 45 minutes left on the session.</td><td>Run the <code>aws sso login</code> shown, then Apply.</td></tr>
+      <tr><td>Typed confirmation asked</td><td>The plan destroys or replaces existing infrastructure.</td><td>Read the plan. Type the name only if you mean it.</td></tr>
+      <tr><td>The tab reloaded mid-apply</td><td>Nothing is lost.</td><td>Open <code>/bootstrap</code>: it returns to the step and follows the run.</td></tr>
+      <tr><td>Timer red, nothing moving for 15+ min after EKS</td><td>Often Karpenter or nodes not getting egress through Squid.</td><td>Open the run log, then ask a helper. Do not press Stop unless asked.</td></tr>
+    </tbody></table>
+    <figure class="shot"><img src="../img/18-apply-failed.png" alt="An apply failure in the plan review" loading="lazy"><figcaption>A failed apply names each failed resource and its error.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 7 -->
+<section class="step" id="s7" data-title="Certificate & DNS">
+  <header><div class="num">7</div><div><h2>Certificate &amp; DNS</h2><p class="sub">An ACM certificate for the portal and Keycloak names, validated through your zone.</p></div>
+    <div class="right"><span class="dur">≈ 2–5 min</span><label class="donebox"><input type="checkbox" data-step="s7"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Keep <b>Request a public certificate</b> selected (the others are <i>Import a certificate</i> and <i>Use an existing certificate</i>).</li>
+      <li><span class="field">Fully qualified domain names</span> is filled in with <span class="v" data-v="portal"></span> and <span class="v" data-v="auth"></span>. Leave <span class="field">Validation method</span> on <b>DNS validation (recommended)</b> and <span class="field">Key algorithm</span> on <b>RSA 2048</b>.</li>
+      <li>Click <span class="btn-ui">Request</span>.</li>
+      <li>In Route 53 mode there is nothing more to press: the wizard writes the validation records into your zone, checks them every 10 seconds, and moves on to <b>Install</b> once ACM issues the certificate.</li>
+    </ol>
+    <div class="timer" data-t="cert" data-typ="4" data-hi="12" data-label="validation"></div>
+    <p class="note">If you chose <b>I manage DNS myself</b>: copy the CNAME name and value pairs from the table into your DNS. The banner shows <b>Check now</b>, and the page also checks every 10 seconds by itself.</p>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner"><b>ACM is preparing the validation records</b><span>They appear below within a few seconds.</span></div>
+    <div class="banner"><b>Validating the certificate</b><span>Writing the validation records to Route 53 → Records in Route 53; waiting for public DNS to answer → Records in Route 53 and public DNS; waiting for ACM to issue. Usually a few minutes; this page checks every 10 seconds and moves on to Install by itself.</span></div>
+    <p>The table shows each name with <i>in <span class="v" data-v="zone"></span></i>, <i>Seen in public DNS: yes</i>, and finally <i>validated</i>. Then "Issued. The install serves it on the CSOC's load balancer." and the banner becomes:</p>
+    <div class="banner"><b>Cluster up, CSOC not installed</b><span>Fill in who may reach the CSOC and the admin password, then bootstrap it.</span></div>
+  </div>
+  <div class="panel" data-p="why">
+    <p>ACM issues a certificate only after it sees proof that you control each name: one CNAME record per name, with a value ACM chose. Because your zone is in this account and delegated, the wizard writes the records itself. ACM then looks them up through public DNS, exactly like any resolver would. The records stay, so ACM can renew the certificate automatically.</p>
+    <figure class="anim" data-dg="cert"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li>The wizard requests a certificate for the two hostnames. ACM marks it <code>PENDING_VALIDATION</code>.</li>
+        <li>ACM publishes one validation CNAME per name (<code>_abc123.portal…</code> → <code>_xyz.acm-validations.aws</code>).</li>
+        <li>The wizard writes those records into your Route 53 zone.</li>
+        <li>Public DNS answers for them, through the delegation you set up on Setup.</li>
+        <li>ACM finds every record and marks the certificate <code>ISSUED</code>. The wizard moves on to Install.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td>Red <b>Could not write the validation records</b></td><td>Writing to Route 53 failed, usually credentials.</td><td><b>Try again</b> (sign in first if the session expired).</td></tr>
+      <tr><td><b>Create the validation records in your DNS</b></td><td>DNS-yourself mode. ACM waits for you.</td><td>Add the CNAMEs, then <b>Check now</b>.</td></tr>
+      <tr><td><b>The certificate is failed / expired</b></td><td>ACM will not issue it.</td><td><b>Use a different certificate</b>, or <b>Tear down</b>.</td></tr>
+      <tr><td><b>The certificate does not cover <i>host</i></b></td><td>The hostnames were edited after it was chosen.</td><td><b>Use a different certificate</b>.</td></tr>
+      <tr><td>Stuck on "waiting for public DNS" for more than 10 min</td><td>The zone is not delegated, or your resolver cached a "no such name".</td><td>Check the banner for a zone warning. See <a href="#s3">step 3</a>.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 8 -->
+<section class="step" id="s8" data-title="Install: Bootstrap CSOC">
+  <header><div class="num">8</div><div><h2>Install: Bootstrap CSOC</h2><p class="sub">Who may reach it, the admin password, then the controllers, Keycloak and the portal go in.</p></div>
+    <div class="right"><span class="dur">≈ 5–6 min</span><label class="donebox"><input type="checkbox" data-step="s8"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li><b>1. How to deploy</b>: <b>Directly, from this wizard</b>. Helm installs the same configuration ArgoCD would, with no repo. (<i>With a GitOps repo</i> needs a GitHub App and a repo. It is optional and not used today.)</li>
+      <li><span class="field">Allowed addresses</span>: your current IP is filled in as <code>x.x.x.x/32</code>. Add your team's or VPN's ranges if you need them. Only these can reach the portal, Keycloak and the agent endpoint. The cluster's own egress IP is added automatically.</li>
+      <li><span class="field">Admin email (optional)</span>: <code class="cp"><span class="v" data-v="email"></span></code>. Give it: without it Keycloak asks for email, first and last name at the first login, and you need it for the commons' user.yaml in step 12.</li>
+      <li>Click <span class="btn-ui light">Generate password</span>. It fills <span class="field">Admin password</span> and <span class="field">Confirm admin password</span>.</li>
+      <li><b>Save the password now</b>, in your password manager. It is for the CSOC user <code>admin</code>, goes to the cluster once, and is not stored by the wizard. (Lost it? <b>Reset admin password…</b> on Done sets a new one.)</li>
+      <li>Leave the images empty (the default is <code>quay.io/cdis/csoc-api:master</code> and <code>csoc-frontend:master</code>) unless the organizer gives you a tag.</li>
+      <li>Press <span class="btn-ui">Bootstrap CSOC</span> in the banner. Start the timer.</li>
+    </ol>
+    <div class="timer" data-t="boot" data-typ="6" data-hi="12" data-label="bootstrap"></div>
+    <figure class="shot"><img src="../img/22-install.png" alt="Install CSOC form: how to deploy, allowed addresses, admin password" loading="lazy"><figcaption>The Install CSOC form.</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner"><b>Bootstrap in progress</b><span>Installing External Secrets, the load balancer controller, Keycloak and the portal. About 5 minutes.</span></div>
+    <p>In the log, one <code>=== … ===</code> heading per stage (Connecting to cluster, Secrets Manager, Egress IP, First admin password, External Secrets Operator, AWS Load Balancer Controller, external-dns, CloudNativePG, Keycloak operator, CSOC manifests, CSOC portal), and finally <code>=== CSOC is applied ===</code>. Then:</p>
+    <div class="banner"><b>Bootstrapped; ready to finish</b><span>Finishing waits for Keycloak and the portal, adds the egress IP to the allowlist and creates the DNS records. &nbsp;<b style="display:inline">[Finish install]</b></span></div>
+  </div>
+  <div class="panel" data-p="why">
+    <p>The bootstrap runs <code>install-csoc.sh</code> in a runner container, with <code>direct.sh</code> for the no-GitOps path. Each Helm release gets the name and namespace its ArgoCD Application would have, so the CSOC can move to GitOps later without a reinstall.</p>
+    <figure class="anim" data-dg="install"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>Connect</b>: <code>aws eks update-kubeconfig</code>, then wait for a Ready node (Karpenter may still be starting one).</li>
+        <li><b>Secrets Manager</b> under <code>gen3-csoc/<span class="v" data-v="name"></span>/</code>: Keycloak's admin login, the portal's client secret, NextAuth secrets. Generated only if absent, so a re-run keeps them.</li>
+        <li><b>Egress IP</b>: a busybox pod fetches checkip.amazonaws.com. The answer is Squid's public IP, which gets added to the allowlist, because the portal calls Keycloak at its public hostname.</li>
+        <li><b>First admin password</b>, as the <code>csoc-admin-bootstrap</code> Secret the realm import reads. Finish deletes it.</li>
+        <li><b>External Secrets Operator</b>: copies the Secrets Manager values into Kubernetes Secrets, through its IRSA role.</li>
+        <li><b>AWS Load Balancer Controller</b> (kube-system): turns Ingresses into ALBs.</li>
+        <li><b>external-dns</b>: will write each commons' DNS name into your zone, and only records it owns (never the portal or Keycloak names).</li>
+        <li><b>CloudNativePG</b>: the Postgres operator behind Keycloak's database.</li>
+        <li><b>Keycloak operator</b>, in the <code>csoc</code> namespace.</li>
+        <li><b>CSOC manifests</b>: storage class, ClusterSecretStore, ExternalSecrets (waited for), then Keycloak and the <code>csoc-realm</code> import.</li>
+        <li><b>CSOC portal</b> (Helm release <code>csoc</code>): frontend, API, and its gRPC endpoint for agents. Its Ingress makes the load balancer controller build an internet-facing ALB, limited to your allowlist.</li>
+      </ol></figure>
+    <p><b>Direct vs GitOps.</b> GitOps installs ESO and ArgoCD plus a root Application instead, opens a pull request with the CSOC's configuration, and the banner waits for you to merge it ("Waiting for pull request #N to be merged", checked every 15 seconds). After that, every change to the CSOC is a pull request.</p>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td><b>The bootstrap failed</b></td><td>Still <code>applied</code>. The cluster is up. The log says what went wrong.</td><td><b>Bootstrap again</b> (safe to repeat; it needs the form, so re-enter the password).</td></tr>
+      <tr><td>Button disabled: "Needs at least one allowed address and a confirmed admin password"</td><td>The form is incomplete.</td><td>Fill in the allowlist and both password fields.</td></tr>
+      <tr><td>"sign in again" before it starts</td><td>Under 15 minutes left on your SSO session.</td><td>Run the command shown.</td></tr>
+      <tr><td>Log: <code>WARNING: could not detect the cluster's egress IP</code></td><td>The probe pod could not start in time on a new node.</td><td>Login will fail until it is on the allowlist. <b>Bootstrap again</b>.</td></tr>
+      <tr><td>Log: <code>another operation is in progress</code></td><td>A stopped run left a Helm release stuck.</td><td>Bootstrap again: the install now rolls back or removes a stuck release first.</td></tr>
+      <tr><td><b>Waiting for pull request #N to be merged</b></td><td>GitOps mode only.</td><td><b>Open the pull request</b>, merge it.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 9 -->
+<section class="step" id="s9" data-title="Finish install">
+  <header><div class="num">9</div><div><h2>Finish install</h2><p class="sub">Allowlist with the egress IP, Keycloak ready, realm imported, DNS pointed at the load balancer.</p></div>
+    <div class="right"><span class="dur">≈ 5 min</span><label class="donebox"><input type="checkbox" data-step="s9"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Press <span class="btn-ui">Finish install</span> in the banner. Start the timer.</li>
+      <li>Wait for <code>=== CSOC is installed ===</code> in the log.</li>
+    </ol>
+    <div class="timer" data-t="finish" data-typ="5" data-hi="15" data-label="finish"></div>
+    <div class="cmdwrap"><pre class="code">=== CSOC is installed ===
+Portal:   https://<span class="v" data-v="portal"></span>  (user: admin)
+Keycloak: https://<span class="v" data-v="auth"></span></pre></div>
+  </div>
+  <div class="panel" data-p="see">
+    <div class="banner"><b>Finish in progress</b><span>Waiting for Keycloak and the portal, then creating the DNS records. About 5 minutes.</span></div>
+    <div class="banner"><b>CSOC installed; waiting for DNS</b><span>The portal link appears only once public DNS answers for both names (checked every 10 seconds).</span></div>
+    <div class="banner green"><b>CSOC is ready</b><span>Sign in as admin with the password you set. DNS can take a few minutes. &nbsp;<b style="display:inline">[Open the CSOC]</b></span></div>
+  </div>
+  <div class="panel" data-p="why">
+    <figure class="anim" data-dg="finish"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>Allowlist</b>: Keycloak's and the portal's Ingresses are applied again, now with your addresses plus the egress IP the bootstrap found.</li>
+        <li>It waits for Keycloak to be Ready, and for the portal's Helm release to finish rolling out.</li>
+        <li><b>Realm</b>: once the <code>csoc-realm</code> import is Done, the first admin password Secret is deleted from the cluster. From now on, Keycloak alone holds it.</li>
+        <li><b>Load balancer</b>: it waits for the ALB the controller built and reads its hostname.</li>
+        <li><b>DNS</b>: it UPSERTs two CNAMEs (TTL 60) in your zone: <span class="v" data-v="portal"></span> and <span class="v" data-v="auth"></span> → the ALB.</li>
+        <li>Public DNS answers, and the Done step shows the portal link.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td><b>The finish failed</b></td><td>Still <code>bootstrapped</code>. Finishing again is safe.</td><td><b>Finish again</b>. If the log points at the install, use <b>Bootstrap again</b> (in Advanced).</td></tr>
+      <tr><td>Log: <code>the ALB was not provisioned</code></td><td>The load balancer controller could not build it (often the certificate or subnets).</td><td>Ask a helper. The log names the controller's logs to check.</td></tr>
+      <tr><td><b>CSOC installed; waiting for DNS</b> for a long time</td><td>Your resolver cached "no such name" from an earlier lookup (venue or campus Wi-Fi).</td><td>Wait a minute, or set your laptop's DNS to <code>1.1.1.1</code>.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 10 -->
+<section class="step" id="s10" data-title="Sign in to the CSOC">
+  <header><div class="num">10</div><div><h2>Sign in to the CSOC</h2><p class="sub">Keycloak login as <code>admin</code>. From here on you manage Gen3 from the CSOC.</p></div>
+    <div class="right"><span class="dur">1 min</span><label class="donebox"><input type="checkbox" data-step="s10"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>On <b>Done</b>, press <span class="btn-ui">Open the CSOC</span>, or open <code class="cp">https://<span class="v" data-v="portal"></span></code></li>
+      <li>The portal sends you to Keycloak (<b>CSOC-REALM</b>). Username <code class="cp">admin</code>, the password you saved. Click <b>Sign In</b>.</li>
+      <li>Back in the wizard, the <b>Admin account</b> panel shows the username and email. <span class="btn-ui light">Reset admin password…</span> generates a new password. Copy it, then press <b>Set this password</b>.</li>
+    </ol>
+    <figure class="shot"><img src="../img/23-portal.png" alt="Keycloak CSOC-REALM sign-in page" loading="lazy"><figcaption>Keycloak's sign-in page for the CSOC realm.</figcaption></figure>
+    <figure class="shot"><img src="../img/24-portal-signed-in.png" alt="Signed in to the CSOC portal" loading="lazy"><figcaption>Signed in. "Connected to AWS" means the portal uses its own IAM role (IRSA).</figcaption></figure>
+  </div>
+  <div class="panel" data-p="see">
+    <p>The CSOC portal, signed in as admin. A sign-in survives 8 hours idle and lasts up to 12 hours (CSOC realms no longer use Keycloak's 30-minute default).</p>
+  </div>
+  <div class="panel" data-p="why">
+    <figure class="anim" data-dg="signin"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li>Your browser resolves <span class="v" data-v="portal"></span> to the ALB. The ALB lets your IP in because it is on the allowlist.</li>
+        <li>The portal has no session for you, so it redirects you to Keycloak at <span class="v" data-v="auth"></span>.</li>
+        <li>You sign in to the <code>csoc-realm</code>. Keycloak's data lives in Postgres run by CloudNativePG.</li>
+        <li>Keycloak redirects back with a code. The portal exchanges it for tokens by calling Keycloak's public hostname from inside the cluster, which is why the egress IP must be on the allowlist.</li>
+        <li>The portal's API uses its IRSA role for AWS ("Connected to AWS") and reads the same state bucket, so it already knows this environment's history.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td><code>NXDOMAIN</code> / "site can't be reached"</td><td>DNS is new, or your resolver cached the miss.</td><td>Wait a minute, or set DNS to <code>1.1.1.1</code>.</td></tr>
+      <tr><td>403 / connection refused at the ALB</td><td>Your IP is not on the allowlist (new network, VPN).</td><td>Run <b>Bootstrap again</b> with your current IP added, then <b>Finish again</b>.</td></tr>
+      <tr><td>Keycloak asks for email, first and last name</td><td>No admin email was given.</td><td>Fill them in once.</td></tr>
+      <tr><td>Login loops or errors after Keycloak</td><td>The egress IP changed (Squid failover), so in-cluster calls to Keycloak are refused.</td><td>Ask a helper. Bootstrap + Finish again re-detects it.</td></tr>
+      <tr><td>Forgot the password</td><td></td><td><b>Reset admin password…</b> on the wizard's Done step.</td></tr>
+      <tr><td>Signed out mid-session (older install)</td><td>The realm had a 30-minute idle timeout.</td><td>Load the Done step once: it extends the session settings.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 11 -->
+<section class="step" id="s11" data-title="Connect the CSOC's own cluster">
+  <header><div class="num">11</div><div><h2>Connect the CSOC's own cluster (Deploy Agent)</h2><p class="sub">The CSOC deploys commons through an agent in each cluster. First, its own.</p></div>
+    <div class="right"><span class="dur">≈ 2 min</span><label class="donebox"><input type="checkbox" data-step="s11"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>The portal opens its onboarding wizard, <b>Welcome to CSOC</b> (Welcome · Setup · Deploy · ArgoCD · Monitor · Alloy · Verify · Done). Click <span class="btn-ui">Get Started</span>.</li>
+      <li><b>Configure Your Agent</b>: <span class="field">Agent Name</span> is auto-filled (e.g. <code>local-agent</code>). Keep it, and note it: it is the <b>Cluster</b> you pick in step 12.</li>
+      <li>Click <span class="btn-ui" style="background:#2f9e44">Deploy Agent</span>. Wait for "Resources applied to cluster" and the agent to connect (30–60 s while the image pulls).</li>
+      <li>The commons only needs the agent. The ArgoCD, Monitor and Alloy steps are optional: follow the presenter (for monitoring, <b>Skip Monitoring Stack</b> or <b>Lightweight</b>, "Best for workshops").</li>
+      <li>At the end, <b>You're Ready to Deploy Gen3</b> → <b>Deploy a new Gen3 instance</b>. You can also go straight to <code class="cp">https://<span class="v" data-v="portal"></span>/helm/gen3/deploy</code></li>
+    </ol>
+  </div>
+  <div class="panel" data-p="see">
+    <p>"Installing Agent" → "Resources applied to cluster" → the agent shows as connected, under the name you gave it. The portal lists it as a cluster.</p>
+  </div>
+  <div class="panel" data-p="why">
+    <p>The CSOC never talks to a cluster's Kubernetes API directly. Each cluster runs an <b>agent</b> that dials <b>out</b> to the CSOC's gRPC endpoint and keeps the connection open. The CSOC sends it commands (Helm installs, status) over that connection. Here the agent is local, so it uses the in-cluster address <code>csoc-grpc.csoc.svc:50051</code>. An agent in another account would use the internal NLB, over VPC peering.</p>
+    <figure class="anim" data-dg="agent"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li>You press <b>Deploy Agent</b>. The portal calls the CSOC API: <code>POST /api/agents/local</code>.</li>
+        <li>The API issues the agent a client certificate from the CSOC's own CA and renders its manifest.</li>
+        <li>It applies the manifest to its own cluster: a Deployment, its ServiceAccount and the certificate Secret.</li>
+        <li>The agent pod starts and dials <code>csoc-grpc.csoc.svc:50051</code>. Both sides present certificates (mutual TLS).</li>
+        <li>The agent registers. The portal now lists the cluster and can send it work.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td>"Waiting for agent pod to start…" for minutes</td><td>A node is being started, or the image is still pulling through Squid.</td><td>Press the retry button that appears. Allow 2–3 minutes on a fresh cluster.</td></tr>
+      <tr><td><b>Connection Failed</b> on Welcome</td><td>The portal cannot reach its API.</td><td>Reload. If it persists, ask a helper.</td></tr>
+      <tr><td>The portal looks different from these words</td><td>The in-cluster portal runs <code>csoc-*:master</code> images, which can lag this guide.</td><td>Follow the screen's labels: the steps are the same.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 12 -->
+<section class="step" id="s12" data-title="Deploy a Gen3 commons">
+  <header><div class="num">12</div><div><h2>Deploy a Gen3 commons</h2><p class="sub">The portal's Gen3 Deployment Wizard: Destination, Globals, Hostname, Database, Services, Auth, Config, Deploy.</p></div>
+    <div class="right"><span class="dur">≈ 10 min</span><label class="donebox"><input type="checkbox" data-step="s12"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <p>Open <b>Deploy a new Gen3 instance</b> (<code>/helm/gen3/deploy</code>). Use <b>Next</b> at the bottom of each step.</p>
+    <div class="tw"><table><thead><tr><th>Step</th><th>Field</th><th>Value</th></tr></thead><tbody>
+      <tr><td rowspan="3"><b>Destination</b><br><small>Cluster &amp; namespace</small></td><td>Cluster</td><td>your agent from step 11 (e.g. <code>local-agent</code>)</td></tr>
+      <tr><td>Release Name</td><td><code class="cp">commons-a</code></td></tr>
+      <tr><td>Namespace</td><td>leave it: it defaults to the release name. Leave the Helm repo (<code>https://helm.gen3.org</code>, chart <code>gen3</code>) as it is.</td></tr>
+      <tr><td rowspan="2"><b>Globals</b><br><small>Core settings</small></td><td>Target cloud platform</td><td><b>Amazon Web Services (AWS)</b>, Region <code class="cp"><span class="v" data-v="region"></span></code>, <b>AWS Enabled (controls ingress annotations)</b> on, so the ingress becomes an ALB</td></tr>
+      <tr><td>Everything else</td><td>defaults (the presenter will say if anything differs)</td></tr>
+      <tr><td rowspan="3"><b>Hostname</b><br><small>TLS &amp; domain</small></td><td>Hostname</td><td><code class="cp"><span class="v" data-v="commons"></span></code> (if the form shows "Subdomain for *.…", type <code>commons-a</code>)</td></tr>
+      <tr><td>Certificate Source</td><td><b>AWS ACM</b></td></tr>
+      <tr><td>Certificate</td><td>Click <b>Request a certificate for <span class="v" data-v="commons"></span></b>. The CSOC writes its validation records into your zone. Wait for the badge to go from "waiting for ACM to validate" to issued: "It is selected for this commons."</td></tr>
+      <tr><td><b>Database</b></td><td>Local or external</td><td><b>Local</b> (a Postgres pod in the namespace). Keep <b>Automatically Create Databases</b> on.</td></tr>
+      <tr><td><b>Services</b></td><td>Modules</td><td>defaults: core services and the frontend</td></tr>
+      <tr><td rowspan="3"><b>Auth</b><br><small>OIDC / login</small></td><td>Log in through this CSOC</td><td>Click <span class="btn-ui">Use CSOC login</span>. It turns into <b>Connected</b>: "Fence uses fence-commons-a; the Generic OIDC settings below are filled in."</td></tr>
+      <tr><td>Authorization Source</td><td><b>Custom user.yaml (inline)</b></td></tr>
+      <tr><td>Custom Role Definitions (YAML format)</td><td>paste the user.yaml below</td></tr>
+      <tr><td><b>Config</b></td><td>Per-service detail</td><td>defaults</td></tr>
+      <tr><td><b>Deploy</b></td><td>Review &amp; launch</td><td>Check the summary, click <span class="btn-ui">Deploy Gen3</span>. Start the timer.</td></tr>
+    </tbody></table></div>
+    <h3>A minimal user.yaml that makes you admin</h3>
+    <p>Users are known by email, as Keycloak passes it to Fence. Use the CSOC admin email from step 8: <span class="v" data-v="email"></span>.</p>
+    <div class="cmdwrap"><pre class="code yaml" id="useryaml">authz:
+  anonymous_policies: []
+  all_users_policies: []
+  groups:
+    - name: administrators
+      policies:
+        - all_programs_admin
+        - services.sheepdog-admin
+        - indexd_admin
+        - data_upload
+      users:
+        - <span class="v" data-v="email"></span>
+  resources:
+    - name: data_file
+    - name: programs
+    - name: services
+      subresources:
+        - name: sheepdog
+          subresources:
+            - name: submission
+              subresources:
+                - name: program
+                - name: project
+        - name: indexd
+          subresources:
+            - name: admin
+  policies:
+    - id: all_programs_admin
+      resource_paths: [/programs]
+      role_ids: [admin]
+    - id: services.sheepdog-admin
+      resource_paths:
+        - /services/sheepdog/submission/program
+        - /services/sheepdog/submission/project
+      role_ids: [sheepdog_admin]
+    - id: indexd_admin
+      resource_paths: [/services/indexd/admin]
+      role_ids: [indexd_admin]
+    - id: data_upload
+      resource_paths: [/data_file]
+      role_ids: [file_uploader]
+  roles:
+    - id: admin
+      permissions:
+        - id: admin
+          action: {service: "*", method: "*"}
+    - id: sheepdog_admin
+      permissions:
+        - id: sheepdog_admin_action
+          action: {service: sheepdog, method: "*"}
+    - id: indexd_admin
+      permissions:
+        - id: indexd_admin
+          action: {service: indexd, method: "*"}
+    - id: file_uploader
+      permissions:
+        - id: file_upload
+          action: {service: fence, method: file_upload}
+
+users:
+  <span class="v" data-v="email"></span>:
+    admin: true</pre></div>
+    <div class="timer" data-t="gen3" data-typ="10" data-hi="20" data-label="Gen3 deploy"></div>
+    <p>When it says <b>Gen3 Deployed Successfully!</b>, open the link under "Access your instance at:" (<code class="cp">https://<span class="v" data-v="commons"></span></code>), click Login, and sign in through the CSOC's Keycloak as admin.</p>
+  </div>
+  <div class="panel" data-p="see">
+    <p><b>Deploying Gen3</b>: "Sending configuration to <i>cluster</i> — installing commons-a into namespace commons-a…", then a grid of Deployments filling up with ready/total counts. After about 10 minutes, <b>Gen3 Deployed Successfully!</b> with the status, chart and revision, and buttons <b>Go to Dashboard</b> and <b>Deploy Another</b>.</p>
+    <p>If the deploy takes longer, you see <b>Deployment Timeout</b> ("Deployment is still in progress. Check your cluster for status."). That is not a failure: watch the Deployments in the dashboard.</p>
+  </div>
+  <div class="panel" data-p="why">
+    <figure class="anim" data-dg="gen3"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>Request a certificate</b>: the CSOC API asks ACM for <span class="v" data-v="commons"></span> and writes the validation records into your zone (its IRSA role allows that).</li>
+        <li><b>Use CSOC login</b>: the CSOC creates a Keycloak client <code>fence-commons-a</code> in the CSOC realm, and the form fills Fence's generic OIDC settings with it.</li>
+        <li><b>Deploy Gen3</b>: the portal sends only the values you changed to the API: <code>POST /api/agent/&lt;cluster&gt;/helm/install</code>.</li>
+        <li>The API forwards the install to the agent over the open gRPC connection (mutual TLS).</li>
+        <li>The agent runs <code>helm install commons-a gen3</code> from helm.gen3.org into namespace <code>commons-a</code>.</li>
+        <li>Gen3's pods start: Postgres, Fence, Arborist, Indexd, Sheepdog, Peregrine, the portal and revproxy. Karpenter adds nodes if they do not fit.</li>
+        <li>Its Ingress makes the load balancer controller create an ALB with the ACM certificate.</li>
+        <li>external-dns sees the Ingress and writes <span class="v" data-v="commons"></span> → that ALB into your zone, with a TXT record that marks it as its own.</li>
+        <li>You open the commons, log in, and Fence sends you to the CSOC's Keycloak. user.yaml makes your email admin.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead><tbody>
+      <tr><td>Load Warning: hostname is localhost</td><td>The Hostname step was skipped.</td><td>Go back to Hostname and set <span class="v" data-v="commons"></span>.</td></tr>
+      <tr><td>Certificate badge stays "waiting for ACM to validate"</td><td>Validation records not in public DNS yet.</td><td>Give it a few minutes. You can go on and come back to select it.</td></tr>
+      <tr><td><b>Deployment Failed</b></td><td>The agent or Helm returned an error (shown).</td><td>Read the message. Often a values typo in the YAML, or the agent is not connected.</td></tr>
+      <tr><td>Commons URL does not resolve</td><td>external-dns has not written it yet (needs the ALB first), or your DNS cache.</td><td>Wait 1–2 minutes, or set DNS to <code>1.1.1.1</code>.</td></tr>
+      <tr><td>Logged in but no access</td><td>user.yaml email does not match the Keycloak email.</td><td>Edit the deployment and fix the email in user.yaml.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 13 -->
+<section class="step" id="s13" data-title="Tear down">
+  <header><div class="num">13</div><div><h2>Tear down</h2><p class="sub">Back to a blank account. Uninstall, destroy, then optionally the zone and the bucket.</p></div>
+    <div class="right"><span class="dur">≈ 25–30 min</span><label class="donebox"><input type="checkbox" data-step="s13"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do">
+    <ol class="do">
+      <li>Back in the wizard (<code>localhost:3000/bootstrap</code>), on <b>Done</b>, press <span class="btn-ui red">Tear down</span> in the banner. (Or open <b>Advanced</b> under the run log → <b>Tear down…</b>.)</li>
+      <li>Leave <b>Force: don't wait for anything graceful</b> ticked. It is right for a workshop environment.</li>
+      <li>Tick <b>Also delete the hosted zone and its delegation</b>. Set <span class="field">Parent zone reached with</span> to <b>Profile: <span class="v" data-v="parent"></span></b> (as on Setup), or <i>Nothing: I remove the NS records myself</i>.</li>
+      <li>Optional, last: <b>Also empty and delete the state bucket</b>. It goes only if every environment in it is destroyed. Leave it unticked if you may come back.</li>
+      <li>Type <code class="cp"><span class="v" data-v="name"></span></code> in <span class="field">Type … to confirm</span>, press <span class="btn-ui red">Tear down</span>, and start the timer.</li>
+    </ol>
+    <div class="timer" data-t="teardown" data-typ="28" data-hi="40" data-label="teardown"></div>
+    <p class="note">The commons is removed with the cluster: the uninstall deletes every namespace but the cluster's own. You do not need to remove commons-a first. Its ACM certificate (requested from the portal) is not deleted by the teardown. It costs nothing, but you can delete it in the ACM console.</p>
+  </div>
+  <div class="panel" data-p="see">
+    <p>The teardown panel lists the steps, each with its state, and each starts only once the one before it has succeeded:</p>
+    <ol>
+      <li><b>Uninstall the CSOC</b>: load balancers, volumes, Karpenter nodes, DNS records and secrets the install added outside Terraform. A few minutes.</li>
+      <li><b>Destroy the infrastructure</b>: <code>terraform destroy</code>, with "N destroyed, M in progress". 20 to 30 minutes.</li>
+      <li><b>Delete the hosted zone <span class="v" data-v="zone"></span></b>, with the wizard's certificate and the NS records in the parent.</li>
+      <li><b>Delete the state bucket <span class="v" data-v="bucket"></span></b>, if ticked.</li>
+    </ol>
+    <div class="banner gray"><b>Torn down</b><span>Terraform destroyed everything it created. Below is what is left outside it. Then <b>What is left</b> is checked against AWS, with its own <i>Delete…</i> buttons.</span></div>
+    <div class="banner gray"><b>Back to a blank account</b><span>workshop, its hosted zone and the state bucket are gone. Nothing the bootstrap created is left in AWS.</span></div>
+  </div>
+  <div class="panel" data-p="why">
+    <p><b>Why this order?</b> The install created things in AWS that Terraform does not know about: ALBs, EBS volumes, Karpenter's EC2 instances, DNS records, secrets. Left in place, they make <code>terraform destroy</code> fail (it cannot delete subnets an ALB still uses) or get left behind. So the uninstall runs first, while the controllers that clean up after them still run. The zone and bucket are not Terraform's, and the bucket holds the state the destroy uses, so it goes last.</p>
+    <figure class="anim" data-dg="teardown"><div class="svgwrap"></div><div class="ctl"></div>
+      <ol class="caps">
+        <li><b>Squid route lambda</b> removed first, so it stops rewriting <code>cloud-proxy.internal.io</code>, and AWS starts releasing its network interface (≈20 min) in parallel with everything else.</li>
+        <li><b>ArgoCD</b> (if any), then <b>Ingresses and LoadBalancer Services</b>: the load balancer controller deletes their ALBs, NLBs and security groups.</li>
+        <li><b>CSOC portal, Keycloak and its database</b>, then <b>every namespace</b> but the cluster's own, commons-a included. external-dns removes the commons' records as their Ingresses go.</li>
+        <li><b>Volumes</b> (every PVC; with Force, the EBS volumes by ID) and <b>Karpenter nodes</b> (limit to zero, NodeClaims deleted; with Force, instances terminated).</li>
+        <li><b>DNS</b>: the portal and Keycloak CNAMEs, and Squid's private record. <b>Secrets Manager</b>: <code>gen3-csoc/<span class="v" data-v="name"></span>/*</code>, deleted without a recovery window.</li>
+        <li><b>terraform destroy</b> (init first): the cluster, Fargate and Karpenter, IAM roles, Squid, NAT, the VPC. Most of the wait is the lambda's network interface.</li>
+        <li>Optionally the <b>hosted zone</b> (with the wizard's certificate and the parent's NS records), then the <b>state bucket</b>.</li>
+      </ol></figure>
+  </div>
+  <div class="panel" data-p="wrong">
+    <table><thead><tr><th>Banner</th><th>It means</th><th>Press</th></tr></thead><tbody>
+      <tr><td><b>The uninstall failed</b></td><td>Removing what the install added did not finish. The CSOC is still recorded.</td><td><b>Retry teardown with Force</b>. Or <b>Destroy anyway…</b> (it warns what may be left behind, and asks for the name).</td></tr>
+      <tr><td><b>The destroy failed</b></td><td>Status <code>partial</code>. Some resources are still there.</td><td><b>Retry teardown</b>: it picks up where it stopped.</td></tr>
+      <tr><td>"sign in again" before it starts</td><td>Under 45 minutes left on your SSO session. A teardown is long.</td><td><code class="cp">aws sso login --profile <span class="v" data-v="ssoprofile"></span></code></td></tr>
+      <tr><td>Destroy "in progress" on a subnet / security group for 20 min</td><td>AWS is releasing the Squid lambda's network interface.</td><td>Wait. This is normal.</td></tr>
+      <tr><td>Destroy: "Module not installed"</td><td>The stack was restarted without <code>TERRAFORM_MODULES_DIR</code> (developers).</td><td>Put it back in <code>.env</code>, restart, Retry teardown.</td></tr>
+      <tr><td>Bucket not deleted</td><td>Another environment in it is not destroyed, or it holds other objects.</td><td>Expected. Destroy the others first, or keep the bucket.</td></tr>
+    </tbody></table>
+    <p class="warn">Never edit the runner scripts while a teardown runs. If one is truly stuck, ask a helper before pressing Stop.</p>
+  </div>
+</section>
+
+<!-- ================================================================ STEP 14 -->
+<section class="step" id="s14" data-title="Where things live + glossary">
+  <header><div class="num">14</div><div><h2>Where things live, and a glossary</h2><p class="sub">For after the workshop.</p></div>
+    <div class="right"><label class="donebox"><input type="checkbox" data-step="s14"> Done</label></div></header>
+  <div class="tabs"></div>
+  <div class="panel" data-p="do" data-name="Where things live">
+    <h3>In the gen3-admin repo</h3>
+    <div class="tw"><table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
+      <tr><td><code>docker-compose-bootstrap-csoc.yml</code></td><td>The laptop stack: api, frontend, docker-proxy.</td></tr>
+      <tr><td><code>frontend/pages/bootstrap.jsx</code></td><td>The bootstrap wizard's page.</td></tr>
+      <tr><td><code>frontend/lib/wizardState.ts</code></td><td>The state machine behind the banner (every title and button on this page).</td></tr>
+      <tr><td><code>frontend/components/bootstrap/</code></td><td>Banner, run panel, certificate step, teardown panel, admin account.</td></tr>
+      <tr><td><code>frontend/components/PlanReview.jsx</code></td><td>The plan review list and its progress.</td></tr>
+      <tr><td><code>api/internal/terraform/docker_runner.go</code></td><td>How runner containers start: mounts, ~/.aws copy, AWS_PROFILE.</td></tr>
+      <tr><td><code>scripts/runner/install-csoc.sh</code>, <code>direct.sh</code></td><td>The bootstrap (direct mode installs with Helm).</td></tr>
+      <tr><td><code>scripts/runner/finish-csoc.sh</code></td><td>The finish: allowlist, realm, ALB, DNS.</td></tr>
+      <tr><td><code>scripts/runner/uninstall-csoc.sh</code></td><td>The uninstall before a destroy.</td></tr>
+      <tr><td><code>helm/csoc/</code></td><td>The CSOC portal's Helm chart.</td></tr>
+      <tr><td><code>frontend/components/StepperForm/</code></td><td>The portal's Gen3 Deployment Wizard.</td></tr>
+      <tr><td><code>frontend/components/Welcome/OnboardingStepper.jsx</code></td><td>The portal's onboarding (Deploy Agent, ArgoCD, monitoring).</td></tr>
+      <tr><td><code>docs/workshop/README.md</code>, <code>VALUES.md</code>, <code>PREP.md</code></td><td>The written walkthrough, what to type, and the full state table.</td></tr>
+    </tbody></table></div>
+    <h3>In gen3-terraform</h3>
+    <p><code>examples/csoc/</code>: <code>main.tf</code> (vpc and eks modules, the int_services subnet for the Squid lambda), <code>bootstrap.tf</code> (IRSA roles, EBS CSI add-on, EKS access, external-dns policy), <code>variables.tf</code>, <code>outputs.tf</code>. Modules: <code>tf_files/aws/modules/vpc</code> and <code>tf_files/aws/modules/eks</code>.</p>
+    <h3>In your AWS account</h3>
+    <ul>
+      <li>State and registry: <code>s3://<span class="v" data-v="bucket"></span>/gen3-csoc/environments/<span class="v" data-v="name"></span>/</code></li>
+      <li>Secrets: Secrets Manager, <code>gen3-csoc/<span class="v" data-v="name"></span>/…</code></li>
+      <li>DNS: Route 53 zone <span class="v" data-v="zone"></span>. Certificates: ACM in <span class="v" data-v="region"></span>.</li>
+      <li>Run work directories on your laptop: <code>~/.gen3-csoc/terraform</code></li>
+    </ul>
+  </div>
+  <div class="panel" data-p="see" data-name="Glossary">
+    <h3>Glossary</h3>
+    <dl class="gloss">
+      <dt>CSOC</dt><dd>The Gen3 control plane: a portal, its API and Keycloak, in its own EKS cluster. You deploy and manage Gen3 commons from it.</dd>
+      <dt>Commons</dt><dd>One Gen3 data commons (Fence, Arborist, Indexd, Sheepdog, Peregrine, a portal…), installed as the Helm release <code>gen3</code>.</dd>
+      <dt>Bootstrap wizard</dt><dd>The local app at <code>localhost:3000/bootstrap</code> that takes an empty account to a CSOC.</dd>
+      <dt>Runner</dt><dd>A container started per run, with Terraform, Helm, kubectl and the AWS CLI.</dd>
+      <dt>Registry</dt><dd>The record of each environment and its runs, kept in the state bucket. The banner is derived from it.</dd>
+      <dt>IRSA</dt><dd>IAM Roles for Service Accounts: a pod's Kubernetes service account is trusted by one IAM role, so it gets only that role's AWS rights, with no keys.</dd>
+      <dt>ESO</dt><dd>External Secrets Operator: copies values from AWS Secrets Manager into Kubernetes Secrets.</dd>
+      <dt>LBC</dt><dd>AWS Load Balancer Controller: turns Ingresses into ALBs (and Services into NLBs), with the ACM certificate and the allowlist.</dd>
+      <dt>external-dns</dt><dd>Watches Ingresses and writes their hostnames into Route 53. It writes only records it owns (marked with TXT records), only in the CSOC's zone.</dd>
+      <dt>Karpenter</dt><dd>Starts and stops EC2 nodes to fit pending pods. Here its controller runs on Fargate, and there are no fixed worker nodes.</dd>
+      <dt>Squid</dt><dd>The egress proxy. The cluster reaches the internet only through it, and only to allowlisted destinations. A lambda keeps the default route pointed at a healthy Squid.</dd>
+      <dt>CNPG</dt><dd>CloudNativePG, a Postgres operator. It runs Keycloak's database.</dd>
+      <dt>Keycloak realm</dt><dd>A separate set of users, clients and settings in Keycloak. The CSOC uses <code>csoc-realm</code>, and each commons gets a client in it (<code>fence-&lt;namespace&gt;</code>).</dd>
+      <dt>Fence</dt><dd>Gen3's authentication service. Here it logs users in through the CSOC's Keycloak (generic OIDC), and user.yaml says what each email may do (with Arborist).</dd>
+      <dt>Agent</dt><dd>A pod in each managed cluster that dials out to the CSOC over gRPC with mutual TLS and runs Helm and kubectl for it.</dd>
+      <dt>Direct vs GitOps</dt><dd>Direct: the wizard installs with Helm. GitOps: ArgoCD installs from a repo, and every change is a pull request.</dd>
+      <dt>ACM DNS validation</dt><dd>ACM issues a certificate once it finds a CNAME it chose under each name, and renews it as long as the CNAMEs stay.</dd>
+    </dl>
+  </div>
+</section>
+
+<p style="color:var(--ink-3);font-size:13px">Sources: docs/workshop/README.md, VALUES.md, PREP.md, frontend/lib/wizardState.ts, the wizard and portal components, scripts/runner/*.sh, and gen3-terraform examples/csoc. If the app and this page disagree, the app is right. Tell the presenter.</p>
+</main>
+</div>
+
+<script>
+(function(){
+'use strict';
+var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- storage ---------- */
+var KEY = 'csoc-workshop-guide-v1';
+var store = {};
+try { store = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { store = {}; }
+store.done = store.done || {}; store.vals = store.vals || {}; store.timers = store.timers || {};
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+function $(s, r){ return (r || document).querySelector(s); }
+function $$(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+/* ---------- your values ---------- */
+var DEF = { profile:'csoc-workshop', ssoprofile:'default', account:'<your-account-id>', region:'us-east-1',
+  name:'workshop', zone:'<subdomain>.<your-domain>', parent:'default', email:'<your-csoc-admin-email>' };
+function val(k){ var v = (store.vals[k] || '').trim(); return v || DEF[k]; }
+function vars(){
+  var o = {}; Object.keys(DEF).forEach(function(k){ o[k] = val(k); });
+  o.bucket = 'gen3-csoc-' + o.name + '-' + (store.vals.account ? o.account : '<account-id>');
+  o.portal = 'portal.' + o.zone; o.auth = 'auth.' + o.zone; o.commons = 'commons-a.' + o.zone;
+  return o;
+}
+function renderVars(){
+  var o = vars();
+  $$('.v[data-v]').forEach(function(el){ var k = el.getAttribute('data-v'); if (k in o) el.textContent = o[k]; });
+  DIAGS.forEach(function(d){ d.render(); });
+}
+$$('.vals input').forEach(function(inp){
+  var k = inp.getAttribute('data-k');
+  inp.value = store.vals[k] || '';
+  inp.addEventListener('input', function(){ store.vals[k] = inp.value.trim(); save(); renderVars(); });
+});
+
+/* ---------- copy ---------- */
+function copyText(t, btn){
+  function ok(){ var old = btn.textContent; btn.textContent = 'Copied'; btn.classList.add('ok');
+    setTimeout(function(){ btn.textContent = old; btn.classList.remove('ok'); }, 1400); }
+  function fallback(){
+    var ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = 'Select + Ctrl-C'; }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(ok, fallback);
+  else fallback();
+}
+$$('.cmdwrap').forEach(function(w){
+  var pre = $('pre', w); var b = document.createElement('button');
+  b.type = 'button'; b.className = 'copy'; b.textContent = 'Copy'; b.setAttribute('aria-label', 'Copy to clipboard');
+  b.addEventListener('click', function(){ copyText(pre.textContent, b); });
+  w.appendChild(b);
+});
+$$('code.cp').forEach(function(c){
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'cpi'; b.textContent = 'copy'; b.setAttribute('aria-label', 'Copy ' + c.textContent);
+  b.addEventListener('click', function(){ copyText(c.textContent, b); });
+  c.insertAdjacentElement('afterend', b);
+});
+
+/* ---------- tabs ---------- */
+var TABS = { do:'Do this', see:'What you should see', why:"What's happening", wrong:'If something goes wrong' };
+$$('section.step').forEach(function(sec){
+  var bar = $('.tabs', sec), panels = $$('.panel', sec), id = sec.id;
+  bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', sec.getAttribute('data-title') + ' parts');
+  var tabs = panels.map(function(p, i){
+    var key = p.getAttribute('data-p'), name = p.getAttribute('data-name') || TABS[key] || key;
+    p.id = id + '-' + key; p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', id + '-t-' + key);
+    var h = document.createElement('div'); h.className = 'ptitle'; h.textContent = name; p.insertBefore(h, p.firstChild);
+    var t = document.createElement('button'); t.type = 'button'; t.id = id + '-t-' + key; t.setAttribute('role', 'tab');
+    t.setAttribute('aria-controls', p.id); t.textContent = name;
+    t.addEventListener('click', function(){ select(i, true); });
+    t.addEventListener('keydown', function(e){
+      var n = null;
+      if (e.key === 'ArrowRight') n = (i + 1) % tabs.length; else if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') n = 0; else if (e.key === 'End') n = tabs.length - 1;
+      if (n !== null) { e.preventDefault(); select(n, true); tabs[n].focus(); }
+    });
+    bar.appendChild(t); return t;
+  });
+  function select(i, user){
+    tabs.forEach(function(t, j){ t.setAttribute('aria-selected', j === i ? 'true' : 'false'); t.tabIndex = j === i ? 0 : -1; panels[j].hidden = j !== i; });
+    if (user && panels[i].getAttribute('data-p') === 'why') {
+      $$('figure.anim', panels[i]).forEach(function(f){ if (f._dg && !REDUCE && f._dg.frame === 0) f._dg.play(); });
+    }
+  }
+  sec._select = function(key){ for (var i = 0; i < panels.length; i++) if (panels[i].getAttribute('data-p') === key) select(i, true); };
+  select(0, false);
+});
+
+/* ---------- progress ---------- */
+var steps = $$('section.step');
+var nav = $('#navlist');
+steps.forEach(function(sec, i){
+  var li = document.createElement('li'); li.id = 'nav-' + sec.id;
+  var cb = document.createElement('input'); cb.type = 'checkbox'; cb.setAttribute('data-step', sec.id);
+  cb.setAttribute('aria-label', 'Mark step ' + i + ' done');
+  var a = document.createElement('a'); a.href = '#' + sec.id;
+  a.innerHTML = '<span class="n">' + i + '</span>' + esc(sec.getAttribute('data-title'));
+  li.appendChild(cb); li.appendChild(a); nav.appendChild(li);
+});
+function renderProgress(){
+  var n = 0;
+  steps.forEach(function(sec){
+    var d = !!store.done[sec.id]; if (d) n++;
+    sec.classList.toggle('done', d);
+    $('#nav-' + sec.id).classList.toggle('done', d);
+  });
+  $$('input[data-step]').forEach(function(cb){ cb.checked = !!store.done[cb.getAttribute('data-step')]; });
+  $('#progtext').textContent = n + ' of ' + steps.length + ' done';
+  $('#progbar').style.width = (100 * n / steps.length) + '%';
+}
+document.addEventListener('change', function(e){
+  var t = e.target; if (!t.matches || !t.matches('input[data-step]')) return;
+  store.done[t.getAttribute('data-step')] = t.checked; save(); renderProgress();
+});
+$('#resetprog').addEventListener('click', function(){
+  if (!confirm('Clear all ticks and timers on this page? Your values stay.')) return;
+  store.done = {}; store.timers = {}; save(); renderProgress(); tickTimers();
+});
+var side = $('#side'), tog = $('#navtoggle');
+tog.addEventListener('click', function(){ var c = side.classList.toggle('closed'); tog.textContent = c ? 'Show steps' : 'Hide steps'; tog.setAttribute('aria-expanded', c ? 'false' : 'true'); });
+
+/* scrollspy */
+if ('IntersectionObserver' in window) {
+  var io = new IntersectionObserver(function(ents){
+    ents.forEach(function(en){ if (en.isIntersecting) {
+      $$('ol.nav li').forEach(function(l){ l.classList.remove('here'); });
+      var l = $('#nav-' + en.target.id); if (l) l.classList.add('here');
+    } });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  steps.forEach(function(s){ io.observe(s); });
+}
+
+/* ---------- timers ---------- */
+function fmt(ms){ var s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s / 60); return (m < 10 ? '0' : '') + m + ':' + ('0' + (s % 60)).slice(-2); }
+$$('.timer').forEach(function(el){
+  var id = el.getAttribute('data-t'), typ = +el.getAttribute('data-typ'), hi = +el.getAttribute('data-hi');
+  el.innerHTML = '<button type="button" class="go">Start timer</button><button type="button" class="rs">Reset</button>' +
+    '<span class="clock" aria-live="off">00:00</span><span class="tbar" aria-hidden="true"><i></i><b style="left:' + (100 * typ / hi) + '%"></b></span>' +
+    '<span class="tmsg"></span>';
+  el._u = function(){
+    var t = store.timers[id] || {}, now = Date.now();
+    var ms = t.start ? ((t.stop || now) - t.start) : 0, min = ms / 60000;
+    $('.clock', el).textContent = fmt(ms);
+    $('.tbar i', el).style.width = Math.min(100, 100 * min / hi) + '%';
+    var go = $('.go', el); go.textContent = t.start && !t.stop ? 'Stop' : (t.start ? 'Resume' : 'Start timer');
+    go.classList.toggle('run', !!(t.start && !t.stop));
+    el.classList.toggle('slow', min > typ && min <= hi); el.classList.toggle('late', min > hi);
+    var label = el.getAttribute('data-label');
+    var msg = !t.start ? 'Typical ' + label + ': about ' + typ + ' min. Start the timer when you press the button.'
+      : min <= typ ? 'On track: typical ' + label + ' is about ' + typ + ' min.'
+      : min <= hi ? 'Longer than typical (' + typ + ' min), still normal up to about ' + hi + ' min. Keep an eye on the log.'
+      : 'Over ' + hi + ' min: check the banner and the log, and see "If something goes wrong".';
+    if (t.stop) msg = 'Stopped at ' + fmt(ms) + ' (typical ' + typ + ' min).';
+    $('.tmsg', el).textContent = msg;
+  };
+  $('.go', el).addEventListener('click', function(){
+    var t = store.timers[id] || {};
+    if (!t.start) t = { start: Date.now() };
+    else if (!t.stop) t.stop = Date.now();
+    else { t.start = Date.now() - (t.stop - t.start); delete t.stop; }
+    store.timers[id] = t; save(); el._u();
+  });
+  $('.rs', el).addEventListener('click', function(){ delete store.timers[id]; save(); el._u(); });
+});
+function tickTimers(){ $$('.timer').forEach(function(el){ el._u && el._u(); }); }
+setInterval(tickTimers, 1000);
+
+/* ---------- diagrams ---------- */
+/* node: [id, x, y, w, h, label, sub, frame, opts]  opts: {b:build-style, go:'s6', also:[frames]}
+   edge: [from, to, frame, label, opts]  opts: {back, bend, also}
+   group: [x, y, w, h, label, frame, opts]  opts: {solid, go} */
+var V = function(k){ return vars()[k]; };
+var SPECS = {
+overview: { w: 980, h: 430,
+  groups: [[10,26,250,394,'Your laptop',1,{}],[285,26,685,394,'Your AWS account',2,{}],[300,132,655,276,'VPC',3,{go:'s6'}],[505,150,440,250,'EKS cluster',3,{solid:1,go:'s6'}]],
+  nodes: [
+    ['br',30,56,210,46,'Browser','the wizard, then the portal',1,{go:'s2'}],
+    ['fe',30,126,210,46,'frontend :3000','bootstrap wizard',1,{go:'s1'}],
+    ['api',30,196,210,46,'API 127.0.0.1:8002','uses your ~/.aws',1,{go:'s1'}],
+    ['px',30,266,210,46,'docker socket proxy','containers only',1,{go:'s1'}],
+    ['rn',30,346,210,50,'runner container','terraform · helm · kubectl',3,{go:'s5',also:[5,6]}],
+    ['s3',305,56,150,50,'S3 state bucket','state + registry',2,{go:'s3'}],
+    ['r53',470,56,150,50,'Route 53 zone',function(){return V('zone');},2,{go:'s3',also:[6,8]}],
+    ['acm',635,56,150,50,'ACM certificate','portal + auth',4,{go:'s7'}],
+    ['sm',800,56,155,50,'Secrets Manager','gen3-csoc/<name>/',5,{go:'s8'}],
+    ['sq',315,170,175,46,'NAT + Squid','egress through allowlist',3,{go:'s6',b:1}],
+    ['alb',315,330,175,50,'ALB (allowlist)','HTTPS for portal + auth',6,{go:'s9'}],
+    ['eks',520,180,200,46,'EKS + Karpenter','control plane, nodes',3,{go:'s6',b:1}],
+    ['ctl',735,180,200,46,'ESO · LBC · external-dns','controllers',5,{go:'s8',b:1}],
+    ['kc',520,250,200,46,'Keycloak','csoc-realm, CNPG Postgres',5,{go:'s10',b:1}],
+    ['csoc',735,250,200,46,'CSOC portal + API','gRPC :50051 for agents',5,{go:'s10',b:1,also:[7,8]}],
+    ['ag',520,325,200,50,'Agent','mTLS to the CSOC',7,{go:'s11',b:1,also:[8]}],
+    ['g3',735,325,200,50,'Gen3 commons-a','helm release gen3',8,{go:'s12',b:1}]
+  ],
+  edges: [['br','fe',1,''],['fe','api',1,''],['api','px',1,''],['px','rn',3,''],['api','s3',2,'state'],['api','r53',2,'',{bend:-80}],
+    ['rn','eks',3,'apply · install'],['sm','ctl',5,'ESO'],['alb','csoc',6,'',{bend:75}],['alb','kc',6,''],['r53','alb',6,'CNAMEs',{bend:-40}],
+    ['csoc','ag',7,'gRPC mTLS'],['ag','g3',8,''],['ctl','r53',8,'commons DNS',{bend:30}]]
+},
+stack: { w: 760, h: 330,
+  groups: [[10,10,740,310,'Your laptop · Docker',0,{}]],
+  nodes: [
+    ['br',30,44,150,52,'Browser','localhost:3000/bootstrap',1],
+    ['fe',220,44,150,52,'frontend','Next.js · 127.0.0.1:3000',1],
+    ['api',410,44,150,52,'api','Go · 127.0.0.1:8002',2,{also:[3,4,7]}],
+    ['aws',410,170,150,52,'~/.aws','profiles, SSO cache',3,{also:[5]}],
+    ['px',600,44,140,52,'docker-proxy','create · start · logs',4],
+    ['rn',600,170,140,52,'runner','gen3-terraform image',5,{also:[6,7]}],
+    ['cl',600,262,140,48,'AWS','your account',6]
+  ],
+  edges: [['br','fe',1,'page'],['fe','api',2,'/api/…'],['aws','api',3,'read'],['api','px',4,'docker run'],['px','rn',5,'start'],
+    ['aws','rn',5,'copied in'],['rn','cl',6,'API calls'],['rn','api',7,'log stream',{back:1,bend:-34}],['api','br',7,'live log',{back:1,bend:70}]]
+},
+creds: { w: 760, h: 230,
+  nodes: [
+    ['sso',15,90,140,58,'SSO session','aws sso login',1],
+    ['def',180,90,140,58,'profile default','source_profile',2],
+    ['role',345,90,160,58,'assume role',function(){return V('profile');},3,{also:[4,5]}],
+    ['id',545,20,200,58,'Blue identity box',function(){return 'account '+V('account');},4],
+    ['rn',545,150,200,58,'runner container',function(){return 'AWS_PROFILE='+V('profile');},5]
+  ],
+  edges: [['sso','def',2,'token'],['def','role',3,'sts:AssumeRole'],['role','id',4,'GetCallerIdentity'],['role','rn',5,'same chain']]
+},
+dns: { w: 760, h: 240,
+  nodes: [
+    ['par',20,30,210,58,'Parent zone',function(){var z=V('zone');var i=z.indexOf('.');return i>0?z.slice(i+1):'<your-domain>';},0],
+    ['ch',290,30,210,58,'New hosted zone',function(){return V('zone');},1,{b:1}],
+    ['ns',290,150,210,58,'NS record set','4 Route 53 name servers',2,{b:1}],
+    ['pub',560,30,180,58,'Public resolver','e.g. 1.1.1.1',3],
+    ['ok',560,150,180,58,'Domain Verified','wizard re-checks',4]
+  ],
+  edges: [['ch','ns',2,'name servers'],['ns','par',2,'added to parent',{bend:30}],['pub','par',3,'who serves it?',{bend:75}],['pub','ch',3,'answer'],['pub','ok',4,'resolves']]
+},
+plan: { w: 760, h: 270,
+  nodes: [
+    ['rn',20,105,150,58,'runner','terraform init / plan',1,{also:[2,3]}],
+    ['pv',225,20,180,52,'Providers + modules','aws, helm · vpc, eks',1],
+    ['s3',225,190,180,52,'S3 backend','state + lock file',2],
+    ['pl',300,105,150,58,'plan','≈100 to create',3,{b:1}],
+    ['full',560,20,180,52,'Full plan file','stays in the runner',4],
+    ['sum',560,190,180,52,'Summary','address · type · action',4],
+    ['ui',560,105,180,58,'Plan review','List + Diagram',5]
+  ],
+  edges: [['rn','pv',1,'download'],['rn','s3',2,'backend'],['rn','pl',3,''],['pl','full',4,''],['pl','sum',4,''],['sum','ui',5,'to browser']]
+},
+apply: { w: 760, h: 400,
+  groups: [[10,10,740,380,'AWS account',0,{}],[25,40,710,335,'VPC · 3 availability zones',1,{}]],
+  nodes: [
+    ['sub',45,72,210,48,'Subnets + route tables','public · private · int_services',1,{b:1}],
+    ['nat',45,140,210,48,'Internet + NAT gateway','public subnet',2,{b:1}],
+    ['sq',45,208,210,48,'Squid proxy (ASG)','allowlisted egress',3,{b:1,also:[4,8]}],
+    ['lm',45,288,210,48,'gw_checks lambda','sets default route to Squid',4,{b:1}],
+    ['pz',290,288,200,48,'Private zone · KMS · logs','cloud-proxy.internal.io',2,{b:1}],
+    ['eks',290,72,200,48,'EKS control plane','v1.33 · ≈10 min',5,{b:1,also:[6,7]}],
+    ['iam',520,72,200,48,'IAM: OIDC + IRSA roles','LBC · ESO · EBS · API · DNS',6,{b:1}],
+    ['kp',290,140,200,48,'Karpenter on Fargate','controller, no nodes',7,{b:1,also:[8]}],
+    ['nd',290,208,200,48,'EC2 nodes (AL2023)','on-demand c / m / t',8,{b:1,also:[9]}],
+    ['ebs',520,208,200,48,'EBS CSI add-on','Terraform waits for it',9,{b:1}]
+  ],
+  edges: [['nat','sq',3,'out'],['lm','sq',4,'health check'],['lm','pz',4,'names it'],['sub','eks',5,'subnets'],['eks','iam',6,'OIDC'],
+    ['eks','kp',7,''],['kp','nd',8,'launch'],['nd','sq',8,'egress',{back:1}],['nd','ebs',9,'runs on']]
+},
+cert: { w: 760, h: 250,
+  nodes: [
+    ['wz',20,30,150,56,'Wizard','Request',1,{also:[3]}],
+    ['acm',230,30,170,56,'ACM','PENDING_VALIDATION',1,{also:[2,5]}],
+    ['rec',460,30,280,56,'2 validation CNAMEs','_abc.portal… → …acm-validations.aws',2],
+    ['z',460,160,170,56,'Route 53 zone',function(){return V('zone');},3,{b:1}],
+    ['pub',230,160,170,56,'Public DNS','follows the delegation',4],
+    ['ok',20,160,150,56,'ISSUED','→ Install',5,{b:1}]
+  ],
+  edges: [['wz','acm',1,'request'],['acm','rec',2,'publishes'],['wz','z',3,'writes records',{bend:-60}],['pub','z',4,'lookup'],['acm','pub',5,'checks'],['acm','ok',5,'']]
+},
+install: { w: 760, h: 380,
+  groups: [[10,92,740,280,'EKS cluster',0,{solid:1}]],
+  nodes: [
+    ['rn',20,20,150,50,'runner','install-csoc.sh',1,{also:[2,3,4]}],
+    ['sm',195,20,175,50,'Secrets Manager','3 secrets, if absent',2,{b:1}],
+    ['pr',390,20,170,50,'Egress probe','→ checkip.amazonaws.com',3,{b:1}],
+    ['pw',580,20,165,50,'admin bootstrap Secret','for the realm import',4,{b:1}],
+    ['eso',25,120,170,50,'External Secrets','external-secrets',5,{b:1,also:[10]}],
+    ['lbc',210,120,170,50,'AWS LB Controller','kube-system',6,{b:1,also:[11]}],
+    ['dns',395,120,160,50,'external-dns','commons records',7,{b:1}],
+    ['pg',570,120,165,50,'CloudNativePG','Postgres operator',8,{b:1}],
+    ['kop',25,210,170,50,'Keycloak operator','namespace csoc',9,{b:1}],
+    ['man',210,210,170,50,'CSOC manifests','SecretStore · ExternalSecrets',10,{b:1}],
+    ['kc',395,210,160,50,'Keycloak + realm','csoc-realm import',10,{b:1}],
+    ['cs',570,210,165,50,'CSOC portal','helm release csoc',11,{b:1}],
+    ['ing',210,300,525,50,'Ingress → internet-facing ALB','only the allowed addresses',11,{b:1}]
+  ],
+  edges: [['rn','sm',2,''],['sm','eso',10,'copied in',{bend:-20}],['eso','man',10,''],['kop','kc',10,'',{bend:80}],['pg','kc',10,''],['man','kc',10,''],
+    ['cs','ing',11,''],['kc','ing',11,'ALB']]
+},
+finish: { w: 760, h: 250,
+  nodes: [
+    ['al',20,30,170,56,'Allowlist','yours + egress IP',1,{b:1}],
+    ['kc',230,30,160,56,'Keycloak Ready','portal rolled out',2,{b:1,also:[3]}],
+    ['rl',430,30,150,56,'Realm imported','bootstrap Secret deleted',3,{b:1}],
+    ['alb',620,30,125,56,'ALB','hostname read',4,{b:1,also:[5]}],
+    ['r53',430,160,180,56,'Route 53 CNAMEs','portal + auth, TTL 60',5,{b:1,also:[6]}],
+    ['pub',150,160,200,56,'Public DNS answers','Done shows the link',6]
+  ],
+  edges: [['al','kc',2,'re-applied'],['kc','rl',3,''],['rl','alb',4,''],['alb','r53',5,'UPSERT'],['r53','pub',6,'']]
+},
+signin: { w: 760, h: 260,
+  nodes: [
+    ['br',20,100,140,58,'Your browser','your IP allowed',1,{also:[2,3,4]}],
+    ['alb',210,100,130,58,'ALB','allowlist + TLS',1,{also:[4]}],
+    ['po',400,20,160,58,'CSOC portal',function(){return V('portal');},2,{also:[4,5]}],
+    ['kc',400,180,160,58,'Keycloak',function(){return V('auth');},3,{also:[4]}],
+    ['pg',600,180,145,58,'Postgres (CNPG)','users, sessions',3],
+    ['aws',600,20,145,58,'AWS (IRSA)','state bucket, ACM…',5]
+  ],
+  edges: [['br','alb',1,'https'],['alb','po',2,''],['po','br',2,'',{back:1,bend:-50}],['br','kc',3,'sign in',{bend:40}],['kc','pg',3,''],
+    ['po','kc',4,'code → tokens (via egress IP)',{bend:30}],['po','aws',5,'Connected to AWS']]
+},
+agent: { w: 760, h: 260,
+  groups: [[200,10,550,240,'CSOC cluster',0,{solid:1}]],
+  nodes: [
+    ['po',20,100,150,58,'Portal','Deploy Agent',1],
+    ['api',230,40,160,58,'CSOC API','POST /api/agents/local',1,{also:[2,3,5]}],
+    ['ca',230,160,160,58,'CSOC CA','client certificate',2,{b:1}],
+    ['mf',440,40,160,58,'Agent manifest','Deployment + Secret',3,{b:1}],
+    ['ag',440,160,160,58,'Agent pod','dials out',4,{b:1,also:[5]}],
+    ['grpc',620,100,120,58,'csoc-grpc','.csoc.svc:50051',4,{also:[5]}]
+  ],
+  edges: [['po','api',1,''],['api','ca',2,'issue cert'],['api','mf',3,'apply'],['mf','ag',4,''],['ag','grpc',4,'mTLS'],['grpc','api',5,'registered',{back:1,bend:-40}]]
+},
+gen3: { w: 760, h: 400,
+  groups: [[200,120,550,270,'CSOC cluster',0,{solid:1}],[215,250,325,125,'namespace commons-a',6,{}]],
+  nodes: [
+    ['po',20,150,150,56,'Portal','Gen3 Deployment Wizard',1,{also:[2,3]}],
+    ['acm',20,20,150,52,'ACM','commons-a certificate',1,{b:1}],
+    ['z',220,20,170,52,'Route 53 zone',function(){return V('zone');},1,{also:[8]}],
+    ['kc',420,20,160,52,'Keycloak','client fence-commons-a',2,{b:1,also:[9]}],
+    ['api',220,150,150,52,'CSOC API','/agent/…/helm/install',3,{also:[4]}],
+    ['ag',400,150,140,52,'Agent','helm install',4,{also:[5]}],
+    ['dns',570,150,165,52,'external-dns','watches Ingresses',8,{b:1}],
+    ['pods',230,280,295,40,'Fence · Arborist · Indexd · Sheepdog · …','+ local Postgres',6,{b:1}],
+    ['ing',230,327,295,40,'Ingress → ALB (LBC)','TLS with the ACM cert',7,{b:1,also:[9]}],
+    ['you',570,280,165,52,'You','log in as admin',9]
+  ],
+  edges: [['po','acm',1,'request'],['po','z',1,'validation',{bend:-30}],['po','kc',2,'Use CSOC login',{bend:20}],['po','api',3,'values'],['api','ag',4,'gRPC mTLS'],
+    ['ag','pods',5,'helm'],['ing','dns',8,'',{bend:-20}],['dns','z',8,'commons-a CNAME'],['you','ing',9,'https']]
+},
+teardown: { w: 760, h: 270,
+  nodes: [
+    ['lm',20,20,165,52,'Squid lambda','removed first',1],
+    ['lb',205,20,165,52,'Ingresses + LBs','ALBs, NLBs, SGs',2],
+    ['ns',390,20,165,52,'Apps + namespaces','CSOC, Keycloak, commons',3],
+    ['vol',575,20,165,52,'Volumes + nodes','EBS, Karpenter EC2',4],
+    ['dns',575,120,165,52,'DNS + secrets','CNAMEs, gen3-csoc/…',5],
+    ['tf',300,120,240,52,'terraform destroy','cluster, IAM, Squid, NAT, VPC',6],
+    ['zb',300,210,240,52,'Zone, then bucket','optional, last',7]
+  ],
+  edges: [['lm','lb',2,''],['lb','ns',3,''],['ns','vol',4,''],['vol','dns',5,''],['dns','tf',6,'uninstall done'],['tf','zb',7,'']]
+}
+};
+
+function clip(cx, cy, hw, hh, dx, dy){
+  var tx = dx ? hw / Math.abs(dx) : Infinity, ty = dy ? hh / Math.abs(dy) : Infinity, t = Math.min(tx, ty);
+  return [cx + dx * t, cy + dy * t];
+}
+function txt(v){ return typeof v === 'function' ? v() : (v || ''); }
+function fit(t, w, px){ var max = Math.floor((w - 10) / px); return t.length > max ? t.slice(0, Math.max(1, max - 1)) + '…' : t; }
+
+function Diagram(fig){
+  var name = fig.getAttribute('data-dg'), spec = SPECS[name], self = this;
+  this.fig = fig; this.spec = spec; this.caps = $$('ol.caps li', fig); this.n = this.caps.length;
+  this.frame = fig.getAttribute('data-final') ? this.n : 0; this.timer = null; this.rest = !!fig.getAttribute('data-final');
+  var ctl = $('.ctl', fig);
+  ctl.innerHTML = '<button type="button" class="rs" aria-label="Back to start">⏮</button>' +
+    '<button type="button" class="pv" aria-label="Previous frame">◀</button>' +
+    '<button type="button" class="play" aria-label="Play">▶ Play</button>' +
+    '<button type="button" class="nx" aria-label="Next frame">▶|</button>' +
+    '<span class="fr" aria-live="polite"></span>';
+  ctl.addEventListener('click', function(){ self.rest = false; }, true);
+  $('.rs', ctl).addEventListener('click', function(){ self.stop(); self.go(0); });
+  $('.pv', ctl).addEventListener('click', function(){ self.stop(); self.go(Math.max(0, self.frame - 1)); });
+  $('.nx', ctl).addEventListener('click', function(){ self.stop(); self.go(Math.min(self.n, self.frame + 1)); });
+  $('.play', ctl).addEventListener('click', function(){ self.timer ? self.stop() : self.play(); });
+  this.caps.forEach(function(li, i){
+    li.tabIndex = 0;
+    li.addEventListener('click', function(){ self.rest = false; self.stop(); self.go(i + 1); });
+    li.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); self.rest = false; self.stop(); self.go(i + 1); } });
+  });
+  fig._dg = this;
+  this.render();
+}
+Diagram.prototype.render = function(){
+  var s = this.spec, h = [], byId = {}, labels = [];
+  h.push('<svg class="dg" viewBox="0 0 ' + s.w + ' ' + s.h + '" role="img" aria-label="' + esc(this.fig.getAttribute('data-dg')) + ' diagram; the steps are listed below it">');
+  (s.groups || []).forEach(function(g){
+    var o = g[6] || {}, link = o.go ? ' role="link" tabindex="0" data-go="' + o.go + '" aria-label="' + esc(g[4]) + ': go to the step"' : '';
+    h.push('<g class="grp' + (o.solid ? ' solid' : '') + '" data-f="' + g[5] + '"' + link + '><rect x="' + g[0] + '" y="' + g[1] + '" width="' + g[2] + '" height="' + g[3] + '" rx="12"/>' +
+      '<text x="' + (g[0] + 12) + '" y="' + (g[1] + 16) + '">' + esc(g[4]) + '</text></g>');
+  });
+  s.nodes.forEach(function(n){ byId[n[0]] = n; });
+  s.edges.forEach(function(e){
+    var a = byId[e[0]], b = byId[e[1]], o = e[4] || {};
+    var ax = a[1] + a[3] / 2, ay = a[2] + a[4] / 2, bx = b[1] + b[3] / 2, by = b[2] + b[4] / 2;
+    var mx = (ax + bx) / 2, my = (ay + by) / 2, dx = bx - ax, dy = by - ay, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var bend = o.bend || 0, cx = mx - dy / len * bend, cy = my + dx / len * bend;
+    var p1 = clip(ax, ay, a[3] / 2 + 3, a[4] / 2 + 3, cx - ax, cy - ay);
+    var p2 = clip(bx, by, b[3] / 2 + 5, b[4] / 2 + 5, cx - bx, cy - by);
+    var d = bend ? 'M' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1) + ' Q' + cx.toFixed(1) + ',' + cy.toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1)
+      : 'M' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1) + ' L' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+    var lx = bend ? 0.25 * p1[0] + 0.5 * cx + 0.25 * p2[0] : (p1[0] + p2[0]) / 2;
+    var ly = bend ? 0.25 * p1[1] + 0.5 * cy + 0.25 * p2[1] : (p1[1] + p2[1]) / 2;
+    var cls = 'e' + (o.back ? ' back' : ''), fa = '" data-f="' + e[2] + '"' + (o.also ? ' data-also="' + o.also.join(',') + '"' : '');
+    h.push('<g class="' + cls + fa + '><path d="' + d + '"/></g>');
+    if (e[3]) {
+      var tw = e[3].length * 6.2, gx = Math.abs(p2[0] - p1[0]), gy = Math.abs(p2[1] - p1[1]), anchor = 'middle', ty = ly - 4, tx = lx;
+      if (!bend && gx >= gy && tw > gx - 6) { ty = Math.min(a[2], b[2]) - 6; }
+      else if (!bend && gy > gx && gy < 34) { tx = lx + 7; ty = ly + 4; anchor = 'start'; }
+      labels.push('<g class="' + cls + fa + '><text x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" text-anchor="' + anchor + '">' + esc(e[3]) + '</text></g>');
+    }
+  });
+  s.nodes.forEach(function(n){
+    var o = n[8] || {}, cx = n[1] + n[3] / 2, full = txt(n[6]), sub = fit(full, n[3], 5.9), lab = fit(txt(n[5]), n[3], 7.4);
+    var link = o.go ? ' role="link" tabindex="0" data-go="' + o.go + '" aria-label="' + esc(txt(n[5])) + ': go to the step"' : '';
+    h.push('<g class="n' + (o.b ? ' b' : '') + '" data-f="' + n[7] + '"' + (o.also ? ' data-also="' + o.also.join(',') + '"' : '') + link + '>' +
+      '<title>' + esc(txt(n[5]) + (full ? ': ' + full : '')) + '</title><rect x="' + n[1] + '" y="' + n[2] + '" width="' + n[3] + '" height="' + n[4] + '" rx="8"/>' +
+      '<text class="t" x="' + cx + '" y="' + (n[2] + n[4] / 2 - (sub ? 3 : -4)) + '" text-anchor="middle">' + esc(lab) + '</text>' +
+      (sub ? '<text class="s" x="' + cx + '" y="' + (n[2] + n[4] / 2 + 13) + '" text-anchor="middle">' + esc(sub) + '</text>' : '') + '</g>');
+  });
+  h.push(labels.join(''), '</svg>');
+  $('.svgwrap', this.fig).innerHTML = h.join('');
+  $$('[data-go]', this.fig).forEach(function(el){
+    function jump(){ var sec = document.getElementById(el.getAttribute('data-go')); if (!sec) return;
+      if (sec._select) sec._select('why'); sec.scrollIntoView({ behavior: REDUCE ? 'auto' : 'smooth' });
+      var t = $('.tabs [aria-selected="true"]', sec); if (t) t.focus({ preventScroll: true }); }
+    el.addEventListener('click', jump);
+    el.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); } });
+  });
+  this.go(this.frame);
+};
+Diagram.prototype.go = function(f){
+  var self = this; this.frame = f;
+  $$('[data-f]', this.fig).forEach(function(el){
+    var k = +el.getAttribute('data-f'), also = (el.getAttribute('data-also') || '').split(',').filter(Boolean).map(Number);
+    var act = !self.rest && f > 0 && (k === f || also.indexOf(f) >= 0);
+    el.classList.toggle('act', act);
+    el.classList.toggle('pend', k > f);
+    el.classList.toggle('done', k <= f && !act);
+  });
+  this.caps.forEach(function(li, i){ li.classList.toggle('cur', !self.rest && i === f - 1); li.classList.toggle('seen', i < f - 1); });
+  $('.fr', this.fig).textContent = this.rest ? 'Everything built. Press Play to see the order.' : f === 0 ? 'Press Play or step through (' + this.n + ' steps)' : 'Step ' + f + ' of ' + this.n;
+};
+Diagram.prototype.play = function(){
+  var self = this; if (this.timer) return;
+  if (this.frame >= this.n) this.go(0);
+  var b = $('.play', this.fig); b.textContent = '❚❚ Pause'; b.setAttribute('aria-label', 'Pause');
+  var tick = function(){ if (self.frame >= self.n) { self.stop(); return; } self.go(self.frame + 1); };
+  tick(); this.timer = setInterval(tick, REDUCE ? 4000 : 2600);
+};
+Diagram.prototype.stop = function(){
+  if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  var b = $('.play', this.fig); b.textContent = '▶ Play'; b.setAttribute('aria-label', 'Play');
+};
+var DIAGS = [];
+$$('figure.anim').forEach(function(f){ if (SPECS[f.getAttribute('data-dg')]) DIAGS.push(new Diagram(f)); });
+
+/* print: every diagram complete, every panel shown (CSS) */
+window.addEventListener('beforeprint', function(){ DIAGS.forEach(function(d){ d.stop(); d._pf = d.frame; d._pr = d.rest; d.rest = true; d.go(d.n); }); });
+window.addEventListener('afterprint', function(){ DIAGS.forEach(function(d){ d.rest = d._pr; d.go(d._pf || 0); }); });
+
+
+renderVars(); renderProgress(); tickTimers();
+})();
+</script>
+</body>
+</html>

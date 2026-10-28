@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finish the install · Gen3 CSOC docs</title>
+<meta name="description" content="Add the cluster's outbound address to the allowed addresses, wait for Keycloak and the portal, and point the hostnames at the load balancer.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html" aria-current="page"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Install</li><li aria-current="page">Finish the install</li></ol></nav>
+<h1>Finish the install</h1>
+<p class="lead">Add the cluster's outbound address to the allowed addresses, wait for Keycloak and the portal, and point the hostnames at the load balancer.</p>
+<div class="meta"><span class="pill">Wizard step <b>Install</b></span><span class="pill">Time <b>3–6 minutes</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Press <b>Finish install</b> and wait until the banner says <b>CSOC is ready</b>.</p>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Press <span class="btn-ui">Finish install</span> in the banner.</li>
+  <li>Wait for <code>=== CSOC is installed ===</code> at the end of the log:
+    <div class="codeblock"><span class="lang">log</span><pre><code>=== CSOC is installed ===
+Portal:   https://portal.csoc.example.org  (user: admin)
+Keycloak: https://auth.csoc.example.org</code></pre></div></li>
+  <li>Wait for the banner <b>CSOC is ready</b>. Do not open <code class="ex">portal.csoc.example.org</code> in your browser before then: if your computer looks up the name before its record exists, your network's resolver can keep answering "no such name" after the record exists.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> the banner reads <b>CSOC is ready</b>, "Sign in as admin with the password you set. DNS can take a few minutes.", with the buttons <b>Open the CSOC</b> and <b>Tear down</b>, and the wizard moves to the <b>Done</b> step.</p>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<div class="banner"><b>Finish install in progress</b><span>Waiting for Keycloak and the portal, then creating the DNS records. 3–6 minutes.</span><span class="acts">Buttons: [Stop this run]</span></div>
+<div class="banner"><b>CSOC installed; waiting for DNS</b><span>The records are in Route 53; public DNS usually answers within a minute or two. The portal link appears then. Opening it earlier can make your network remember that the name does not exist.</span></div>
+<div class="banner green"><b>CSOC is ready</b><span>Sign in as admin with the password you set. DNS can take a few minutes.</span><span class="acts">Buttons: <b>[Open the CSOC]</b> [Tear down]</span></div>
+<p>The wizard shows <b>CSOC is ready</b> only after its own check finds both hostnames in public DNS. "DNS can take a few minutes" refers to your own network's resolver, which can lag behind.</p>
+<h4>Time</h4><p>3–6 minutes from <b>Finish install</b> to <b>CSOC is ready</b>; normal up to 12 minutes.</p>
+<div class="timer noprint" data-t="finish" data-typ="6" data-hi="12" data-label="finish" data-typtext="3–6 minutes"></div>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>The finish adds the cluster's outbound address to the allowed addresses, because the portal signs users in by calling Keycloak at its public hostname. It waits until Keycloak and the portal are running and the sign-in realm has been imported, and then removes the first administrator password from the cluster, so that only Keycloak holds it. Finally it creates two DNS records that point the CSOC's hostnames at the load balancer.</p>
+<figure class="anim" data-dg="finish" data-label="What the finish does"><figcaption><b>Diagram: What the finish does.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-finish-steps"><li>The allowed addresses are applied again, now with the cluster's outbound address added.</li><li>The finish waits for Keycloak to be ready and for the portal to finish rolling out.</li><li>Once the sign-in realm is imported, the first administrator password is removed from the cluster.</li><li>The finish reads the load balancer's address.</li><li>It creates DNS records for <code class="ex">portal.csoc.example.org</code> and <code class="ex">auth.csoc.example.org</code> that point at the load balancer.</li><li>Public DNS answers, and the <b>Done</b> step shows the link to the CSOC.</li></ol></figure>
+<p>For the details, see <a href="concepts/architecture.html#what-the-finish-does">What the finish does</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Banner: <b>The finish failed</b></td><td>The environment is still <code>bootstrapped</code>. Finishing again is safe.</td><td>Read the last lines of the log, then press <b>Finish again</b>. If the log points at the bootstrap, open <b>Advanced</b> and press <b>Bootstrap</b>.</td></tr><tr><td>Log: <code>the ALB was not provisioned</code></td><td>The AWS Load Balancer Controller could not create the load balancer, often because of the certificate or the subnets.</td><td>The log line names the command to read the controller's log. Fix the cause it reports, then press <b>Finish again</b>.</td></tr><tr><td>Banner: <b>CSOC installed; waiting for DNS</b> for more than 10 minutes</td><td>Public DNS does not answer for the hostnames yet, or your network's resolver remembers an earlier "no such name" answer.</td><td>Run <code>dig portal.csoc.example.org</code> (with your hostname). If it returns an address, switch your computer to a public resolver such as <code>1.1.1.1</code>.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="install.html" rel="prev"><small>Previous</small><b>← Bootstrap the CSOC</b></a>
+<a class="next" href="sign-in.html" rel="next"><small>Next</small><b>Sign in →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bootstrap the CSOC · Gen3 CSOC docs</title>
+<meta name="description" content="Choose who may reach the CSOC and set the administrator password, then install Keycloak, the CSOC portal and the services they need.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html" aria-current="page"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Install</li><li aria-current="page">Bootstrap the CSOC</li></ol></nav>
+<h1>Bootstrap the CSOC</h1>
+<p class="lead">Choose who may reach the CSOC and set the administrator password, then install Keycloak, the CSOC portal and the services they need.</p>
+<div class="meta"><span class="pill">Wizard step <b>Install</b></span><span class="pill">Time <b>about 5 minutes</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Fill in the <b>Install CSOC</b> form and press <b>Bootstrap CSOC</b>. The bootstrap stores the CSOC's secrets and installs everything that runs in the cluster.</p>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Under <b>1. How to deploy</b>, choose <b>Directly, from this wizard</b>. The other choice, <b>With a GitOps repo</b>, needs a GitHub App and a repository and is not part of this tutorial.</li>
+  <li>Under <span class="field">Allowed addresses</span>, check the address the wizard filled in: your computer's current public address as a <code>/32</code> range, for example <code class="ex">203.0.113.7/32</code>. Add every other range that needs to reach the CSOC, such as your campus or VPN outbound range, for example <code class="ex">198.51.100.0/24</code>. Only these addresses can reach the CSOC portal, Keycloak and the agent endpoint. The cluster's own outbound address (shown later as "Cluster egress IP") is added automatically.</li>
+  <li>Under <span class="field">Admin email (optional)</span>, enter the email you will sign in with, for example <code class="ex">jdoe@example.org</code>. Do not leave it empty: you use the same email in the commons' user.yaml, and without it Keycloak asks for an email and a name at the first sign-in.</li>
+  <li>Press <span class="btn-ui light">Generate password</span>. It fills <span class="field">Admin password</span> and <span class="field">Confirm admin password</span>.</li>
+  <li>Save the password in your password manager now.</li>
+  <li>Open <b>Images</b>. For a test, leave <span class="field">API image</span> and <span class="field">Frontend image</span> empty, which runs <code>quay.io/cdis/csoc-api:master</code> and <code>quay.io/cdis/csoc-frontend:master</code>. For real use, enter a release tag in both fields so that a restarted pod does not change version (see <a href="concepts/security.html#images-and-pinning">Images and pinning</a>).</li>
+  <li>Press <span class="btn-ui">Bootstrap CSOC</span> in the banner. The text under the form reads "Ready: press Bootstrap CSOC in the banner above." once every field is valid.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> the log ends with <code>=== CSOC is applied ===</code> and the banner reads <b>Bootstrapped; ready to finish</b>.</p>
+<div class="adm danger" role="note"><p class="adm-t">Save the administrator password</p><p>The password is for the CSOC user <code>admin</code>. The wizard does not store it. The bootstrap writes it to the cluster as the Kubernetes Secret <code>csoc-admin-bootstrap</code>, Keycloak reads it once, and the finish deletes that Secret; after that only Keycloak holds it. If you lose it, see <a href="how-to/reset-admin-password.html">Reset the admin password</a>.</p></div>
+<figure class="shot"><img src="assets/img/22-install.png" alt="The Install CSOC form: how to deploy, allowed addresses, admin password" loading="lazy"><figcaption>The <b>Install CSOC</b> form.</figcaption></figure>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<div class="banner"><b>Bootstrap in progress</b><span>Installing External Secrets, the load balancer controller, Keycloak and the portal. About 5 minutes.</span><span class="acts">Buttons: [Stop this run]</span></div>
+<p>The log shows one <code>=== … ===</code> heading for each stage.</p>
+<div class="banner"><b>Bootstrapped; ready to finish</b><span>Finishing waits for Keycloak and the portal, adds the egress IP to the allowlist and creates the DNS records.</span><span class="acts">Buttons: <b>[Finish install]</b></span></div>
+<h4>Time</h4><p>About 5 minutes from <b>Bootstrap CSOC</b> to <b>Bootstrapped; ready to finish</b>; normal up to 10 minutes.</p>
+<div class="timer noprint" data-t="boot" data-typ="5" data-hi="10" data-label="bootstrap" data-typtext="about 5 minutes"></div>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>The bootstrap connects to the new cluster and generates the CSOC's secrets (Keycloak's administrator login, the portal's client secret and session keys), storing them in AWS Secrets Manager. It finds the cluster's outbound address so that it can be allowed through the load balancer. Then it installs, in order, the controllers the CSOC relies on, Keycloak with its database, and the CSOC portal. The portal's load balancer is created at the end, open only to the allowed addresses.</p>
+<figure class="anim" data-dg="install" data-label="What the bootstrap installs"><figcaption><b>Diagram: What the bootstrap installs.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-install-steps"><li>The runner connects to the cluster and waits for a node to be ready.</li><li>It creates the CSOC's secrets in Secrets Manager, if they do not exist yet.</li><li>It finds the cluster's outbound address.</li><li>It stores the first administrator password for Keycloak to read once.</li><li>External Secrets Operator, which copies secrets from Secrets Manager into the cluster.</li><li>The AWS Load Balancer Controller, which creates load balancers for the cluster.</li><li>external-dns, which will publish each commons' hostname in your zone.</li><li>The EBS CSI driver, so that the cluster can create storage volumes.</li><li>CloudNativePG, which runs Keycloak's PostgreSQL database.</li><li>Keycloak and the CSOC sign-in realm, <code>csoc-realm</code>.</li><li>The CSOC portal and its API, behind an internet-facing load balancer limited to your allowed addresses.</li></ol></figure>
+<p>For namespaces, releases and the secrets involved, see <a href="concepts/architecture.html#what-the-bootstrap-installs">What the bootstrap installs</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Banner: <b>The bootstrap failed</b></td><td>The environment is still <code>applied</code>, and the cluster is running. "The log below says what went wrong."</td><td>Read the last <code>=== … ===</code> heading in the log: the failing stage is the one under it. Fix the cause, then press <b>Bootstrap again</b>. It is safe to repeat, and it asks for the form again.</td></tr><tr><td>Banner: <b>The bootstrap was stopped</b></td><td>Someone pressed <b>Stop this run</b>. "The log below shows where it stopped."</td><td>Press <b>Bootstrap again</b>.</td></tr><tr><td><b>Bootstrap CSOC</b> is disabled, and the form says "Needs at least one allowed address and a confirmed admin password."</td><td>The form is incomplete.</td><td>Fill in <b>Allowed addresses</b> and both password fields; the password needs 12 or more characters.</td></tr><tr><td>A prompt to sign in again before the bootstrap starts</td><td>Less than 15 minutes are left on your SSO sign-in.</td><td>In a terminal, run the command shown.</td></tr><tr><td>Log: <code>WARNING: could not detect the cluster's egress IP</code></td><td>The check that finds the cluster's outbound address timed out.</td><td>Press <b>Bootstrap again</b>. Sign-in fails until that address is allowed.</td></tr><tr><td>Log: <code>another operation is in progress</code></td><td>An interrupted run left a Helm release locked.</td><td>Press <b>Bootstrap again</b>. The bootstrap rolls back or removes a locked release before it continues.</td></tr><tr><td>Banner: <b>Waiting for pull request #N to be merged</b></td><td>You chose <b>With a GitOps repo</b>. The configuration waits in a pull request.</td><td>Press <b>Open the pull request</b> and merge it.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="certificate-and-dns.html" rel="prev"><small>Previous</small><b>← Certificate</b></a>
+<a class="next" href="finish.html" rel="next"><small>Next</small><b>Finish the install →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
