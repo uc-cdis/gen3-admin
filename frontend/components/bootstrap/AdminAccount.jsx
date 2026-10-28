@@ -5,6 +5,9 @@ import { IconCheck, IconCopy, IconX } from '@tabler/icons-react';
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!#%*+-=?@^_';
 const generate = (n = 20) => Array.from(crypto.getRandomValues(new Uint32Array(n)), (b) => CHARS[b % CHARS.length]).join('');
 
+// Errors that mean "not reachable yet", not "wrong".
+const TRANSIENT = /no such host|i\/o timeout|connection refused|connection reset|EOF|HTTP 50[234]|status 50[234]|TLS handshake|certificate/i;
+
 async function post(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
@@ -23,12 +26,29 @@ export default function AdminAccount({ target, environment }) {
   const [fresh, setFresh] = useState(null); // { password, done }
   const [busy, setBusy] = useState(false);
 
+  // Right after the finish, Keycloak's public name may not resolve yet, or
+  // its load balancer may not answer: keep asking quietly for up to 10
+  // minutes, and show an error only for anything else, or once that is up.
+  const [waiting, setWaiting] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    post('/api/gitops/csoc-admin', { ...target, environment })
-      .then((d) => { if (!cancelled) setInfo(d); })
-      .catch((err) => { if (!cancelled) setError(err.message); });
-    return () => { cancelled = true; };
+    let timer;
+    const ask = (attempt) => {
+      post('/api/gitops/csoc-admin', { ...target, environment })
+        .then((d) => { if (!cancelled) { setInfo(d); setError(null); setWaiting(false); } })
+        .catch((err) => {
+          if (cancelled) return;
+          if (attempt < 60 && TRANSIENT.test(err.message)) {
+            setWaiting(true);
+            timer = setTimeout(() => ask(attempt + 1), 10000);
+            return;
+          }
+          setWaiting(false);
+          setError(err.message);
+        });
+    };
+    ask(0);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [environment, target.bucket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = async () => {
@@ -48,7 +68,7 @@ export default function AdminAccount({ target, environment }) {
     <Paper withBorder p="md" radius="md">
       <Stack gap="sm">
         <Text fw={600}>Admin account</Text>
-        {!info && !error && <Group gap="xs"><Loader size="xs" /><Text size="sm">Asking Keycloak…</Text></Group>}
+        {!info && !error && <Group gap="xs"><Loader size="xs" /><Text size="sm">{waiting ? 'Waiting for Keycloak to answer at its public name (DNS can take a few minutes)…' : 'Asking Keycloak…'}</Text></Group>}
         {info && (
           <Stack gap={2}>
             <Text size="sm">Username: <b>{info.username}</b></Text>
