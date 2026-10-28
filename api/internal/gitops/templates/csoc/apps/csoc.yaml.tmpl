@@ -1,0 +1,27 @@
+# The CSOC portal: the gen3-admin chart, with values from this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: csoc
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    - repoURL: {{ q .Chart.RepoURL }}
+      targetRevision: {{ q .Chart.Revision }}
+      path: {{ .Chart.Path }}
+      helm:
+        releaseName: csoc
+        valueFiles: [$values/{{ .Dir }}/values/csoc.yaml]
+    - repoURL: {{ q .Repo.CloneURL }}
+      targetRevision: {{ q .Branch }}
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Namespace }}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+{{ template "retry" }}

@@ -24,7 +24,9 @@ import {
   Table,
   ScrollArea,
   Stepper,
-  PasswordInput
+  PasswordInput,
+  Modal,
+  Checkbox
 } from '@mantine/core';
 import {
   IconPlus,
@@ -219,34 +221,77 @@ function TerraformConfigViewer({ tfvars, config }) {
   );
 }
 
-function TerraformOperationButtons({ operations, disabled, onExecute }) {
+// Destroy runs with auto-approve, so the button asks the operator to type the
+// environment's name first -- the same guard the AWS console puts on deletes.
+function TerraformOperationButtons({ operations, disabled, onExecute, confirmName = '', destroyNote = null }) {
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [force, setForce] = useState(false);
   const buttonConfig = {
     init: { color: 'blue', variant: 'light', label: 'Init' },
     validate: { color: 'blue', variant: 'light', label: 'Validate' },
     plan: { color: 'yellow', variant: 'filled', label: 'Plan' },
     apply: { color: 'green', variant: 'filled', label: 'Apply' },
-    destroy: { color: 'red', variant: 'filled', label: 'Destroy' }
+    destroy: { color: 'red', variant: 'filled', label: 'Destroy' },
+    'install-csoc': { color: 'teal', variant: 'filled', label: 'Bootstrap CSOC' },
+    'finish-csoc': { color: 'teal', variant: 'filled', label: 'Finish install' },
+    'uninstall-csoc': { color: 'red', variant: 'light', label: 'Uninstall CSOC' },
   };
+  const expected = confirmName || 'destroy';
 
   return (
-    <Group grow>
-      {operations.map(op => {
-        console.log("op", op)
-        const config = buttonConfig[op] || buttonConfig[op?.split(' ')[0]] || buttonConfig.plan;
-        return (
-          <Button
-            key={op}
-            leftSection={<IconPlayerPlay size={16} />}
-            onClick={() => onExecute(op)}
-            disabled={disabled}
-            color={config.color}
-            variant={config.variant}
-          >
-            {config.label}
-          </Button>
-        );
-      })}
-    </Group>
+    <>
+      <Group grow>
+        {operations.map(op => {
+          const config = buttonConfig[op] || buttonConfig.plan;
+          return (
+            <Button
+              key={op}
+              leftSection={<IconPlayerPlay size={16} />}
+              onClick={() => (op === 'destroy' ? (setTyped(''), setConfirming(true)) : onExecute(op))}
+              disabled={disabled}
+              color={config.color}
+              variant={config.variant}
+            >
+              {config.label}
+            </Button>
+          );
+        })}
+      </Group>
+      <Modal opened={confirming} onClose={() => setConfirming(false)} title="Destroy this environment?">
+        <Stack gap="sm">
+          <Text size="sm">
+            This deletes every resource Terraform created for it, including the cluster and
+            its data. It cannot be undone.
+          </Text>
+          {destroyNote && <Text size="sm">{destroyNote}</Text>}
+          {destroyNote && (
+            <Checkbox
+              checked={force}
+              onChange={(e) => setForce(e.currentTarget.checked)}
+              label="Force: don't wait for anything graceful"
+              description="Terminates the cluster's nodes instead of draining them, drops stuck finalizers, and deletes its volumes directly. For when a teardown is stuck, or nothing in it needs keeping."
+            />
+          )}
+          <TextInput
+            label={<>Type <Code>{expected}</Code> to confirm</>}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            data-autofocus
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button
+              color="red"
+              disabled={typed !== expected}
+              onClick={() => { setConfirming(false); onExecute('destroy', { force }); }}
+            >
+              Destroy
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
   );
 }
 
@@ -484,7 +529,7 @@ export default function TerraformExecutor({
   // Terraform configuration
   tfvars = null,                // Pre-built tfvars string
   config = null,                // Config object to build tfvars from
-  workDir = '/tmp/gen3-terraform',
+  workDir = '',
   dockerImage = 'gen3-terraform:latest',
   // Name of the module to copy into a fresh work dir on init. The API maps
   // the name to a source, so the browser never chooses what Terraform runs.
@@ -495,8 +540,23 @@ export default function TerraformExecutor({
   stateRegion = 'us-east-1',
   stateKey = 'terraform.tfstate',
 
-  // Callbacks
+  // Registry environment the runs belong to. The API records each run under
+  // it and keeps its state at the registry's key, overriding stateKey.
+  environment = null,
+  // Options for an install-csoc run (allowed CIDRs, admin login).
+  installOptions = null,
+  // False holds the operation buttons back, e.g. while a form is incomplete.
+  canExecute = true,
+
+  // Run before a destroy, which only goes ahead if it succeeds: e.g.
+  // 'uninstall-csoc', which removes what Terraform does not know about.
+  beforeDestroy = null,
+
+  // Callbacks. onComplete gets { executionId, operation, replayed }: replayed
+  // is true for a run that had already finished when this page attached to it.
   onComplete = () => { },
+  // Every log update of the run shown, with that run: (lines, { id, operation }).
+  onLogs = null,
   onError = () => { },
   onProgress = () => { },
 
@@ -550,6 +610,9 @@ export default function TerraformExecutor({
   const [newTagKey, setNewTagKey] = useState('');
   const [newTagValue, setNewTagValue] = useState('');
   const logsEndRef = useRef(null);
+  // The operation to start once the current one succeeds (destroy, after
+  // beforeDestroy).
+  const nextOperation = useRef(null);
 
   // ========== Effects ==========
   useEffect(() => {
@@ -577,12 +640,43 @@ export default function TerraformExecutor({
     return () => { cancelled = true; };
   }, [dockerImage]);
 
-  // Auto-execute on mount if enabled, once the image is known to be present.
+  // Coming back to a work dir picks up where it was: a run still going is
+  // followed live, and the latest finished one is shown again. Only a work
+  // dir that has never run is started automatically (autoExecute), so
+  // returning to the page never starts a second run beside a running one.
   useEffect(() => {
-    if (autoExecute && operations.length > 0 && mode === 'embedded' && imageCheck?.present) {
-      executeTerraform(operations[0]);
-    }
-  }, [autoExecute, mode, imageCheck]);
+    if (mode !== 'embedded' || !imageCheck?.present || !localWorkDir) return undefined;
+    let cancelled = false;
+    (async () => {
+      let mine = [];
+      try {
+        const res = await fetch('/api/terraform/executions');
+        if (res.ok) {
+          mine = ((await res.json()) || [])
+            .filter((e) => e.work_dir === localWorkDir && operations.includes(e.operation))
+            .sort((a, b) => (b.start_time || '').localeCompare(a.start_time || ''));
+        }
+      } catch {
+        // Treated as no history: the buttons still work.
+      }
+      if (cancelled) return;
+      const latest = mine[0];
+      if (latest) {
+        const live = latest.status === 'running';
+        setExecution({ id: latest.id, operation: latest.operation });
+        setExecutionLogs([]);
+        setIsExecuting(live);
+        streamLogs(latest.id, latest.operation, { replayed: !live });
+      } else if (autoExecute && operations.length > 0) {
+        executeTerraform(operations[0]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, imageCheck, localWorkDir]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (onLogs && execution) onLogs(executionLogs, execution);
+  }, [executionLogs, execution]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ========== Helpers ==========
   const awsRegions = [
@@ -680,7 +774,7 @@ export default function TerraformExecutor({
     }
   };
 
-  const executeTerraform = async (operation) => {
+  const executeTerraform = async (operation, { force = false } = {}) => {
     setIsExecuting(true);
     setExecutionLogs([]);
     setExecution(null);
@@ -720,6 +814,10 @@ export default function TerraformExecutor({
           aws_region: awsContext.region,
           aws_profile: awsContext.profile,
           aws_credentials: toApiCredentials(awsContext.credentials),
+          aws_role_arn: awsContext.roleArn || undefined,
+          environment: environment || undefined,
+          install: operation === 'install-csoc' ? installOptions : undefined,
+          force: force || undefined,
         }),
       });
 
@@ -729,19 +827,23 @@ export default function TerraformExecutor({
         setExecution({ id: data.id, operation });
         streamLogs(data.id, operation);
       } else {
+        // Nothing started, so nothing may follow it: a destroy left armed
+        // here used to start after the next run that succeeded.
+        nextOperation.current = null;
         const errorMsg = `Error: ${data.error}`;
         setExecutionLogs([errorMsg]);
         setIsExecuting(false);
         onError(new Error(data.error));
       }
     } catch (error) {
+      nextOperation.current = null;
       setExecutionLogs([`Error: ${error.message}`]);
       setIsExecuting(false);
       onError(error);
     }
   };
 
-  const streamLogs = async (executionId, operation) => {
+  const streamLogs = async (executionId, operation, { replayed = false, attempt = 0 } = {}) => {
     const finish = (ok, message) => {
       setIsExecuting(false);
       setExecutionLogs(prev => [...prev, message]);
@@ -749,10 +851,13 @@ export default function TerraformExecutor({
       // A saved plan is spent once applied, whether or not the apply worked.
       if (operation === 'apply') setReviewedPlan(false);
       if (ok) {
-        onComplete({ executionId, operation });
-      } else {
+        onComplete({ executionId, operation, replayed });
+      } else if (!replayed) {
         onError(new Error(message));
       }
+      const next = nextOperation.current;
+      nextOperation.current = null;
+      if (ok && next && !replayed) executeTerraform(next);
     };
 
     try {
@@ -818,6 +923,17 @@ export default function TerraformExecutor({
       }
 
       if (!finished) {
+        // The connection dropped (a proxy, a laptop asleep), not the run:
+        // if it is still going, follow it again. The stream replays the log
+        // from the start, so the lines so far are replaced, not repeated.
+        const res = await fetch('/api/terraform/executions').catch(() => null);
+        const runs = res?.ok ? await res.json().catch(() => []) : [];
+        const run = (runs || []).find((e) => e.id === executionId);
+        if (run?.status === 'running' && attempt < 30) {
+          await new Promise((r) => setTimeout(r, 2000));
+          setExecutionLogs([]);
+          return streamLogs(executionId, operation, { replayed, attempt: attempt + 1 });
+        }
         finish(false, '\n✗ Log stream ended before the run reported an exit status');
       }
     } catch (error) {
@@ -826,8 +942,23 @@ export default function TerraformExecutor({
     }
   };
 
+  // A destroy with beforeDestroy set runs that first; finish() starts the
+  // destroy when it succeeds.
+  const runOperation = (operation, { force = false } = {}) => {
+    if (operation === 'destroy' && beforeDestroy) {
+      nextOperation.current = 'destroy';
+      executeTerraform(beforeDestroy, { force });
+      return;
+    }
+    executeTerraform(operation);
+  };
+
   const terminateExecution = async () => {
     if (!execution) return;
+    // Stopping part-way leaves the environment marked failed (and an
+    // interrupted Helm release is put back on the next run).
+    if (!window.confirm('Stop this run? It stops where it is: the environment is marked failed, and you run the step again to continue.')) return;
+    nextOperation.current = null;
 
     try {
       const response = await fetch(`/api/terraform/executions/${execution.id}`, {
@@ -844,11 +975,11 @@ export default function TerraformExecutor({
   };
 
   const handleViewLogs = (exec) => {
-    setExecution({ id: exec.id, operation: 'viewing' });
+    setExecution({ id: exec.id, operation: exec.operation });
     setExecutionLogs([]);
-    setIsExecuting(false);
+    setIsExecuting(exec.status === 'running');
     setRuntime(exec.runtime);
-    streamLogs(exec.id);
+    streamLogs(exec.id, exec.operation, { replayed: exec.status !== 'running' });
   };
 
   // ========== Context Value ==========
@@ -898,8 +1029,10 @@ export default function TerraformExecutor({
           {showOperationButtons && (
             <TerraformOperationButtons
               operations={operations}
-              disabled={isExecuting}
-              onExecute={executeTerraform}
+              disabled={isExecuting || !canExecute}
+              onExecute={runOperation}
+              confirmName={environment || ''}
+              destroyNote={beforeDestroy && `It first runs ${beforeDestroy}, and destroys only if that succeeds.`}
             />
           )}
 
@@ -910,7 +1043,7 @@ export default function TerraformExecutor({
               variant="outline"
               fullWidth
             >
-              Terminate Execution
+              Stop this run
             </Button>
           )}
 
@@ -966,7 +1099,7 @@ export default function TerraformExecutor({
                 <TextInput
                   label="Working Directory"
                   description="Path where Terraform files will be executed"
-                  placeholder="/tmp/gen3-terraform"
+                  placeholder="~/.gen3-csoc/terraform"
                   value={localWorkDir}
                   onChange={(e) => setLocalWorkDir(e.target.value)}
                 />
@@ -1279,7 +1412,7 @@ export default function TerraformExecutor({
                     variant="outline"
                     fullWidth
                   >
-                    Terminate Execution
+                    Stop this run
                   </Button>
                 )}
 

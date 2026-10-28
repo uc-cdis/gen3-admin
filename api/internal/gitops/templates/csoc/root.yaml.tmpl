@@ -1,0 +1,19 @@
+# The CSOC's root Application. Everything else in {{ .Dir }}/ is reached from
+# here: it syncs the Applications in {{ .Dir }}/apps, and they sync the rest.
+# Applied once by the bootstrap; after that ArgoCD manages it like any other.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: csoc-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: {{ q .Repo.CloneURL }}
+    targetRevision: {{ q .Branch }}
+    path: {{ .Dir }}/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

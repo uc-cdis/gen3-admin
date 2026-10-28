@@ -14,7 +14,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/uc-cdis/gen3-admin/internal/aws"
+	"github.com/uc-cdis/gen3-admin/internal/environments"
+	"github.com/uc-cdis/gen3-admin/internal/gitops"
 	"github.com/uc-cdis/gen3-admin/internal/k8s"
+	"github.com/uc-cdis/gen3-admin/internal/keycloakadmin"
 	"github.com/uc-cdis/gen3-admin/internal/logger"
 	"github.com/uc-cdis/gen3-admin/internal/middleware/keycloak"
 	"github.com/uc-cdis/gen3-admin/internal/runner"
@@ -197,6 +200,12 @@ func SetupHTTPServer() {
 	r.GET("/api/terraform/executions", terraform.HandleListTerraformExecutions())
 	r.POST("/api/terraform/bootstrap-secret", terraform.HandleBootstrapAWSSecret())
 	r.GET("/api/terraform/runner-image", terraform.HandleCheckRunnerImage())
+	// The deploy wizard's baseline: the chart's own values.yaml, so helm
+	// default changes reflect in the wizard without a portal release.
+	r.GET("/api/helm/chart-values", HelmChartValuesHandler)
+	environments.ReconcileRun = terraform.ReconcileRun
+	environments.RegisterRoutes(r)
+	gitops.RegisterRoutes(r)
 
 	// AWS routes
 	r.GET("/api/aws/identity", aws.GetCallerIdentity)
@@ -204,9 +213,23 @@ func SetupHTTPServer() {
 	// so the wizard checks the identity Terraform will actually use.
 	r.POST("/api/aws/identity", aws.IdentityHandler)
 	r.POST("/api/aws/route53/zone", aws.HostedZoneHandler)
+	r.POST("/api/aws/route53/setup", aws.HostedZoneSetupHandler)
+	r.POST("/api/aws/route53/teardown", aws.HostedZoneTeardownHandler)
+	r.POST("/api/aws/dns/resolves", aws.DNSResolvesHandler)
+	r.POST("/api/aws/acm/certificate", aws.CertificateRequestHandler)
+	r.POST("/api/aws/acm/certificate/status", aws.CertificateStatusHandler)
+	r.POST("/api/aws/acm/request", aws.ACMRequestHandler)
+	r.POST("/api/aws/acm/describe", aws.ACMDescribeHandler)
+	r.POST("/api/aws/acm/ensure-validation", aws.ACMEnsureValidationHandler)
+	r.POST("/api/aws/acm/delete", aws.ACMDeleteHandler)
+	r.POST("/api/aws/acm/validation-records", aws.ACMRecordsHandler)
+	r.POST("/api/aws/acm/import", aws.ACMImportHandler)
+	r.POST("/api/aws/acm/list", aws.ACMListHandler)
+	r.POST("/api/keycloak/commons-client", keycloakadmin.CommonsClientHandler)
 	r.POST("/api/aws/azs", aws.AvailabilityZonesHandler)
 	r.GET("/api/aws/profiles", aws.ListAWSProfilesHandler)
-	r.POST("/api/aws/set-profile", aws.SetAWSProfileHandler)
+	r.POST("/api/aws/state-bucket", aws.StateBucketHandler)
+	r.GET("/api/aws/my-ip", aws.MyIPHandler)
 	r.GET("/api/aws/instances", aws.ListEC2Instances)
 	r.GET("/api/aws/s3", aws.ListS3Buckets)
 
@@ -221,7 +244,27 @@ func SetupHTTPServer() {
 	if port == "" {
 		port = "8002"
 	}
-	if err := r.Run(":" + port); err != nil {
+	addr := listenHost() + ":" + port
+	log.Info().Str("addr", addr).Msg("HTTP listening")
+	if err := r.Run(addr); err != nil {
 		log.Fatal().Err(err).Msg("Error starting HTTP server")
 	}
+}
+
+// listenHost picks the interface the HTTP API binds to. Under MOCK_AUTH every
+// request is a superadmin that can run Terraform with the operator's AWS
+// credentials, so outside a cluster it listens on loopback only: on a laptop
+// on shared Wi-Fi, binding every interface hands that to the whole network.
+// BIND_ADDRESS overrides, e.g. 0.0.0.0 inside a container whose port is
+// published to the host's loopback.
+func listenHost() string {
+	if v, ok := os.LookupEnv("BIND_ADDRESS"); ok {
+		return v
+	}
+	if os.Getenv("MOCK_AUTH") == "true" {
+		if _, err := os.Stat(serviceAccountTokenPath); err != nil {
+			return "127.0.0.1"
+		}
+	}
+	return ""
 }

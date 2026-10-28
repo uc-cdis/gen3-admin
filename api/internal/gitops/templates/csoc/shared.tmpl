@@ -1,0 +1,39 @@
+{{ define "retry" }}    retry:
+      limit: 20
+      backoff: {duration: 30s, factor: 2, maxDuration: 10m}{{ end }}
+{{ define "helmApp" }}apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Name }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ q .Wave }}
+spec:
+  project: default
+  sources:
+    - repoURL: {{ q .ChartRepo }}
+      chart: {{ .Chart }}
+      targetRevision: {{ q .Version }}
+      helm:
+        releaseName: {{ .Name }}
+        valueFiles: [$values/{{ .Root.Dir }}/values/{{ .Name }}.yaml]
+    - repoURL: {{ q .Root.Repo.CloneURL }}
+      targetRevision: {{ q .Root.Branch }}
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Namespace }}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+{{ template "retry" }}{{ end }}
+{{ define "albAnnotations" }}    # One ALB for both hostnames, open only to the allowlist. CSOC renders
+    # every inbound-cidrs and loadBalancerSourceRanges in this directory from
+    # one list; if you edit by hand, change them all together.
+    alb.ingress.kubernetes.io/group.name: csoc
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: {{ q .CertARN }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/inbound-cidrs: {{ q (join .AllowedCIDRs ",") }}{{ end }}

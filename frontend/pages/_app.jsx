@@ -139,10 +139,11 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
   const focusedLayout = useFocusedLayoutState();
   const chromeless = bootstrapEnabled || focusedLayout;
 
+  // The setup wizard is the whole page: its step bar is the header.
   const appShellProps = {
-    header: { height: 60 },
+    header: bootstrapEnabled ? undefined : { height: 60 },
     withBorder: true,
-    padding: "md",
+    padding: bootstrapEnabled ? 0 : "md",
   };
 
   if (!chromeless) {
@@ -158,7 +159,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 
     <AppShell {...appShellProps} >
 
-      <AppShell.Header>
+      {!bootstrapEnabled && <AppShell.Header>
         <Group
           h="100%"
           px="md"
@@ -169,7 +170,7 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
           <Header toggleDesktop={toggleDesktop} desktopOpened={desktopOpened} toggleMobile={toggleMobile} mobileOpened={mobileOpened} />
         </Group>
 
-      </AppShell.Header>
+      </AppShell.Header>}
 
 
       {!chromeless && (
@@ -180,7 +181,9 @@ function AppContent({ Component, pageProps: { session, ...pageProps }, }) {
 
       <AppShell.Main>
         <Notifications limit={10} position="bottom-right" />
-        <Container size={chromeless ? "md" : "xl"} fluid={!chromeless}>
+        {/* The setup wizard sizes each of its steps itself, so it gets the
+            whole width; the environment chooser reads best narrow. */}
+        <Container size={chromeless ? "md" : "xl"} fluid={!chromeless || bootstrapEnabled} px={bootstrapEnabled ? 0 : undefined}>
           {!chromeless && <Breadcrumbs />}
           {/* <Alert mt="md" color="red" withCloseButton={false}>
             <b>You are currently connected to {url?.hostname}</b>

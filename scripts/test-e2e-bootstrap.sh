@@ -5,7 +5,9 @@
 # Drives the same API calls the /bootstrap wizard makes, against a running API
 # (start one with: ./scripts/dev.sh --bootstrap cloud). It goes as far as
 # `terraform plan` of the real CSOC module and never applies, so nothing is
-# created in AWS and no state is written to the bucket.
+# created in AWS and no state is written to the bucket. The only objects it
+# writes are its own environment-registry records, under
+# gen3-csoc/environments/<run id>/, which it deletes on exit.
 #
 # Usage:
 #   ./scripts/test-e2e-bootstrap.sh --bucket <state-bucket> [options]
@@ -56,8 +58,10 @@ for cmd in curl jq aws; do
 done
 
 RUN_ID="e2e-$(date +%Y%m%d%H%M%S)"
-STATE_KEY="e2e/${RUN_ID}/terraform.tfstate"
-WORK_ROOT="${TERRAFORM_WORK_ROOT:-/tmp/gen3-terraform}"
+# Runs registered as an environment keep state at the registry's key.
+REGISTRY_PREFIX="gen3-csoc/environments/${RUN_ID}/"
+STATE_KEY="${REGISTRY_PREFIX}terraform.tfstate"
+WORK_ROOT="${TERRAFORM_WORK_ROOT:-$HOME/.gen3-csoc/terraform}"
 TMP="$(mktemp -d)"
 EXEC_IDS=()
 
@@ -69,12 +73,20 @@ cleanup() {
     docker ps -aq --filter "label=terraform.io/execution-id=$id" | while read -r c; do docker rm -f "$c"; done >/dev/null 2>&1
   done
   rm -rf "${WORK_ROOT:?}/$RUN_ID" "${WORK_ROOT:?}/$RUN_ID-vars"
+  aws s3 rm "s3://$BUCKET/$REGISTRY_PREFIX" --recursive --only-show-errors ${PROFILE:+--profile "$PROFILE"} || true
 }
 trap cleanup EXIT
 
 # target builds the {profile, region} part every AWS lookup sends.
 target() {
   jq -n --arg r "${1:-$REGION}" --arg p "$PROFILE" '{region: $r} + (if $p == "" then {} else {profile: $p} end)'
+}
+
+# registry builds a registry request body: the target plus bucket and extras.
+registry() {
+  local extra="${1:-}"
+  [[ -n "$extra" ]] || extra='{}'
+  target | jq --arg b "$BUCKET" --argjson extra "$extra" '. + {bucket: $b} + $extra'
 }
 
 # api METHOD PATH [BODY] -> writes body to $TMP/body, prints status code.
@@ -95,6 +107,7 @@ execute() {
   body="$(jq -n --arg op "$op" --arg wd "$RUN_ID" --arg b "$BUCKET" --arg r "$REGION" \
     --arg k "$STATE_KEY" --arg p "$PROFILE" --arg tfvars "$(cat "$TMP/tfvars")" \
     '{operation: $op, work_dir: $wd, runtime: "docker", module: "csoc",
+      environment: $wd,
       state_bucket: $b, state_region: $r, state_key: $k, aws_region: $r,
       tfvars: $tfvars, tfvars_file_name: "terraform.tfvars"}
      + (if $p == "" then {} else {aws_profile: $p} end)')"
@@ -185,7 +198,31 @@ if [[ -n "$DOMAIN" ]]; then
   fi
 fi
 
-# ── 3. Input validation ──────────────────────────────────────────────────────
+# ── 3. State bucket and registry ─────────────────────────────────────────────
+info "State bucket and environment registry"
+if [[ "$(api POST /api/aws/state-bucket "$(registry)")" == "200" ]]; then
+  if [[ "$(jq -r '.exists and (.forbidden | not)' "$TMP/body")" == "true" ]]; then
+    pass "bucket $BUCKET is usable (versioning: $(jq -r .versioning "$TMP/body"))"
+  else
+    fail "bucket $BUCKET does not exist or is not this account's: $(cat "$TMP/body")"; exit 1
+  fi
+else
+  fail "state bucket check failed: $(jq -r .error "$TMP/body")"; exit 1
+fi
+
+env_body="$(registry "$(jq -n --arg n "$RUN_ID" --arg r "$REGION" \
+  '{environment: {name: $n, kind: "csoc", module: "csoc", region: $r}}')")"
+if [[ "$(api POST /api/environments/save "$env_body")" == "200" ]]; then
+  [[ "$(jq -r .status "$TMP/body")" == "new" ]] && pass "environment $RUN_ID registered" \
+    || fail "registered environment has status $(jq -r .status "$TMP/body"), want new"
+else
+  fail "registering the environment failed: $(jq -r .error "$TMP/body")"
+fi
+api POST /api/environments/list "$(registry)" >/dev/null
+jq -e --arg n "$RUN_ID" '.environments | any(.name == $n)' "$TMP/body" >/dev/null \
+  && pass "environment listed from the bucket" || fail "environment not in the registry listing"
+
+# ── 4. Input validation ──────────────────────────────────────────────────────
 info "Hostile input is rejected before anything runs"
 reject() {
   local label="$1" patch="$2"
@@ -199,14 +236,51 @@ reject "state key traversal"        '.state_key = "../../etc/terraform.tfstate"'
 reject "client-chosen module URL"   '.module = "git::https://evil.example/tf"'
 reject "operation with flags"       '.operation = "init -from-module=/etc"'
 reject "image read as a docker flag" '.docker_image = "--privileged"'
+reject "environment name traversal" '.environment = "../x" | .state_bucket = "b-ok"'
 
-# ── 4. Terraform against the real module ─────────────────────────────────────
+install_body() {
+  jq -n --arg wd "$RUN_ID" --arg b "$BUCKET" --arg r "$REGION" --arg p "$PROFILE" --argjson cidrs "$1" \
+    '{operation:"install-csoc", work_dir:$wd, runtime:"docker", environment:$wd,
+      state_bucket:$b, state_region:$r,
+      install:{allowed_cidrs:$cidrs, admin_password:"e2e-not-a-real-password"}}
+     + (if $p == "" then {} else {aws_profile: $p} end)'
+}
+code="$(api POST /api/terraform/execute "$(install_body '["0.0.0.0/0"]')")"
+[[ "$code" == "400" ]] && pass "install open to 0.0.0.0/0 -> 400" || fail "install open to the world -> HTTP $code, want 400"
+code="$(api POST /api/terraform/execute "$(install_body '["203.0.113.7/32"]')")"
+# Without a repo the install is direct, but it still needs the apply's outputs.
+if [[ "$code" == "400" ]] && jq -r .error "$TMP/body" | grep -q 'missing terraform outputs'; then
+  pass "install before apply -> 400"
+else
+  fail "install before apply -> HTTP $code: $(jq -r .error "$TMP/body")"
+fi
+code="$(api POST /api/terraform/execute "$(install_body '["203.0.113.7/32"]' | jq '.operation = "finish-csoc" | del(.install)')")"
+[[ "$code" == "400" ]] && pass "finish before install -> 400" || fail "finish before install -> HTTP $code, want 400"
+
+# ── GitOps, without a GitHub App: nothing is connected or proposed ──────────
+gitops_body="$(jq -n --arg e "$RUN_ID" --arg b "$BUCKET" --arg r "$REGION" --arg p "$PROFILE" \
+  '{environment:$e, bucket:$b, region:$r} + (if $p == "" then {} else {profile: $p} end)')"
+code="$(api POST /api/gitops/status "$gitops_body")"
+if [[ "$code" == "200" && "$(jq -r .connected "$TMP/body")" == "false" ]]; then
+  pass "gitops status -> not connected"
+else
+  fail "gitops status -> HTTP $code: $(cat "$TMP/body")"
+fi
+code="$(api POST /api/gitops/propose-csoc "$gitops_body")"
+[[ "$code" == "409" ]] && pass "propose before install -> 409" || fail "propose before install -> HTTP $code, want 409"
+code="$(api POST /api/gitops/connect "$(jq '. + {owner:"o", repo:"r", app_id:1, installation_id:1, private_key:"not a key"}' <<<"$gitops_body")")"
+[[ "$code" == "400" ]] && pass "connect with a non-PEM key -> 400" || fail "connect with a non-PEM key -> HTTP $code, want 400"
+
+# ── 5. Terraform against the real module ─────────────────────────────────────
 info "Terraform: examples/csoc against s3://$BUCKET/$STATE_KEY"
 {
   echo "vpc_name = \"$RUN_ID\""
   echo "aws_region = \"$REGION\""
   echo "availability_zones = [\"${AZS[0]}\", \"${AZS[1]}\", \"${AZS[2]}\"]"
   echo "hostname = \"$RUN_ID.example.org\""
+  echo "csoc_hostname = \"$RUN_ID.example.org\""
+  echo "keycloak_hostname = \"auth.$RUN_ID.example.org\""
+  echo "state_bucket = \"$BUCKET\""
   echo "revproxy_arn = \"\""
   echo "user_yaml_bucket_name = \"$RUN_ID-user-yaml\""
   echo "kubernetes_namespace = \"csoc\""
@@ -251,6 +325,24 @@ if [[ "$SKIP_PLAN" == "false" ]]; then
       # Output keeps its ANSI colours, which the UI renders; strip them here.
       summary="$(sed -n 's/^data://p' "$TMP/plan.log" | sed $'s/\x1b\\[[0-9;]*m//g' | grep -E '^Plan:' | tail -1)"
       [[ -n "$summary" ]] && pass "$summary" || note "no Plan: summary line found"
+
+      # The run is recorded once its container exits, a moment after the
+      # stream ends.
+      recorded=""
+      for _ in $(seq 1 15); do
+        api POST /api/environments/runs "$(registry "$(jq -n --arg n "$RUN_ID" '{name: $n}')")" >/dev/null
+        recorded="$(jq -r --arg id "$id" '.runs[]? | select(.id == $id and .status != "running") | "\(.status) \(.plan.add // "-")"' "$TMP/body")"
+        [[ -n "$recorded" ]] && break
+        sleep 2
+      done
+      if [[ "$recorded" == succeeded* && "$recorded" != *" -" ]]; then
+        pass "plan recorded in the registry ($recorded to add)"
+      else
+        fail "plan not recorded with a summary in the registry (got: ${recorded:-nothing})"
+      fi
+      api POST /api/environments/get "$(registry "$(jq -n --arg n "$RUN_ID" '{name: $n}')")" >/dev/null
+      [[ "$(jq -r .status "$TMP/body")" == "planned" ]] && pass "environment status is planned" \
+        || fail "environment status is $(jq -r .status "$TMP/body"), want planned"
     fi
   fi
 fi

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary · Gen3 CSOC docs</title>
+<meta name="description" content="The terms these docs and the wizard use, with links to their official documentation.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="../how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html" aria-current="page"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../reference/wizard-states.html">Reference</a></li><li aria-current="page">Glossary</li></ol></nav>
+<h1>Glossary</h1>
+<p class="lead">The terms these docs and the wizard use, with links to their official documentation.</p>
+
+
+<h2 id="terms">Terms</h2>
+<dl class="gloss">
+<dt id="acm">ACM</dt><dd>AWS Certificate Manager, which issues and renews the TLS certificates the load balancers serve. <a href="https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html">Docs</a>.</dd>
+  <dt id="acm-dns-validation">ACM DNS validation</dt><dd>How ACM confirms that you control a hostname: it issues the certificate once it finds a DNS record it chose under that name, and renews it while the record stays. <a href="https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html">Docs</a>.</dd>
+  <dt id="advanced">Advanced and Advanced Options</dt><dd><b>Advanced</b> is the fold under the run log that offers single operations (Init, Plan, Apply, Bootstrap, Finish install, Tear down…). <b>Advanced Options</b> is the fold on the <b>Setup</b> step with the Keycloak hostname, the VPC CIDR block and the commons data bucket.</dd>
+  <dt id="agent">Agent</dt><dd>A small service in each cluster that hosts commons. It connects out to the CSOC over mutual TLS and runs Helm and kubectl on the CSOC's behalf.</dd>
+  <dt id="alb">ALB</dt><dd>Application Load Balancer, the AWS load balancer that receives HTTPS traffic for the CSOC and for each commons. <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">Docs</a>.</dd>
+  <dt id="allowlist">Allowed addresses</dt><dd>The address ranges the CSOC's load balancers accept: the ranges in the <b>Allowed addresses</b> field on the <b>Install</b> step, plus the cluster's own outbound address. Also called the allowlist.</dd>
+  <dt id="alloy">Alloy</dt><dd>Grafana Alloy, a collector of logs and metrics. The CSOC portal's optional <b>Alloy</b> setup step enables it in a cluster.</dd>
+  <dt id="argo-cd">Argo CD</dt><dd>A GitOps tool that installs Kubernetes applications from a Git repository. The CSOC uses it when you choose <b>With a GitOps repo</b>; the wizard's labels spell it "ArgoCD". <a href="https://argo-cd.readthedocs.io/">Docs</a>.</dd>
+  <dt id="banner">Banner</dt><dd>The box under the wizard's stepper. It says where you stand and offers the next button to press. See <a href="wizard-states.html">Wizard states</a>.</dd>
+  <dt id="bootstrap">Bootstrap</dt><dd>The run that the <b>Bootstrap CSOC</b> button starts on the <b>Install</b> step. It stores the CSOC's secrets and installs the controllers, Keycloak and the CSOC portal.</dd>
+  <dt id="bootstrap-wizard">Bootstrap wizard</dt><dd>The application at <code>localhost:3000/bootstrap</code>, running in Docker on your computer, that creates a CSOC in an empty AWS account and tears it down.</dd>
+  <dt id="ca">CA</dt><dd>Certificate authority, which issues certificates that others trust. The CSOC runs its own CA for agents' client certificates.</dd>
+  <dt id="cidr">CIDR</dt><dd>A notation for an IP address range, such as <code>172.24.16.0/20</code> for the CSOC's VPC or <code>x.x.x.x/32</code> for a single address on the allowlist.</dd>
+  <dt id="cnpg">CloudNativePG</dt><dd>A Kubernetes operator for PostgreSQL. It runs Keycloak's database. <a href="https://cloudnative-pg.io/">Docs</a>.</dd>
+  <dt id="commons">Commons</dt><dd>Short for data commons: one Gen3 installation, deployed from the CSOC with the Helm chart <code>gen3</code>.</dd>
+  <dt id="csoc">CSOC</dt><dd>The Gen3 Cloud Services Operations Center: a portal, its API and Keycloak in their own EKS cluster, from which you deploy and manage Gen3 commons. See <a href="../what-is-a-csoc.html">What is a CSOC?</a></dd>
+  <dt id="ctds">CTDS and uc-cdis</dt><dd>The Center for Translational Data Science at the University of Chicago develops Gen3 and the CSOC; <code>uc-cdis</code> is the GitHub organization where they are published. <a href="https://ctds.uchicago.edu/">ctds.uchicago.edu</a>.</dd>
+  <dt id="data-commons">Data commons</dt><dd>A shared platform where a research community stores, describes, finds and analyzes data, with access controlled per user and project.</dd>
+  <dt id="delegation">Delegation</dt><dd>Four NS records in the parent zone that tell public DNS which name servers answer for your subdomain. <a href="https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/CreatingNewSubdomain.html">Docs</a>.</dd>
+  <dt id="direct-vs-gitops">Direct or GitOps</dt><dd>The two ways to install the CSOC. <b>Directly, from this wizard</b>: the wizard installs with Helm. <b>With a GitOps repo</b>: Argo CD installs from a repository, and every change is a pull request.</dd>
+  <dt id="domain-zone-hostname">Domain, zone, hostname</dt><dd><code class="ex">example.org</code> is the parent domain. <code class="ex">csoc.example.org</code> is your subdomain, and its Route 53 hosted zone is "the zone". A hostname is one full name in it, such as <code class="ex">portal.csoc.example.org</code>.</dd>
+  <dt id="egress-ip">Egress IP</dt><dd>The wizard's label for what these docs call the cluster's <b>outbound address</b>: the public IP address of the Squid instance that the cluster's traffic leaves through. It is added to the allowed addresses automatically.</dd>
+  <dt id="eks">EKS</dt><dd>Amazon Elastic Kubernetes Service, which runs the Kubernetes control plane. <a href="https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html">Docs</a>.</dd>
+  <dt id="environment">Environment</dt><dd>One CSOC as the wizard records it in the state bucket, named by <code class="ex">csoc-dev</code>.</dd>
+  <dt id="eso">External Secrets Operator</dt><dd>A controller that copies values from AWS Secrets Manager into Kubernetes Secrets. <a href="https://external-secrets.io/">Docs</a>.</dd>
+  <dt id="external-dns">external-dns</dt><dd>A controller that publishes the hostnames of Kubernetes ingresses in Route 53. Here it writes only records it owns, only in the CSOC's zone. <a href="https://kubernetes-sigs.github.io/external-dns/">Docs</a>.</dd>
+  <dt id="fargate">Fargate</dt><dd>AWS Fargate runs containers without EC2 nodes that you manage. Here it runs Karpenter's controller, so that the cluster needs no fixed nodes.</dd>
+  <dt id="fence">Fence</dt><dd>Gen3's sign-in and authorization service. It signs users in through the CSOC's Keycloak, and with Arborist it applies the permissions in user.yaml. <a href="https://github.com/uc-cdis/fence">Repository</a>.</dd>
+  <dt id="finish">Finish</dt><dd>The run that the <b>Finish install</b> button starts on the <b>Install</b> step. It completes the allowlist, waits for Keycloak and the portal, and creates the DNS records.</dd>
+  <dt id="gen3">Gen3</dt><dd>Open-source software for building data commons. <a href="https://gen3.org/">gen3.org</a>; <a href="https://docs.gen3.org/">documentation</a>.</dd>
+  <dt id="helm">Helm</dt><dd>The package manager for Kubernetes. The bootstrap installs the CSOC's components with Helm, and the agent installs each commons with it. <a href="https://helm.sh/docs/">Docs</a>.</dd>
+  <dt id="irsa">IRSA</dt><dd>IAM roles for service accounts: a Kubernetes service account is trusted by one IAM role, so its pods get only that role's AWS permissions, without keys. <a href="https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html">Docs</a>.</dd>
+  <dt id="karpenter">Karpenter</dt><dd>A node autoscaler that starts and stops EC2 instances to fit pending pods. Here it runs on AWS Fargate, starts on-demand nodes of any instance family of generation 5 or newer, choosing the cheapest type that fits, and the cluster has no fixed nodes. <a href="https://karpenter.sh/docs/">Docs</a>.</dd>
+  <dt id="keycloak">Keycloak</dt><dd>The open-source identity service that signs users in to the CSOC and, through it, to each commons. <a href="https://www.keycloak.org/documentation">Docs</a>.</dd>
+  <dt id="keycloak-realm">Keycloak realm</dt><dd>A separate set of users, clients and settings in Keycloak. The CSOC uses <code>csoc-realm</code>, and each commons gets a client in it named <code>fence-&lt;namespace&gt;</code>.</dd>
+  <dt id="kms">KMS</dt><dd>AWS Key Management Service, which holds encryption keys. The CSOC's encrypted volumes, bucket and secrets use AWS managed keys; no customer managed key is created.</dd>
+  <dt id="lbc">Load Balancer Controller</dt><dd>The AWS Load Balancer Controller, which creates load balancers for Kubernetes ingresses and services. <a href="https://kubernetes-sigs.github.io/aws-load-balancer-controller/">Docs</a>.</dd>
+  <dt id="lost-run">Lost run</dt><dd>A run whose end was not recorded, because the wizard's API restarted while it was in progress. The banner says its result is unknown and offers to retry it.</dd>
+  <dt id="mtls">Mutual TLS</dt><dd>A TLS connection in which both sides present certificates, so each proves its identity to the other. Agents and the CSOC connect this way.</dd>
+  <dt id="nat">NAT gateway</dt><dd>An AWS service that lets resources in private subnets reach the internet without accepting connections from it. <a href="https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html">Docs</a>.</dd>
+  <dt id="nlb">NLB</dt><dd>Network Load Balancer, the AWS load balancer for TCP traffic. The CSOC's agent endpoint uses one, limited to the allowlist.</dd>
+  <dt id="oidc">OIDC</dt><dd>OpenID Connect, the sign-in protocol between the portal, each commons' Fence and Keycloak. <a href="https://openid.net/developers/how-connect-works/">How it works</a>.</dd>
+  <dt id="outbound-address">Outbound address</dt><dd>The public IP address the cluster's traffic leaves from, which is that of the Squid instance in use. The wizard labels it "Egress IP".</dd>
+  <dt id="provision">Provision</dt><dd>The button on the <b>Review</b> step, and the wizard step that follows it. The button registers the environment and starts the init and the plan; the <b>Apply</b> button on the <b>Provision</b> step creates the infrastructure.</dd>
+  <dt id="registry">Registry</dt><dd>The records of each environment and its runs, kept in the state bucket. The banner is derived from them.</dd>
+  <dt id="runner">Runner</dt><dd>A container started for each run, with Terraform, Helm, kubectl and the AWS CLI.</dd>
+  <dt id="settled-status">Settled status</dt><dd>What the wizard believes exists in AWS, as recorded in the environment's record: <code>new</code>, <code>planned</code>, <code>applied</code>, <code>bootstrapped</code>, <code>installed</code>, <code>partial</code> or <code>destroyed</code>. It changes only when a run succeeds or leaves resources part-built. See <a href="wizard-states.html">Wizard states</a>.</dd>
+  <dt id="squid">Squid</dt><dd>The outbound proxy. The cluster reaches the internet only through it, and only to listed destinations. <a href="http://www.squid-cache.org/">squid-cache.org</a>.</dd>
+  <dt id="terraform">Terraform</dt><dd>The infrastructure-as-code tool that creates the network and the cluster from the gen3-terraform configuration. <a href="https://developer.hashicorp.com/terraform/docs">Docs</a>.</dd>
+  <dt id="user-yaml">user.yaml</dt><dd>A commons' permission file, which maps users' emails to what they may do. <a href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md">Guide</a>.</dd>
+  <dt id="vpc">VPC</dt><dd>Amazon Virtual Private Cloud, the private network the CSOC runs in. <a href="https://docs.aws.amazon.com/vpc/latest/userguide/what-is-amazon-vpc.html">Docs</a>.</dd>
+</dl>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../reference/troubleshooting.html" rel="prev"><small>Previous</small><b>← Troubleshooting</b></a>
+<a class="next" href="../reference/where-things-live.html" rel="next"><small>Next</small><b>Where things live →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

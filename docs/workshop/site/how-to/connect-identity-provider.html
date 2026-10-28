@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add your institution's sign-in to Keycloak (general Keycloak guidance) · Gen3 CSOC docs</title>
+<meta name="description" content="General Keycloak steps for letting people sign in to the CSOC, and to every commons that uses it, with their institutional accounts.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="../how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html" aria-current="page"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../how-to/tear-down.html">How-to guides</a></li><li aria-current="page">Keycloak: add your institution's sign-in</li></ol></nav>
+<h1>Add your institution's sign-in to Keycloak (general Keycloak guidance)</h1>
+<p class="lead">General Keycloak steps for letting people sign in to the CSOC, and to every commons that uses it, with their institutional accounts.</p>
+
+
+<h2 id="when-you-need-this">When you need this</h2>
+<p>When people other than the local <code>admin</code> user need to sign in, through campus single sign-on or a federation such as <a href="https://incommon.org/">InCommon</a>. This page gives the general Keycloak procedure for identity brokering; the exact screens depend on your Keycloak version, and the authority is "Identity Brokering" in the <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak Server Administration Guide</a>.</p>
+
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+  <li>Ask your identity team whether they offer SAML 2.0 or OpenID Connect, and what they need from you to register a service. For SAML they need Keycloak's service provider metadata; for OpenID Connect they issue a client ID and secret.</li>
+  <li>Agree which attributes they release. Gen3 identifies users by email, so the email attribute must be released and must match the emails in each commons' user.yaml.</li>
+  <li>Your address must be in the allowed addresses, because the Keycloak administration console is reached through <code class="ex">auth.csoc.example.org</code>.</li>
+  <li><span class="where">AWS console</span> Get Keycloak's administration login from AWS Secrets Manager, under <code>gen3-csoc/csoc-dev/</code>.</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li><span class="where">Browser</span> Sign in to the Keycloak administration console at <code>https://auth.csoc.example.org/admin/</code> with that login.</li>
+  <li>Switch to the realm <code>csoc-realm</code>.</li>
+  <li>Open <b>Identity providers</b> and add a provider of the type your identity team offers: <b>SAML v2.0</b> or <b>OpenID Connect v1.0</b>.</li>
+  <li>Give your identity team the redirect URI or the SAML metadata that Keycloak shows for the new provider, and enter the client ID and secret, or the metadata URL, that they give you.</li>
+  <li>Add mappers so that the email, and the first and last names, are copied from the provider's attributes into the Keycloak user.</li>
+  <li>Sign out, open <code class="ex">portal.csoc.example.org</code>, and choose the new provider on the sign-in page.</li>
+</ol>
+
+<h2 id="check-it-worked">Check it worked</h2>
+<p>You can sign in to the CSOC portal through your institution's sign-in, and Keycloak lists your account under <b>Users</b> in <code>csoc-realm</code>, linked to the provider. Commons that use <b>Use CSOC login</b> accept the same sign-in; what each user may do there still comes from its user.yaml.</p>
+<div class="adm tip" role="note"><p class="adm-t">Protect the administrator accounts</p><p>Require a second factor for the Keycloak administration login and the CSOC's <code>admin</code> user. Keycloak supports one-time passwords as a required action and in authentication flows; see the <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Server Administration Guide</a>.</p></div>
+
+<h2 id="if-it-fails">If it fails</h2>
+<ul>
+  <li><b>The admin console does not load:</b> add your address; see <a href="allow-an-address.html">Allow a new IP address</a>.</li>
+  <li><b>Sign-in works but commons deny access:</b> compare the email Keycloak shows for the user with the email in the commons' user.yaml.</li>
+</ul>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../how-to/request-dns-delegation.html" rel="prev"><small>Previous</small><b>← Request DNS delegation</b></a>
+<a class="next" href="../how-to/edit-user-yaml.html" rel="next"><small>Next</small><b>Edit a commons' user.yaml →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

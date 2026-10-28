@@ -1,5 +1,8 @@
 # Gen3-Admin Workshop E2E Testing Setup - Complete
 
+> This describes the local Minikube/k3s workshop setup. To bootstrap a CSOC
+> into AWS, see [docs/BOOTSTRAP_AWS.md](docs/BOOTSTRAP_AWS.md).
+
 ## Overview
 
 This document summarizes the complete E2E testing environment setup for the Gen3-Admin workshop demonstration. The setup enables rapid iteration and testing of the CSOC (Cloud Security Operations Center) deployment on local infrastructure using Minikube.

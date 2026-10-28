@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { TextInput, Textarea, Stack, Paper, Divider, Group, Text, Tooltip, Select, ActionIcon, SegmentedControl, Accordion, Box } from '@mantine/core';
+import { useState, useEffect, useRef } from 'react';
+import { TextInput, Textarea, Stack, Paper, Divider, Group, Text, Tooltip, Select, ActionIcon, SegmentedControl, Accordion, Box, Button, Badge, Code, Loader } from '@mantine/core';
 import { IconRefresh, IconCloud, IconKey, IconCertificate, IconInfoCircle, IconEdit } from '@tabler/icons-react';
 import { callGoApi } from '@/lib/k8s';
 
@@ -10,8 +10,16 @@ const CERT_SOURCES = [
   { label: 'Manual', value: 'manual', description: 'Paste your own certificate & key' },
 ];
 
+const HOSTNAME = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
 const HostnameStep = ({ form, certs, fetchCerts }) => {
   const [certSource, setCertSource] = useState('acm');
+  // A certificate requested here for the hostname: { arn, status, records,
+  // hosted_zone_id, reused } from /aws/acm/certificate.
+  const [requested, setRequested] = useState(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState(null);
+  const pollTimer = useRef(null);
   const [wildcardDomain, setWildcardDomain] = useState('');
   const [subdomain, setSubdomain] = useState('');
 
@@ -37,8 +45,49 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
       .finally(() => setTlsLoading(false));
   }, [certSource]);
 
+  // An ACM certificate is served by an AWS load balancer, which the chart
+  // only uses with global.aws.enabled.
+  const selectAcmCertificate = (arn) => {
+    form.setFieldValue('values.global.revproxyArn', arn);
+    if (arn) form.setFieldValue('values.global.aws.enabled', true);
+  };
+
+  const hostname = (form.values.values?.global?.hostname || '').trim().toLowerCase();
+
+  // ACM issues a few minutes after its validation record is in DNS; until
+  // then the certificate is not usable, so it is only set once issued.
+  const pollCertificate = (arn) => {
+    clearTimeout(pollTimer.current);
+    pollTimer.current = setTimeout(async () => {
+      try {
+        const st = await callGoApi('/aws/acm/certificate/status', 'POST', { arn }, null);
+        setRequested((cur) => (cur && cur.arn === arn ? { ...cur, ...st } : cur));
+        if (st.status === 'ISSUED') { selectAcmCertificate(arn); return; }
+        if (st.status === 'PENDING_VALIDATION') pollCertificate(arn);
+      } catch (err) {
+        setRequestError(err.message || String(err));
+      }
+    }, 10000);
+  };
+  useEffect(() => () => clearTimeout(pollTimer.current), []);
+
+  const requestCertificate = async () => {
+    setRequesting(true);
+    setRequestError(null);
+    try {
+      const res = await callGoApi('/aws/acm/certificate', 'POST', { hostname }, null);
+      setRequested(res);
+      if (res.status === 'ISSUED') selectAcmCertificate(res.arn);
+      else if (res.status === 'PENDING_VALIDATION') pollCertificate(res.arn);
+    } catch (err) {
+      setRequestError(err.message || String(err));
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   const handleCertSelect = (value) => {
-    form.setFieldValue('values.global.revproxyArn', value);
+    selectAcmCertificate(value);
     const selectedCert = certs.find(cert => cert.value === value);
     if (selectedCert && selectedCert.label.startsWith('*.')) {
       const domain = selectedCert.label.replace('*.', '');
@@ -107,6 +156,32 @@ const HostnameStep = ({ form, certs, fetchCerts }) => {
                 </ActionIcon>
               </Tooltip>
             </Group>
+            <Group gap="sm" align="center">
+              <Button size="xs" variant="light" leftSection={<IconCertificate size={14} />}
+                onClick={requestCertificate} loading={requesting}
+                disabled={!HOSTNAME.test(hostname) || hostname.startsWith('.')}>
+                Request a certificate for {HOSTNAME.test(hostname) ? hostname : 'the hostname below'}
+              </Button>
+              {requested && (
+                <Badge variant="light" color={requested.status === 'ISSUED' ? 'green' : requested.status === 'PENDING_VALIDATION' ? 'blue' : 'red'}
+                  leftSection={requested.status === 'PENDING_VALIDATION' ? <Loader size={10} /> : null}>
+                  {requested.status === 'PENDING_VALIDATION' ? 'waiting for ACM to validate' : requested.status.toLowerCase().replaceAll('_', ' ')}
+                </Badge>
+              )}
+            </Group>
+            {requested && (
+              <Text size="xs" c="dimmed">
+                {requested.reused ? 'An existing certificate already covers this hostname. ' : 'Requested in ACM. '}
+                {requested.status === 'ISSUED' && 'It is selected for this commons.'}
+                {requested.status === 'PENDING_VALIDATION' && (requested.hosted_zone_id
+                  ? `Its validation record is in hosted zone ${requested.hosted_zone_id}; ACM issues it within a few minutes.`
+                  : 'No hosted zone this CSOC can write to serves the hostname. Add this record where the domain is hosted:')}
+              </Text>
+            )}
+            {requested?.status === 'PENDING_VALIDATION' && !requested.hosted_zone_id && (requested.records || []).map((r) => (
+              <Code block key={r.name}>{`${r.name} ${r.type} ${r.value}`}</Code>
+            ))}
+            {requestError && <Text size="xs" c="red">{requestError}</Text>}
           </Stack>
         )}
 

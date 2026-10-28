@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy a Gen3 commons · Gen3 CSOC docs</title>
+<meta name="description" content="Use the portal's Gen3 deployment wizard to install a first commons, with sign-in through the CSOC.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html" aria-current="page"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>In the CSOC portal</li><li aria-current="page">Deploy a Gen3 commons</li></ol></nav>
+<h1>Deploy a Gen3 commons</h1>
+<p class="lead">Use the portal's Gen3 deployment wizard to install a first commons, with sign-in through the CSOC.</p>
+<div class="meta"><span class="pill">Where <b>CSOC portal</b></span><span class="pill">Time <b>about 12 minutes from Deploy Gen3</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Install a Gen3 commons named <code>commons-a</code> into the CSOC's cluster, at <code class="ex">commons-a.csoc.example.org</code>, with sign-in through the CSOC's Keycloak and administrator rights for <code class="ex">jdoe@example.org</code>.</p>
+<p>A commons is made of Gen3 services, among them <b>Fence</b> (sign-in and access tokens), <b>Arborist</b> (permissions), <b>Indexd</b> (the index of data files) and <b>Sheepdog</b> (metadata submission).</p>
+
+<h2 id="steps">Steps</h2>
+<h3 id="prepare-the-useryaml">Prepare the user.yaml</h3>
+<ol class="steps">
+  <li>Copy the user.yaml below.</li>
+  <li>Replace both occurrences of <span class="ph">&lt;admin-email&gt;</span> with the email you sign in with, for example <code class="ex">jdoe@example.org</code>: once under <code>users:</code> in the <code>administrators</code> group, and once under <code>users:</code> at the end.</li>
+  <li>Keep it at hand; you paste the whole file into the <b>Auth</b> step.</li>
+</ol>
+<div class="codeblock tall"><span class="lang">yaml</span><pre><code>authz:
+  anonymous_policies: []
+  all_users_policies: []
+  groups:
+    - name: administrators
+      policies:
+        - all_programs_admin
+        - services.sheepdog-admin
+        - indexd_admin
+        - data_upload
+      users:
+        - <span class="ph">&lt;admin-email&gt;</span>
+  resources:
+    - name: data_file
+    - name: programs
+    - name: services
+      subresources:
+        - name: sheepdog
+          subresources:
+            - name: submission
+              subresources:
+                - name: program
+                - name: project
+        - name: indexd
+          subresources:
+            - name: admin
+  policies:
+    - id: all_programs_admin
+      resource_paths: [/programs]
+      role_ids: [admin]
+    - id: services.sheepdog-admin
+      resource_paths:
+        - /services/sheepdog/submission/program
+        - /services/sheepdog/submission/project
+      role_ids: [sheepdog_admin]
+    - id: indexd_admin
+      resource_paths: [/services/indexd/admin]
+      role_ids: [indexd_admin]
+    - id: data_upload
+      resource_paths: [/data_file]
+      role_ids: [file_uploader]
+  roles:
+    - id: admin
+      permissions:
+        - id: admin
+          action: {service: "*", method: "*"}
+    - id: sheepdog_admin
+      permissions:
+        - id: sheepdog_admin_action
+          action: {service: sheepdog, method: "*"}
+    - id: indexd_admin
+      permissions:
+        - id: indexd_admin
+          action: {service: indexd, method: "*"}
+    - id: file_uploader
+      permissions:
+        - id: file_upload
+          action: {service: fence, method: file_upload}
+
+users:
+  <span class="ph">&lt;admin-email&gt;</span>:
+    admin: true</code></pre></div>
+<p>In plain terms, this file does four things:</p>
+<ul>
+  <li>It gives nobody access by default. Anonymous visitors, and signed-in users without a policy, can do nothing.</li>
+  <li>It gives your email full control of all programs and projects, including creating them and submitting metadata.</li>
+  <li>It lets your email manage the index of data files and upload data files.</li>
+  <li>It marks your email as a commons administrator.</li>
+</ul>
+<p>To give a colleague the same rights, add their email as a second line under <code>users:</code> in the <code>administrators</code> group, and add them under <code>users:</code> at the end with <code>admin: true</code>. The <a href="https://github.com/uc-cdis/fence/blob/master/docs/additional_documentation/user.yaml_guide.md">user.yaml guide</a> describes other permissions.</p>
+
+<h3 id="fill-in-the-deployment-wizard">Fill in the deployment wizard</h3>
+<p>Open <b>Deploy a new Gen3 instance</b> (<code>/helm/gen3/deploy</code>). Fill in each step as below, and press <b>Next</b> at the bottom of each.</p>
+<div class="tw"><table><thead><tr><th>Step</th><th>Field</th><th>Value</th></tr></thead><tbody>
+  <tr><td rowspan="3"><b>Destination</b></td><td>Cluster</td><td>The agent from <a href="connect-cluster.html">Connect the cluster</a>: <code>aws</code></td></tr>
+  <tr><td>Release Name</td><td><code class="cp">commons-a</code></td></tr>
+  <tr><td>Use custom namespace</td><td>Leave off; the namespace is the release name. Keep the Helm repository (<code>https://helm.gen3.org</code>, chart <code>gen3</code>).</td></tr>
+  <tr><td rowspan="2"><b>Globals</b></td><td>Target cloud platform</td><td><b>Amazon Web Services (AWS)</b>, Region <code class="cp">us-east-1</code>, with <b>AWS Enabled (controls ingress annotations)</b> on, so that the commons gets an AWS load balancer</td></tr>
+  <tr><td>Other fields</td><td>Keep the defaults. <b>Data Upload Bucket</b> stays empty and <b>Enable Crossplane</b> stays off; see <a href="#where-the-data-lives">Where the data lives</a>.</td></tr>
+  <tr><td rowspan="3"><b>Hostname</b></td><td>Hostname (lower on the page)</td><td>Fill this in first: <code class="cp">commons-a.csoc.example.org</code>. If the form shows "Subdomain for *.csoc.example.org" instead, enter <code>commons-a</code>.</td></tr>
+  <tr><td>Certificate Source</td><td><b>AWS ACM</b></td></tr>
+  <tr><td>Certificate</td><td>Press <b>Request a certificate for commons-a.csoc.example.org</b>. The CSOC writes the validation records into your zone. Wait until the badge changes from "waiting for ACM to validate" to issued and the certificate is selected for this commons.</td></tr>
+  <tr><td rowspan="3"><b>Database</b></td><td>Local or external</td><td><b>Local</b>, a PostgreSQL database in the commons' namespace.</td></tr>
+  <tr><td>Automatically Create Databases</td><td>Keep on.</td></tr>
+  <tr><td>Enable Persistence?</td><td>Turn on, so that the database is kept on an EBS volume. Leave it off only for a throwaway test: off, the database lives in the pod's temporary storage and is lost whenever the pod is replaced.</td></tr>
+  <tr><td><b>Services</b></td><td>Modules</td><td>Keep the defaults: the core services and the frontend.</td></tr>
+  <tr><td rowspan="3"><b>Auth</b></td><td>Log in through this CSOC</td><td>Press <span class="btn-ui">Use CSOC login</span>. It changes to <b>Connected</b> and fills in the sign-in settings.</td></tr>
+  <tr><td>Authorization Source</td><td><b>Custom user.yaml (inline)</b></td></tr>
+  <tr><td>Custom Role Definitions (YAML format)</td><td>Paste the whole user.yaml you prepared. This field holds the complete file.</td></tr>
+  <tr><td><b>Config</b></td><td>Service settings</td><td>Keep the defaults.</td></tr>
+  <tr><td><b>Deploy</b></td><td>Review and launch</td><td>Check the summary and press <span class="btn-ui">Deploy Gen3</span> straight away.</td></tr>
+</tbody></table></div>
+<div class="adm warning" role="note"><p class="adm-t">Press Deploy Gen3 straight away</p><p>The portal's access token is short-lived. If the page stays open too long, pressing <b>Deploy Gen3</b> shows <b>Deployment Failed</b> with the message "Token verification failed". Nothing is installed in that case: reload the page or sign in again, check the summary, and press <b>Deploy Gen3</b> again.</p></div>
+
+<h3 id="open-the-commons">Open the commons</h3>
+<ol class="steps">
+  <li>When the portal shows <b>Gen3 Deployed Successfully!</b>, open the address under "Access your instance at:", <code class="cp">https://commons-a.csoc.example.org</code>.</li>
+  <li>If the browser shows <code>502 Bad Gateway</code>, wait 5 minutes and reload: the services are still starting (see the note under <a href="#expected-result">Expected result</a>).</li>
+  <li>Press <b>Login</b>, and sign in through the CSOC's Keycloak as <code>admin</code>.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> commons-a.csoc.example.org shows the Gen3 portal, signed in as <code>admin</code>, whose email is jdoe@example.org.</p>
+
+<h3 id="where-the-data-lives">Where the data lives</h3>
+<p>A Gen3 commons keeps metadata in its database and data files in object storage. This tutorial's commons has a database, on an EBS volume with persistence on, but <b>no data bucket</b>: <b>Data Upload Bucket</b> on the <b>Globals</b> step is empty, and Crossplane, which could create one, is off. Uploading data files needs an S3 bucket and Fence access to it, which the tutorial does not create; see <a href="next-steps.html#known-gaps">Known gaps</a>.</p>
+
+<h3 id="deploy-a-second-commons">Deploy a second commons</h3>
+<p>On the success page, press <b>Deploy Another</b> and repeat the steps with the release name <code>commons-b</code> and the hostname <code class="ex">commons-b.csoc.example.org</code>.</p>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<p>The portal shows <b>Deploying Gen3</b>, with "Sending configuration to <i>cluster</i>" and a grid of deployments with ready and total counts. When the release is installed, it shows <b>Gen3 Deployed Successfully!</b> with the status, chart and revision, and the buttons <b>Go to Dashboard</b> and <b>Deploy Another</b>.</p>
+<div class="adm note" role="note"><p class="adm-t">A 502 error for several minutes is expected</p><p>Right after the deploy, <code class="ex">commons-a.csoc.example.org</code> returns <code>502 Bad Gateway</code> for several minutes. The load balancer is ready before the services behind it: arborist and indexd wait for their database secrets before they start. The site answers once they are ready.</p></div>
+<p>If the deploy takes longer than the portal waits, it shows <b>Deployment Timeout</b>. That is not a failure; follow the deployments in the dashboard.</p>
+<h4>Time</h4><p>About 12 minutes from <b>Deploy Gen3</b> to a working site, including several minutes of 502 responses while the services start; normal up to 20 minutes.</p>
+<div class="timer noprint" data-t="gen3" data-typ="12" data-hi="20" data-label="Gen3 deploy" data-typtext="about 12 minutes"></div>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>Before the install, the CSOC requests an ACM certificate for the commons and registers the commons with Keycloak, so that the commons can sign users in through the CSOC. When you press <b>Deploy Gen3</b>, the CSOC sends the settings to the agent, and the agent installs the Gen3 Helm chart into the commons' own namespace. The commons' services start, Karpenter adds nodes if they do not fit, a load balancer is created with the certificate, and external-dns publishes the hostname in your zone.</p>
+<figure class="anim" data-dg="gen3" data-label="Deploying a Gen3 commons"><figcaption><b>Diagram: Deploying a Gen3 commons.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-gen3-steps"><li>The CSOC requests a certificate for <code class="ex">commons-a.csoc.example.org</code> and writes its validation records into your zone.</li><li><b>Use CSOC login</b> registers the commons with the CSOC's Keycloak and fills in the sign-in settings.</li><li><b>Deploy Gen3</b> sends your settings to the CSOC API.</li><li>The CSOC forwards the install to the agent over its open connection.</li><li>The agent installs the Gen3 Helm chart into the namespace <code>commons-a</code>.</li><li>The commons' services and database start. Karpenter adds nodes if needed.</li><li>A load balancer is created for the commons, with its certificate.</li><li>external-dns publishes <code class="ex">commons-a.csoc.example.org</code> in your zone.</li><li>You open the commons and sign in through the CSOC's Keycloak. The user.yaml gives your email administrator rights.</li></ol></figure>
+<p>For the details, see <a href="concepts/architecture.html#deploying-a-commons">Deploying a commons</a>. To change permissions later, see <a href="how-to/edit-user-yaml.html">Edit a commons' user.yaml</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><b>Deployment Failed</b> with "Token verification failed"</td><td>The page was open too long and the portal's short-lived access token expired. Nothing was installed.</td><td>Reload the page, or sign in again, then check the summary and press <b>Deploy Gen3</b> again.</td></tr><tr><td><code>502 Bad Gateway</code> at the commons' hostname after the deploy</td><td>Expected for several minutes: the load balancer is ready before the services. arborist and indexd wait for their database secrets before they start.</td><td>Wait 5 minutes and reload. If it lasts more than 20 minutes after the deploy, check the pods: <code>kubectl -n commons-a get pods</code>.</td></tr><tr><td>Load warning: the hostname is <code>localhost</code></td><td>The <b>Hostname</b> field was left empty.</td><td>Go back to the <b>Hostname</b> step and enter the commons' hostname.</td></tr><tr><td>The certificate badge stays at "waiting for ACM to validate"</td><td>The validation records are not in public DNS yet.</td><td>Wait 5 minutes. You can continue and select the certificate later.</td></tr><tr><td><b>Deployment Failed</b> with another message</td><td>The agent or Helm returned the error shown.</td><td>Read the message. A YAML error names the line; "agent not connected" means the agent must be reconnected first.</td></tr><tr><td><b>Deployment Timeout</b></td><td>The deploy is still running ("Deployment is still in progress").</td><td>Watch the deployments in the portal's dashboard.</td></tr><tr><td>The commons hostname does not resolve</td><td>external-dns writes the record only after the load balancer exists.</td><td>Wait 2 minutes, then run <code>dig</code> on the hostname.</td></tr><tr><td>You can sign in to the commons but have no access</td><td>The email in user.yaml does not match your email in Keycloak.</td><td>See <a href="how-to/edit-user-yaml.html">Edit a commons' user.yaml</a>.</td></tr></tbody></table></div>
+
+<h2 id="next">Next</h2>
+<p>You have a running CSOC and a first commons. When you no longer need them, <a href="how-to/tear-down.html">tear them down</a> to stop the costs. For what to do next, see <a href="next-steps.html">After the tutorial</a>.</p>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="connect-cluster.html" rel="prev"><small>Previous</small><b>← Connect the cluster</b></a>
+<a class="next" href="how-to/tear-down.html" rel="next"><small>Next</small><b>Tear down →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

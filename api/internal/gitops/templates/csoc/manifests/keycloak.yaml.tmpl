@@ -1,0 +1,61 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+  # CNPG generates the database login into the keycloak-db-app Secret.
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  instances: 1
+  bootstrapAdmin:
+    user:
+      secret: keycloak-admin-credentials
+  db:
+    vendor: postgres
+    host: keycloak-db-rw
+    database: keycloak
+    usernameSecret: {name: keycloak-db-app, key: username}
+    passwordSecret: {name: keycloak-db-app, key: password}
+  # The ALB terminates TLS and forwards plain HTTP with X-Forwarded headers.
+  http:
+    httpEnabled: true
+  hostname:
+    hostname: {{ q (printf "https://%s" .KeycloakHost) }}
+  proxy:
+    headers: xforwarded
+  ingress:
+    enabled: false
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    limits: {cpu: "1", memory: 1536Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  annotations:
+{{ template "albAnnotations" . }}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: {{ q .KeycloakHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-service
+                port:
+                  name: http

@@ -1,0 +1,22 @@
+# Keycloak, its database, the secrets CSOC reads, and the ArgoCD repo login.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: csoc-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: {{ q .Repo.CloneURL }}
+    targetRevision: {{ q .Branch }}
+    path: {{ .Dir }}/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Namespace }}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    # The CRDs come from the operators synced in earlier waves.
+    syncOptions: [CreateNamespace=true, SkipDryRunOnMissingResource=true]
+{{ template "retry" }}

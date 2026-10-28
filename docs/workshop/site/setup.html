@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup: account, state bucket, names and DNS zone · Gen3 CSOC docs</title>
+<meta name="description" content="Choose the AWS account, create the state bucket, name the CSOC, and create and delegate its DNS zone.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html" aria-current="page"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Setup</li><li aria-current="page">Setup</li></ol></nav>
+<h1>Setup: account, state bucket, names and DNS zone</h1>
+<p class="lead">Choose the AWS account, create the state bucket, name the CSOC, and create and delegate its DNS zone.</p>
+<div class="meta"><span class="pill">Wizard step <b>Setup</b></span><span class="pill">Time <b>about 5 minutes</b></span></div>
+
+<div class="choice">
+<p>Which applies to you?</p>
+<ul>
+  <li><b>You sign in with SSO</b> (recommended), <b>or with access keys</b>: both use <a href="#a-choose-the-account">A. Choose the account</a> with a profile.</li>
+  <li><b>The state bucket already exists</b>, because you are coming back: see <a href="#b-create-the-state-bucket">B</a> and <a href="how-to/resume.html">Resume after closing the tab</a>.</li>
+  <li><b>The parent domain is in Route 53 in this account</b>, <b>in another account</b>, or <b>managed by central IT</b>: see <a href="#d-create-and-delegate-the-zone">D. Create and delegate the zone</a>.</li>
+  <li><b>Your DNS is not in Route 53 and cannot be delegated</b>: see <a href="how-to/self-managed-dns.html">Use DNS you manage yourself</a>.</li>
+</ul>
+</div>
+
+<h2 id="goal">Goal</h2>
+<p>Tell the wizard where the CSOC goes and what it is called. On this step the wizard creates two things, the state bucket and the hosted zone, and nothing else. Have your <a href="prerequisites.html#worksheet">worksheet</a> at hand.</p>
+
+<h2 id="steps">Steps</h2>
+<h3 id="a-choose-the-account">A. Choose the account</h3>
+<ol class="steps">
+  <li>Under <span class="field">AWS Credentials</span>, choose <b>Select AWS profile (including SSO profiles)</b>. Do not use <b>Auto-detect (use default AWS credentials)</b>: it uses your default credentials, which can belong to another account.</li>
+  <li>Under <span class="field">AWS Profile</span>, choose your profile, for example <code class="ex">csoc-admin</code>. Leave <span class="field">Assume role (optional)</span> empty.</li>
+  <li>Read the blue box. It says "Deploying into AWS account" followed by the account ID. If the number is not the CSOC account's, choose another profile before you continue.</li>
+</ol>
+<p>If a yellow box titled <b>AWS SSO session expired</b> appears, your sign-in ran out: <span class="where">Terminal</span> run the command it shows, then press <b>Retry</b> in the box.</p>
+<figure class="shot"><img src="assets/img/02b-account.png" alt="The Setup step with a profile chosen and the blue account box" loading="lazy"><figcaption>The blue box names the account and the role you reach it through.</figcaption></figure>
+
+<h3 id="b-create-the-state-bucket">B. Create the state bucket</h3>
+<ol class="steps">
+  <li>Scroll to <span class="field">AWS Region</span>, below <span class="field">CSOC Name</span>, and choose your Region, for example <code class="ex">us-east-1</code>. <b>Create bucket</b> creates the bucket in this Region.</li>
+  <li>Under <span class="field">Terraform State Bucket</span>, enter your bucket name, for example <code class="ex">gen3-csoc-csoc-dev-111122223333</code>. The field starts empty; the grey <code>my-org-gen3-terraform-state</code> is only a hint.</li>
+  <li>Press <span class="btn-ui light">Check</span>.
+    <ul>
+      <li><b>If the bucket is new</b>, the yellow box <b>Bucket does not exist</b> appears. Press <span class="btn-ui light">Create bucket</span>; the box changes to the green <b>Bucket created</b>.</li>
+      <li><b>If the bucket already exists</b>, the green box <b>Bucket ready</b> appears, with <b>Environments in this bucket</b> listing earlier environments. To continue one, press <b>Resume</b> next to it; to start a new CSOC, ignore the list and continue.</li>
+      <li><b>If the red box Bucket not available appears</b>, another AWS account owns that name. Choose another name.</li>
+    </ul></li>
+</ol>
+<figure class="shot"><img src="assets/img/03-bucket-missing.png" alt="Bucket does not exist, with a Create bucket button" loading="lazy"><figcaption>The bucket is created with versioning, encryption, TLS-only access and public access blocked.</figcaption></figure>
+
+<h3 id="c-name-the-csoc-and-choose-its-hostname">C. Name the CSOC and choose its hostname</h3>
+<ol class="steps">
+  <li>Under <span class="field">CSOC Name</span>, enter your name, for example <code class="ex">csoc-dev</code>. It cannot be changed later.</li>
+  <li>Check <span class="field">AWS Region</span> again: it must still be the Region you chose for the bucket.</li>
+  <li>Under <span class="field">CSOC Hostname</span>, enter the portal's full hostname, for example <code class="ex">portal.csoc.example.org</code>. The zone is this hostname without its first label, so <code class="ex">portal.csoc.example.org</code> gives the zone <code class="ex">csoc.example.org</code>.</li>
+  <li>Under <span class="field">DNS for the hostnames</span>, keep <b>A Route 53 hosted zone in this account</b>.</li>
+  <li>Press <span class="btn-ui">Validate</span> inside the hostname field. <b>If the zone already exists in this account and is delegated</b>, the green <b>Domain Verified</b> box appears straight away; skip to <a href="#e-leave-advanced-options-as-they-are">E</a>.</li>
+</ol>
+
+<h3 id="d-create-and-delegate-the-zone">D. Create and delegate the zone</h3>
+<p>Delegation is one NS record set in the parent domain's zone that lists your new zone's four name servers. It is what lets the internet, and ACM, find the new zone.</p>
+<ol class="steps">
+  <li>A yellow box titled <b>No hosted zone yet</b> appears. <span class="field">Hosted zone to create</span> shows <code class="ex">csoc.example.org</code>; leave it.</li>
+  <li>Under <span class="field">Delegate it from the parent zone using</span>, choose the branch that matches where <code class="ex">example.org</code> is (from the <a href="prerequisites.html#get-your-subdomain-delegated">decision table</a>):
+    <ul>
+      <li><b>If the parent zone is in Route 53 in this same account</b>, keep <b>The credentials above</b>, the default.</li>
+      <li><b>If it is in Route 53 in another account</b>, choose <b>Profile: </b> followed by a profile for that account, for example <b>Profile: dns-admin</b>.</li>
+      <li><b>If central IT manages it</b>, choose <b>I'll add the NS records myself</b>.</li>
+    </ul></li>
+  <li>Press <span class="btn-ui">Set up zone and delegation</span>. The wizard creates the zone, and the button changes to <span class="btn-ui light">Check again</span>.
+    <ul>
+      <li><b>If you chose a profile or The credentials above</b>, the wizard adds the NS records itself.</li>
+      <li><b>If you chose I'll add the NS records myself</b>, a yellow box titled <b>Add these records to the parent zone</b> lists them, in this form:
+        <div class="codeblock"><span class="lang">dns</span><pre><code>csoc.example.org.  300  IN  NS  ns-123.awsdns-45.com.
+csoc.example.org.  300  IN  NS  ns-678.awsdns-12.net.
+csoc.example.org.  300  IN  NS  ns-1234.awsdns-56.org.
+csoc.example.org.  300  IN  NS  ns-1890.awsdns-34.co.uk.</code></pre></div>
+        <span class="where">Your DNS provider</span> Send your four records to central IT with the <a href="how-to/request-dns-delegation.html">request template</a>, or add them yourself.</li>
+    </ul></li>
+  <li>Wait for the green box <b>Delegation is live</b>, then the green <b>Domain Verified</b>. The page checks again every 20 seconds by itself; you can also press <b>Check again</b>.</li>
+</ol>
+<div class="adm note" role="note"><p class="adm-t">While you wait for central IT</p><p>The wizard cannot go past <b>Setup</b> until public DNS finds the zone: <b>Next</b> stays disabled, and the plan, the apply, the bootstrap and the finish all check the zone before they start. Close the wizard; the zone and the bucket stay in your account. When the delegation is in place, <a href="how-to/resume.html">resume</a>, and the page continues by itself.</p></div>
+<figure class="shot"><img src="assets/img/05-zone-delegate-from.png" alt="Hosted zone to create, and the Delegate it from the parent zone using menu" loading="lazy"><figcaption>Choosing how the wizard reaches the parent zone.</figcaption></figure>
+<figure class="shot"><img src="assets/img/06-zone-ready.png" alt="Domain Verified" loading="lazy"><figcaption><b>Domain Verified</b>: public DNS finds the new zone.</figcaption></figure>
+
+<h3 id="e-leave-advanced-options-as-they-are">E. Leave Advanced Options as they are</h3>
+<p><b>Advanced Options</b>, below the hostname, holds three fields. Keep their defaults:</p>
+<ul>
+  <li><span class="field">Keycloak Hostname</span>: <code class="ex">auth.csoc.example.org</code>.</li>
+  <li><span class="field">VPC CIDR Block</span>: <code>172.24.16.0/20</code>. Change it only if it overlaps a network you will connect to the CSOC's VPC.</li>
+  <li><span class="field">Commons data bucket</span>: off. A CSOC does not need one.</li>
+</ul>
+<p class="donewhen"><b>Done when:</b> the green <b>Domain Verified</b> box shows "Served by Route53 hosted zone csoc.example.org" with its zone ID, and <b>Next</b> is enabled. Press <b>Next</b>.</p>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<div class="banner green"><b>Bucket created</b><span>The list of environments in the bucket is empty.</span></div>
+<div class="banner green"><b>Domain Verified</b><span>Served by Route53 hosted zone csoc.example.org, with its zone ID.</span></div>
+<h4>Time</h4>
+<p>About 5 minutes from opening <b>Setup</b> to <b>Domain Verified</b>, when the wizard adds the delegation itself. When central IT adds it, this step waits for them.</p>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>The wizard confirms which account your profile reaches, then creates two resources. The <b>state bucket</b> holds the Terraform state and the wizard's record of every environment and run, which is why you can leave and resume. The <b>hosted zone</b> holds the DNS records for the CSOC's hostnames, and later for every commons.</p>
+<figure class="anim" data-dg="dns" data-label="Creating and delegating the zone"><figcaption><b>Diagram: Creating and delegating the zone.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-dns-steps"><li>The wizard creates the hosted zone <code class="ex">csoc.example.org</code> in your account. Route 53 assigns it four name servers.</li><li>One NS record set, listing the four name servers, is added to the parent zone, <code class="ex">example.org</code>.</li><li>A public DNS resolver asked about your zone follows that NS record set and gets an answer from the new zone.</li><li>The wizard sees the answer and shows <b>Domain Verified</b>.</li></ol></figure>
+<p>For how your profile becomes the credentials each run uses, and what the bucket contains, see <a href="concepts/architecture.html#aws-credentials">AWS credentials</a> and <a href="concepts/architecture.html#state-bucket-and-registry">State bucket and registry</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td>Yellow box: <b>AWS SSO session expired</b>, with a command</td><td>Your SSO sign-in ran out. The Setup step cannot check anything until you sign in.</td><td>In a terminal, run the command shown, for example <code class="cp">aws sso login --profile <span class="ph">&lt;your-sso-profile&gt;</span></code>, then press <b>Retry</b> in the box.</td></tr><tr><td>The blue box shows the wrong account</td><td><b>Auto-detect</b> used your default credentials, or the profile points at another account.</td><td>Choose <b>Select AWS profile</b> and the profile for the CSOC account.</td></tr><tr><td>Red box: <b>Bucket not available</b></td><td>Another AWS account owns a bucket with that name (bucket names are global), or your profile cannot read it.</td><td>Choose another name, for example by adding your account ID.</td></tr><tr><td>The bucket check result disappears right after you pick a profile</td><td>The identity check finished after the bucket check and reset it.</td><td>Wait for the blue box, then press <b>Check</b> again.</td></tr><tr><td>Red box: <b>Not delegated: the parent already uses this name</b></td><td>The parent zone already has records under that name; the box lists them. Nothing changed.</td><td>Choose another subdomain, or ask the owner of the listed records to remove them.</td></tr><tr><td>Yellow box: <b>The zone is not delegated yet</b></td><td>The zone exists in your account, but public DNS does not find it yet.</td><td>If the NS record set was added, wait: the page checks again every 20 seconds and continues by itself. Check the delegation with <code>dig NS</code> followed by your subdomain.</td></tr><tr><td>Red box: <b>Domain Validation Failed</b></td><td>No public zone in this account serves the hostname or a parent of it.</td><td>Check the spelling of the hostname, and that the blue box shows the CSOC account.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="start-the-wizard.html" rel="prev"><small>Previous</small><b>← Start the wizard</b></a>
+<a class="next" href="review-and-provision.html" rel="next"><small>Next</small><b>Review and provision →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

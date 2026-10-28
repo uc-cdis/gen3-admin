@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request DNS delegation from your DNS administrators · Gen3 CSOC docs</title>
+<meta name="description" content="Ask the people who manage your institution's domain to delegate a subdomain to the CSOC's AWS account.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="../index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="../index.html"><span>Overview</span></a></li><li><a href="../what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="../prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="../start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="../setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="../review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="../plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="../apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="../certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="../install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="../finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="../sign-in.html"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="../connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="../deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="../how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="../how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="../how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="../how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="../how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="../how-to/request-dns-delegation.html" aria-current="page"><span>Request DNS delegation</span></a></li><li><a href="../how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="../how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="../concepts/architecture.html"><span>Architecture</span></a></li><li><a href="../concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="../reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="../reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="../reference/glossary.html"><span>Glossary</span></a></li><li><a href="../reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="../next-steps.html"><span>After the tutorial</span></a></li><li><a href="../contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="../prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="../index.html">Docs</a></li><li><a href="../how-to/tear-down.html">How-to guides</a></li><li aria-current="page">Request DNS delegation</li></ol></nav>
+<h1>Request DNS delegation from your DNS administrators</h1>
+<p class="lead">Ask the people who manage your institution's domain to delegate a subdomain to the CSOC's AWS account.</p>
+
+
+<h2 id="when-you-need-this">When you need this</h2>
+<p>When central IT, not you, manages your institution's domain, for example <code class="ex">example.org</code>, and you need <code class="ex">csoc.example.org</code> delegated to the CSOC account. Requests at most universities take days, so start early.</p>
+
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+  <li>Ask central IT whether the subdomain is free and whether delegation to an AWS account is allowed. Some institutions require a security review or a named technical contact.</li>
+  <li>Complete <a href="../setup.html">Setup</a> up to the zone, choosing <b>I'll add the NS records myself</b> under <span class="field">Delegate it from the parent zone using</span>. After <span class="btn-ui">Set up zone and delegation</span>, the box <b>Add these records to the parent zone</b> lists the four name servers.</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>Copy the request below and replace the placeholders, including the four name servers from the box.</li>
+  <li>Send it through your institution's DNS request process.</li>
+  <li>While you wait, close the wizard; the zone and the bucket stay in your account. Use the time to finish the other prerequisites, have <a href="../concepts/security.html">Security, cost and responsibilities</a> reviewed, and ask your cloud administrators to confirm that the services the CSOC uses are allowed. The wizard cannot go past <b>Setup</b> until the delegation is in place.</li>
+  <li>When central IT confirms, <a href="resume.html">resume</a>. The page continues by itself once it sees the zone.</li>
+</ol>
+<div class="codeblock"><span class="lang">text</span><pre><code>Subject: DNS delegation request for <span class="ph">&lt;your-domain&gt;</span>
+
+Hello,
+
+We are setting up a Gen3 CSOC, a platform for deploying research data commons,
+in an AWS account owned by &lt;your-department&gt;. Please delegate the subdomain
+<span class="ph">&lt;your-domain&gt;</span> to our Amazon Route 53 hosted zone by adding one NS record set
+for it, with these four name servers, in the <span class="ph">&lt;parent-domain&gt;</span> zone:
+
+  <span class="ph">&lt;your-domain&gt;</span>.  NS  &lt;name-server-1&gt;
+  <span class="ph">&lt;your-domain&gt;</span>.  NS  &lt;name-server-2&gt;
+  <span class="ph">&lt;your-domain&gt;</span>.  NS  &lt;name-server-3&gt;
+  <span class="ph">&lt;your-domain&gt;</span>.  NS  &lt;name-server-4&gt;
+
+A TTL of 3600 seconds or less is fine.
+
+We will create records only under <span class="ph">&lt;your-domain&gt;</span>, for example portal.<span class="ph">&lt;your-domain&gt;</span>,
+auth.<span class="ph">&lt;your-domain&gt;</span> and one hostname per data commons. The zone also holds the DNS
+validation records that AWS Certificate Manager uses to issue and renew TLS
+certificates for those hostnames.
+
+Technical contact: &lt;your-name&gt;, &lt;your-email&gt;
+Account owner: &lt;owner-name&gt;, &lt;owner-email&gt;
+
+Thank you.</code></pre></div>
+
+<h2 id="check-it-worked">Check it worked</h2>
+<p><span class="where">Terminal</span> <code>dig NS csoc.example.org</code> (with your subdomain) returns the four name servers, and the wizard shows <b>Delegation is live</b> and then <b>Domain Verified</b>.</p>
+
+<h2 id="if-it-fails">If it fails</h2>
+<ul>
+  <li><b>Central IT will not delegate subdomains:</b> use <a href="self-managed-dns.html">Use DNS you manage yourself</a>, or register a separate domain for the CSOC and host its zone in Route 53.</li>
+  <li><b>Red box Not delegated: the parent already uses this name:</b> see <a href="../reference/troubleshooting.html#setup">Setup troubleshooting</a>.</li>
+</ul>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="../how-to/self-managed-dns.html" rel="prev"><small>Previous</small><b>← Use DNS you manage yourself</b></a>
+<a class="next" href="../how-to/connect-identity-provider.html" rel="next"><small>Next</small><b>Keycloak: add your institution's sign-in →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

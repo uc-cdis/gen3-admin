@@ -33,11 +33,11 @@ func TestRunnerImagePresent(t *testing.T) {
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("docker is not available")
 	}
-	if err := exec.Command("docker", "image", "inspect", defaultRunnerImage).Run(); err != nil {
-		t.Skipf("%s has not been built; run scripts/build-terraform-image.sh", defaultRunnerImage)
+	if err := exec.Command("docker", "image", "inspect", defaultRunnerImage()).Run(); err != nil {
+		t.Skipf("%s has not been built; run scripts/build-terraform-image.sh", defaultRunnerImage())
 	}
 
-	got := checkImage(t, "?image="+defaultRunnerImage)
+	got := checkImage(t, "?image="+defaultRunnerImage())
 	if got["present"] != true {
 		t.Errorf("present = %v, want true for an image docker can inspect", got["present"])
 	}

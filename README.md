@@ -92,6 +92,10 @@ The platform follows a distributed agent/server architecture enabling centralize
 
 ## Getting Started
 
+To stand up a new CSOC in AWS from your laptop, see
+[docs/BOOTSTRAP_AWS.md](docs/BOOTSTRAP_AWS.md). The rest of this section sets
+up a development environment against an existing cluster.
+
 ### Prerequisites
 - Kubernetes cluster with kubectl configured
 - Docker (for local development)

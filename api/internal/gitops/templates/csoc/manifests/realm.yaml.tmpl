@@ -1,0 +1,72 @@
+# Imported once, when the realm does not exist yet; later changes are made in
+# Keycloak. The two ${...} placeholders are filled from Secrets at import:
+# the client secret from Secrets Manager, and the first admin password from a
+# Secret the bootstrap creates and deletes once the import has run.
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: csoc-realm
+spec:
+  keycloakCRName: keycloak
+  placeholders:
+    CLIENT_SECRET:
+      secret: {name: csoc-keycloak-client, key: client-secret}
+    ADMIN_PASSWORD:
+      secret: {name: csoc-admin-bootstrap, key: password, optional: true}
+  realm:
+    realm: csoc-realm
+    enabled: true
+    sslRequired: external
+    loginWithEmailAllowed: true
+    bruteForceProtected: true
+    # A sign-in lasts a working day: Keycloak's default ends it after 30
+    # minutes idle, which logged people out mid-session. Matches the
+    # portal's own 8 hour session (keycloakadmin.SessionLifetimes).
+    ssoSessionIdleTimeout: 28800
+    ssoSessionMaxLifespan: 43200
+    clients:
+      - clientId: csoc-client
+        name: CSOC Portal
+        protocol: openid-connect
+        publicClient: false
+        secret: "${CLIENT_SECRET}"
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris: [{{ q (printf "https://%s/*" .CSOCHost) }}]
+        webOrigins: [{{ q (printf "https://%s" .CSOCHost) }}]
+        attributes:
+          pkce.code.challenge.method: S256
+          post.logout.redirect.uris: {{ q (printf "https://%s/*" .CSOCHost) }}
+        protocolMappers:
+          - name: roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            config: {claim.name: roles, multivalued: "true", access.token.claim: "true", id.token.claim: "true", userinfo.token.claim: "true"}
+          - name: groups
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            config: {claim.name: groups, full.path: "false", access.token.claim: "true", id.token.claim: "true", userinfo.token.claim: "true"}
+    roles:
+      realm:
+        - name: superadmin
+          description: Full access to CSOC
+        - name: csoc-role
+          description: CSOC user
+    groups:
+      - name: superadmin
+      - name: csoc-group
+    users:
+      - username: admin
+        email: {{ q .AdminEmail }}
+        # With these unset, Keycloak's user profile asks for them at first
+        # login (VERIFY_PROFILE) before letting the admin in.
+        firstName: CSOC
+        lastName: Admin
+        enabled: true
+        emailVerified: true
+        credentials:
+          - type: password
+            value: "${ADMIN_PASSWORD}"
+            temporary: false
+        realmRoles: [superadmin, csoc-role]
+        groups: [superadmin, csoc-group]

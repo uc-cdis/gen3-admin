@@ -240,38 +240,39 @@ find_free_port() {
     exit 1
 }
 
+# Bump a port to the next free one if it is taken, so a running compose stack
+# or a stray dev server does not wedge startup. The caller re-checks the result
+# against what it asked for and warns, so the advertised port is always the one
+# we actually bind. (find_free_port only detects LISTEN sockets; a default port
+# is well below the macOS ephemeral range, so the rarer bind-time collision from
+# an outbound connection is not a practical concern here.)
+assign_free_port() {
+    # $1 = variable name to set (e.g. API_PORT); $2 = the port asked for.
+    local name="$1" wanted="$2"
+    local free
+    # find_free_port runs in a subshell, so its own `exit 1` only ends the
+    # subshell; capture the status here or a failed lookup would leave the
+    # port empty and the service would bind nothing.
+    if ! free="$(find_free_port "$wanted")"; then
+        log_error "No free port available near $wanted for $name"
+        exit 1
+    fi
+    if [[ "$free" != "$wanted" ]]; then
+        log_warning "$name port $wanted in use; will use $free instead"
+    fi
+    printf -v "$name" '%s' "$free"
+}
+
 check_ports() {
-    for spec in "API:$API_PORT" "gRPC:$GRPC_PORT"; do
-        local name="${spec%%:*}" port="${spec##*:}"
-        if lsof -iTCP:"$port" -sTCP:LISTEN -P >/dev/null 2>&1; then
-            log_error "$name port $port is already in use:"
-            lsof -iTCP:"$port" -sTCP:LISTEN -P 2>/dev/null | tail -n +2 | sed 's/^/    /'
-            log_info "Stop it, or pass --api-port / --grpc-port."
-            exit 1
-        fi
-        # No listener, but the port can still be held as the local end of
-        # someone else's outbound connection. macOS hands out ephemeral source
-        # ports from 49152-65535, so a port in that range gets claimed at
-        # random; bind() fails while -sTCP:LISTEN shows nothing at all.
-        if netstat -an -p tcp 2>/dev/null | grep -qE "\.$port[[:space:]]+.*ESTABLISHED"; then
-            log_error "$name port $port is tied up by an existing connection:"
-            netstat -an -p tcp 2>/dev/null | grep -E "\.$port[[:space:]]" | sed 's/^/    /'
-            if [[ "$port" -ge 49152 ]]; then
-                log_warning "Port $port is in the macOS ephemeral range (49152-65535),"
-                log_warning "so it gets handed out to outbound connections at random."
-                log_info "Pick a port below 49152 to stop this recurring."
-            fi
-            log_info "Retry in a moment, or pass --api-port / --grpc-port."
-            exit 1
-        fi
-    done
+    # Bump the API and gRPC ports too (previously these hard-failed), so the dev
+    # stack can come up alongside the docker-compose stack or any other server
+    # that already holds 8002/9090. Everything downstream reads these variables,
+    # so the bumped ports propagate to the API, agent, frontend, and banner.
+    assign_free_port API_PORT "$API_PORT"
+    assign_free_port GRPC_PORT "$GRPC_PORT"
 
     if [[ "$SKIP_FRONTEND" == "false" ]]; then
-        local wanted="$FRONTEND_PORT"
-        FRONTEND_PORT="$(find_free_port "$FRONTEND_PORT")"
-        if [[ "$FRONTEND_PORT" != "$wanted" ]]; then
-            log_warning "Port $wanted in use; frontend will use $FRONTEND_PORT"
-        fi
+        assign_free_port FRONTEND_PORT "$FRONTEND_PORT"
     fi
 }
 

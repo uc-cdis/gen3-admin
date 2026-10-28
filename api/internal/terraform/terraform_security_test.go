@@ -76,14 +76,16 @@ func TestResolveWorkDirAcceptsRootEcho(t *testing.T) {
 	}
 }
 
-// Defaulting must match what the UI ships out of the box.
-func TestResolveWorkDirDefaultRootMatchesUI(t *testing.T) {
-	got, err := resolveWorkDir("/tmp/gen3-terraform")
+// The UI sends an empty work dir by default, which means the root itself.
+func TestResolveWorkDirDefaultsToHomeRoot(t *testing.T) {
+	t.Setenv("TERRAFORM_WORK_ROOT", "")
+	t.Setenv("HOME", "/home/op")
+	got, err := resolveWorkDir("")
 	if err != nil {
 		t.Fatalf("resolveWorkDir rejected the UI default: %v", err)
 	}
-	if got != "/tmp/gen3-terraform" {
-		t.Errorf("resolveWorkDir = %q, want /tmp/gen3-terraform", got)
+	if want := "/home/op/.gen3-csoc/terraform"; got != want {
+		t.Errorf("resolveWorkDir = %q, want %s", got, want)
 	}
 }
 

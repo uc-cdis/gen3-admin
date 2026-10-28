@@ -1,0 +1,2 @@
+# ArgoCD manages itself. The bootstrap installed it with these same values.
+{{ template "helmApp" (app . "argocd" "argocd" "https://argoproj.github.io/argo-helm" "argo-cd" .Versions.ArgoCD "-3") }}

@@ -6,12 +6,17 @@
 # Terraform sources are not baked in. The runner fetches them with
 # `terraform init -from-module=...` and bind-mounts the work dir, so a copy
 # here would be shadowed by the mount anyway.
-FROM hashicorp/terraform:1.9.5
+#
+# 1.10 is the floor: the runner passes use_lockfile=true so the S3 backend
+# locks state with a lock object in the bucket, with no DynamoDB table needed.
+FROM hashicorp/terraform:1.16.5
 
 # helm and kubectl are here so a single container can carry the run past
 # `apply` into installing CSOC onto the cluster it just created. git is needed
 # for -from-module against a git source; aws-cli backs the credential
 # validation step the runner performs before state-bucket operations.
+# nodejs runs scripts/runner/plan-diagram.mjs, which draws the plan review's
+# architecture diagram with the vendored parser in third_party/tf-arch.
 # expat is upgraded explicitly: the aws-cli package in this base image's
 # Alpine snapshot is linked against a newer expat than the image ships, and
 # without this the CLI dies with a pyexpat relocation error.
@@ -25,7 +30,8 @@ RUN apk add --no-cache --upgrade \
       ca-certificates \
       kubectl \
       helm \
-      aws-cli
+      aws-cli \
+      nodejs
 
 # The runner mounts sources here and sets this as the working directory.
 WORKDIR /workspace/tf

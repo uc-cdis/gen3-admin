@@ -29,6 +29,8 @@ func TestInitPassesBackendConfig(t *testing.T) {
 		"-backend-config=bucket=gen3-tf-state",
 		"-backend-config=key=csoc/dev/terraform.tfstate",
 		"-backend-config=region=us-east-1",
+		"-backend-config=encrypt=true",
+		"-backend-config=use_lockfile=true",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("init args = %q, want it to contain %q", got, want)
@@ -176,9 +178,23 @@ func TestValidateRejectsHostileValues(t *testing.T) {
 func TestModuleSourceIsChosenByTheServer(t *testing.T) {
 	t.Setenv("CSOC_MODULE_SOURCE", "")
 	t.Setenv("TERRAFORM_MODULES_DIR", "")
-	if got := moduleSources()["csoc"]; !strings.Contains(got, "//examples/csoc?ref=terraform-docker") {
-		t.Errorf("default csoc source = %q, want the published terraform-docker ref", got)
+	t.Setenv("TERRAFORM_MODULES_REF", "")
+	if got := moduleSources()["csoc"]; !strings.HasSuffix(got, "//examples/csoc?ref=master") {
+		t.Errorf("default csoc source = %q, want gen3-terraform master", got)
 	}
+
+	// A branch or tag; anything that could leave the sed expression is ignored.
+	t.Setenv("TERRAFORM_MODULES_REF", "feat/csoc-bootstrap")
+	if got := moduleSources()["csoc"]; !strings.HasSuffix(got, "?ref=feat/csoc-bootstrap") {
+		t.Errorf("csoc source with TERRAFORM_MODULES_REF = %q", got)
+	}
+	for _, bad := range []string{"x#y", "a'b", "-rf", "a..b", "a b"} {
+		t.Setenv("TERRAFORM_MODULES_REF", bad)
+		if got := modulesRef(); got != defaultModulesRef {
+			t.Errorf("modulesRef with %q = %q, want the default", bad, got)
+		}
+	}
+	t.Setenv("TERRAFORM_MODULES_REF", "")
 
 	// A local checkout is mounted read-only; the source becomes a path in it.
 	t.Setenv("TERRAFORM_MODULES_DIR", "/Users/me/gen3-terraform")
@@ -222,6 +238,23 @@ func TestDockerRunsOnlyTheConstantPrelude(t *testing.T) {
 	}
 	if !contains(args, "-backend-config=bucket=bucket-with-odd.name") {
 		t.Errorf("args = %q, want the bucket as its own argv element", args)
+	}
+}
+
+func TestLocalModulesOnlyWithACheckout(t *testing.T) {
+	req := validReq()
+	req.FromModule = "/src/examples/csoc"
+	t.Setenv("TERRAFORM_MODULES_DIR", "")
+	if contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("published modules must be fetched as published")
+	}
+	t.Setenv("TERRAFORM_MODULES_DIR", t.TempDir())
+	if !contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("a local checkout must supply the nested gen3-terraform modules too")
+	}
+	req.FromModule = "git::https://github.com/uc-cdis/gen3-terraform.git//examples/csoc"
+	if contains(dockerArgs(t, req, ""), "GEN3_LOCAL_MODULES=1") {
+		t.Error("only a source inside the mounted checkout is rewritten")
 	}
 }
 
@@ -362,5 +395,37 @@ func TestClientCannotSupplyAModuleURL(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"from_module":"git::https://evil.example/tf"}`), &req)
 	if req.FromModule != "" {
 		t.Errorf("FromModule = %q, want it settable only by the server", req.FromModule)
+	}
+}
+
+func TestSplitTimestamp(t *testing.T) {
+	ts, text, ok := splitTimestamp("2026-10-26T16:58:17.658036051Z module.vpc.aws_eip.nat_gw: Creating...")
+	if !ok || text != "module.vpc.aws_eip.nat_gw: Creating..." || ts.Nanosecond() != 658036051 {
+		t.Errorf("got %v %q %v", ts, text, ok)
+	}
+	// Plan output relies on its indentation, which must survive.
+	if _, text, _ := splitTimestamp("2026-10-26T16:58:17Z       + id = (known after apply)"); text != "      + id = (known after apply)" {
+		t.Errorf("indentation lost: %q", text)
+	}
+	if _, text, ok := splitTimestamp("2026-10-26T16:58:17Z"); !ok || text != "" {
+		t.Errorf("an empty line: %q %v", text, ok)
+	}
+	if _, _, ok := splitTimestamp("no timestamp here"); ok {
+		t.Error("a line without a timestamp was accepted")
+	}
+}
+
+func TestRunnerImageDefault(t *testing.T) {
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "")
+	if got := defaultRunnerImage(); got != publishedRunnerImage {
+		t.Errorf("default runner image = %q, want %q", got, publishedRunnerImage)
+	}
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "gen3-terraform:latest")
+	if got := defaultRunnerImage(); got != "gen3-terraform:latest" {
+		t.Errorf("runner image with TERRAFORM_RUNNER_IMAGE = %q", got)
+	}
+	t.Setenv("TERRAFORM_RUNNER_IMAGE", "--privileged")
+	if got := defaultRunnerImage(); got != publishedRunnerImage {
+		t.Errorf("runner image with a flag-like value = %q, want the published image", got)
 	}
 }

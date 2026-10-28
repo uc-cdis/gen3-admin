@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 
@@ -87,51 +86,4 @@ func ListAWSProfilesHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"profiles": profiles})
-}
-
-// SetAWSProfileHandler sets the AWS profile globally, but only if it exists
-func SetAWSProfileHandler(c *gin.Context) {
-	type request struct {
-		Profile string `json:"profile"`
-	}
-
-	var req request
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	if req.Profile == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Profile cannot be empty"})
-		return
-	}
-
-	// Get all available profiles
-	profiles, err := GetAwsProfiles()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read AWS profiles"})
-		return
-	}
-
-	// Check if the requested profile exists
-	found := false
-	for _, p := range profiles {
-		if p == req.Profile {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Profile not found", "available_profiles": profiles})
-		return
-	}
-
-	// Set the AWS_PROFILE environment variable globally
-	if err := os.Setenv("AWS_PROFILE", req.Profile); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set AWS profile"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "AWS profile set successfully", "profile": req.Profile})
 }

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to the CSOC · Gen3 CSOC docs</title>
+<meta name="description" content="Sign in to the CSOC portal as the administrator. From here on, you manage Gen3 from the CSOC.">
+<script>(function(){try{var t=localStorage.getItem('csoc-docs-theme');if(!t&&window.matchMedia)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="topbar">
+  <button class="iconbtn menubtn" id="menubtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true">CS</span><span>Gen3 CSOC <small>docs</small></span></a>
+  <span class="spacer"></span>
+  <div class="search" role="search"><svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list"><span class="hint" aria-hidden="true">/</span><div class="results" id="results" role="listbox" aria-label="Search results"></div></div>
+  <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+<div class="sect"><p>Start here</p><ul><li><a href="index.html"><span>Overview</span></a></li><li><a href="what-is-a-csoc.html"><span>What is a CSOC?</span></a></li><li><a href="prerequisites.html"><span>Prerequisites</span></a></li></ul></div><div class="sect"><p>Tutorial</p><ul><li class="grp">Wizard step: Welcome</li><li class="ingrp"><a href="start-the-wizard.html"><span>Start the wizard</span></a></li><li class="grp">Wizard step: Setup</li><li class="ingrp"><a href="setup.html"><span>Setup</span></a></li><li class="grp">Wizard step: Review</li><li class="ingrp"><a href="review-and-provision.html"><span>Review and provision</span></a></li><li class="grp">Wizard step: Provision</li><li class="ingrp"><a href="plan.html"><span>Plan</span></a></li><li class="ingrp"><a href="apply.html"><span>Apply</span></a></li><li class="grp">Wizard step: Certificate</li><li class="ingrp"><a href="certificate-and-dns.html"><span>Certificate</span></a></li><li class="grp">Wizard step: Install</li><li class="ingrp"><a href="install.html"><span>Bootstrap the CSOC</span></a></li><li class="ingrp"><a href="finish.html"><span>Finish the install</span></a></li><li class="grp">Wizard step: Done</li><li class="ingrp"><a href="sign-in.html" aria-current="page"><span>Sign in</span></a></li><li class="grp">In the CSOC portal</li><li class="ingrp"><a href="connect-cluster.html"><span>Connect the cluster</span></a></li><li class="ingrp"><a href="deploy-gen3.html"><span>Deploy a Gen3 commons</span></a></li></ul></div><div class="sect"><p>How-to guides</p><ul><li><a href="how-to/tear-down.html"><span>Tear down</span></a></li><li><a href="how-to/resume.html"><span>Resume after closing the tab</span></a></li><li><a href="how-to/allow-an-address.html"><span>Allow a new IP address</span></a></li><li><a href="how-to/reset-admin-password.html"><span>Reset the admin password</span></a></li><li><a href="how-to/self-managed-dns.html"><span>Use DNS you manage yourself</span></a></li><li><a href="how-to/request-dns-delegation.html"><span>Request DNS delegation</span></a></li><li><a href="how-to/connect-identity-provider.html"><span>Keycloak: add your institution's sign-in</span></a></li><li><a href="how-to/edit-user-yaml.html"><span>Edit a commons' user.yaml</span></a></li></ul></div><div class="sect"><p>Concepts</p><ul><li><a href="concepts/architecture.html"><span>Architecture</span></a></li><li><a href="concepts/security.html"><span>Security, cost and responsibilities</span></a></li></ul></div><div class="sect"><p>Reference</p><ul><li><a href="reference/wizard-states.html"><span>Wizard states</span></a></li><li><a href="reference/troubleshooting.html"><span>Troubleshooting</span></a></li><li><a href="reference/glossary.html"><span>Glossary</span></a></li><li><a href="reference/where-things-live.html"><span>Where things live</span></a></li></ul></div><div class="sect"><p>Next steps</p><ul><li><a href="next-steps.html"><span>After the tutorial</span></a></li><li><a href="contributing.html"><span>For developers</span></a></li></ul></div><div class="foot">Example values such as <code>csoc.example.org</code> stand for yours; collect them in the <a href="prerequisites.html#worksheet">worksheet</a>.</div>
+</nav>
+<main id="content">
+<article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="start-the-wizard.html">Tutorial</a></li><li>Wizard step: Done</li><li aria-current="page">Sign in</li></ol></nav>
+<h1>Sign in to the CSOC</h1>
+<p class="lead">Sign in to the CSOC portal as the administrator. From here on, you manage Gen3 from the CSOC.</p>
+<div class="meta"><span class="pill">Wizard step <b>Done</b></span><span class="pill">Time <b>about 1 minute</b></span></div>
+
+<h2 id="goal">Goal</h2>
+<p>Sign in to the CSOC portal through its Keycloak as the user <code>admin</code>.</p>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>On the <b>Done</b> step, press <span class="btn-ui">Open the CSOC</span>, or open <code class="cp">https://portal.csoc.example.org</code>.</li>
+  <li><span class="where">Browser</span> The portal sends you to Keycloak's sign-in page for the realm <code>csoc-realm</code>, which shows its name as "CSOC-REALM". Enter the username <code class="cp">admin</code> and the password you saved, and press <b>Sign In</b>.</li>
+  <li><b>If the page does not load (403 Forbidden, or a refused connection)</b>, you are on a network that is not in the allowed addresses, for example a VPN. Add it with <a href="how-to/allow-an-address.html">Allow a new IP address</a>.</li>
+</ol>
+<p class="donewhen"><b>Done when:</b> the CSOC portal opens, signed in as <code>admin</code>, with its setup wizard <b>Welcome to CSOC</b> and "Connected to AWS".</p>
+<figure class="shot"><img src="assets/img/23-portal.png" alt="The Keycloak CSOC-REALM sign-in page" loading="lazy"><figcaption>Keycloak's sign-in page for <code>csoc-realm</code>.</figcaption></figure>
+<figure class="shot"><img src="assets/img/24-portal-signed-in.png" alt="Signed in to the CSOC portal" loading="lazy"><figcaption>Signed in, with "Connected to AWS".</figcaption></figure>
+
+<h2 id="expected-result">Expected result</h2>
+<div class="expect">
+<p>The CSOC portal opens. "Connected to AWS" means the portal reached its cluster's Kubernetes API and found that the cluster's nodes run on AWS. A sign-in to the CSOC realm lasts up to 12 hours, and ends after 8 hours without activity.</p>
+</div>
+
+<h2 id="whats-happening">What's happening</h2>
+<p>The load balancer admits your browser because your address is in the allowed addresses. The portal has no session for you yet, so it sends you to Keycloak. After you sign in, Keycloak returns you to the portal, which confirms the sign-in with Keycloak directly; that call leaves the cluster through its outbound address, which is why that address is allowed too. The portal reaches AWS with its own IAM role and reads the same state bucket as the wizard, so it already knows this environment's history.</p>
+<figure class="anim" data-dg="signin" data-label="Signing in"><figcaption><b>Diagram: Signing in.</b> The numbered steps below describe it in full; <b>Play</b> highlights each step in turn.</figcaption><div class="svgwrap"></div><div class="ctl noprint"></div><ol class="caps" id="dg-signin-steps"><li>Your browser connects to <code class="ex">portal.csoc.example.org</code>. The load balancer admits it because your address is allowed.</li><li>The portal sends you to Keycloak at <code class="ex">auth.csoc.example.org</code>.</li><li>You sign in to <code>csoc-realm</code>. Keycloak keeps its data in a PostgreSQL database in the cluster.</li><li>Keycloak returns you to the portal, and the portal confirms the sign-in with Keycloak.</li><li>The portal reaches AWS with its own IAM role and reads the state bucket.</li></ol></figure>
+<p>To let people sign in with their institutional accounts, see <a href="how-to/connect-identity-provider.html">Connect your institution's sign-in</a>. For the flow in detail, see <a href="concepts/architecture.html#sign-in">Sign-in</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="tw"><table><thead><tr><th>What you see</th><th>What it means</th><th>What to do</th></tr></thead><tbody><tr><td><code>NXDOMAIN</code>, or "This site can't be reached"</td><td>Your resolver remembers an earlier "no such name" answer.</td><td>Run <code>dig</code> on the hostname; if it returns an address, switch your computer to a public resolver such as <code>1.1.1.1</code>.</td></tr><tr><td><code>403 Forbidden</code> or a refused connection</td><td>Your current address is not in the allowed addresses, for example after joining a VPN.</td><td>See <a href="how-to/allow-an-address.html">Allow a new IP address</a>.</td></tr><tr><td>Keycloak asks for your email, first and last name</td><td><b>Admin email (optional)</b> was left empty in the bootstrap.</td><td>Fill them in once.</td></tr><tr><td>Sign-in loops, or fails after Keycloak</td><td>The cluster's outbound address changed, for example after a Squid instance was replaced, so the portal cannot reach Keycloak.</td><td>Open <b>Advanced</b> on the <b>Install</b> step, press <b>Bootstrap</b>, then <b>Finish install</b>. The bootstrap detects the new address.</td></tr><tr><td>You do not know the admin password</td><td>The wizard does not store it.</td><td>See <a href="how-to/reset-admin-password.html">Reset the admin password</a>.</td></tr></tbody></table></div>
+
+<nav class="pager" aria-label="Previous and next page">
+<a class="prev" href="finish.html" rel="prev"><small>Previous</small><b>← Finish the install</b></a>
+<a class="next" href="connect-cluster.html" rel="next"><small>Next</small><b>Connect the cluster →</b></a>
+</nav>
+</article>
+</main>
+<aside class="toc" aria-label="On this page"><p>On this page</p><ul id="toc"></ul><a class="top" href="#">↑ Back to top</a></aside>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

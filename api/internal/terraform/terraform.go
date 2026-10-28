@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+
+	awslookup "github.com/uc-cdis/gen3-admin/internal/aws"
+	"github.com/uc-cdis/gen3-admin/internal/environments"
 )
 
 type RuntimeType string
@@ -84,9 +88,27 @@ type TerraformRequest struct {
 	AWSRegion      string          `json:"aws_region,omitempty"`
 	AWSProfile     string          `json:"aws_profile,omitempty"`
 	AWSCredentials *AWSCredentials `json:"aws_credentials,omitempty"`
+	// AWSRoleARN is assumed on top of the profile or credentials above. The
+	// API assumes it and hands the run the resulting temporary credentials.
+	AWSRoleARN string `json:"aws_role_arn,omitempty"`
 
 	// StateKey is the object key for the S3 backend, one per environment.
 	StateKey string `json:"state_key,omitempty"`
+
+	// Environment names the registry entry this run belongs to. When set, the
+	// state key is the registry's key for it and the run is recorded there
+	// (see recorder.go), which requires StateBucket.
+	Environment string `json:"environment,omitempty"`
+
+	// Install configures an install-csoc run (see install_csoc.go).
+	Install *InstallOptions `json:"install,omitempty"`
+	// Force makes an uninstall-csoc tear down without waiting on anything
+	// graceful: nodes are terminated, finalizers dropped, volumes deleted.
+	Force bool `json:"force,omitempty"`
+	// installEnv is a script op's resolved inputs, and installFiles the
+	// bootstrap manifests install-csoc applies. Server-side only.
+	installEnv   map[string]string
+	installFiles map[string][]byte
 
 	// PlanFile, when set on an apply, applies a previously saved plan instead
 	// of re-planning.
@@ -269,7 +291,10 @@ func buildBackendConfigArgs(req *TerraformRequest) []string {
 	if req.StateRegion != "" {
 		args = append(args, "-backend-config=region="+req.StateRegion)
 	}
-	return args
+	// A lock object next to the state stops two runs (a laptop and the
+	// in-cluster CSOC, say) from writing the same state at once. It needs
+	// Terraform 1.10+, which Dockerfile.terraform pins.
+	return append(args, "-backend-config=encrypt=true", "-backend-config=use_lockfile=true")
 }
 
 func queryDockerExecutions() ([]*TerraformExecution, error) {
@@ -412,18 +437,34 @@ func parseDockerLabels(labelStr string) map[string]string {
 
 // terraformRoot is the only directory tree the terraform runner will read or
 // write. Overridable so a deployment can point it at a real volume.
+//
+// State lives in S3, so the work dirs are a cache, but the saved plan has to
+// survive between plan and apply, which /tmp does not promise across a reboot.
 func terraformRoot() string {
 	if root := os.Getenv("TERRAFORM_WORK_ROOT"); root != "" {
 		return root
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".gen3-csoc", "terraform")
 	}
 	return "/tmp/gen3-terraform"
 }
 
 // validWorkDirName matches a single path segment: no separators, no dots, so
 // neither traversal nor shell metacharacters can survive it.
-// defaultRunnerImage is built locally by scripts/build-terraform-image.sh and
-// is never pushed; docker resolves local images first.
-const defaultRunnerImage = "gen3-terraform:latest"
+// publishedRunnerImage is the runner CI publishes from Dockerfile.terraform.
+// TERRAFORM_RUNNER_IMAGE overrides it: a pinned tag for a workshop, or
+// gen3-terraform:latest from scripts/build-terraform-image.sh for local
+// development.
+const publishedRunnerImage = "quay.io/cdis/csoc-terraform:master"
+
+// defaultRunnerImage is the image a run uses when the request names none.
+func defaultRunnerImage() string {
+	if v := os.Getenv("TERRAFORM_RUNNER_IMAGE"); v != "" && validImageRef.MatchString(v) {
+		return v
+	}
+	return publishedRunnerImage
+}
 
 // validImageRef allows a plain [registry/]name[:tag|@digest] reference and
 // nothing that could be read as another docker argument -- in particular it
@@ -489,7 +530,7 @@ func HandleCheckRunnerImage() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		image := c.Query("image")
 		if image == "" {
-			image = defaultRunnerImage
+			image = defaultRunnerImage()
 		}
 
 		// Reject anything that is not a plain image reference: the value is
@@ -525,6 +566,48 @@ func HandleTerraformExecute() gin.HandlerFunc {
 		}
 		if req.Module != "" {
 			req.FromModule = moduleSources()[req.Module]
+		}
+		// A registered environment's state always lives at the registry's
+		// key, so the laptop and the in-cluster CSOC agree on where it is.
+		if req.Environment != "" {
+			req.StateKey = environments.StateKey(req.Environment)
+		}
+		if req.AWSRoleARN != "" {
+			if err := assumeRunRole(c.Request.Context(), &req); err != nil {
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
+		}
+		if req.Environment != "" && req.Runtime == RuntimeDocker {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+			store, err := environments.OpenStore(ctx, req.StateBucket, runTarget(&req))
+			if err != nil {
+				cancel()
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
+			release, err := claimEnvironment(ctx, store, req.Environment)
+			cancel()
+			var busy *busyError
+			if errors.As(err, &busy) {
+				c.JSON(409, gin.H{"error": err.Error(), "code": "busy", "run_id": busy.run.ID})
+				return
+			}
+			if err != nil {
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
+			defer release()
+		}
+		if isScriptOp(req.Operation) {
+			if req.Runtime != RuntimeDocker {
+				c.JSON(400, gin.H{"error": string(req.Operation) + " runs in the docker runtime only"})
+				return
+			}
+			if err := prepareScript(c.Request.Context(), &req); err != nil {
+				c.JSON(400, awslookup.ErrorBody(req.AWSProfile, err))
+				return
+			}
 		}
 
 		// WorkDir comes from the request body and becomes a host bind mount,
@@ -601,9 +684,23 @@ func startDockerExecution(c *gin.Context, req *TerraformRequest, executionID str
 		Str("work_dir", filepath.Base(req.WorkDir)).
 		Msg("starting terraform execution")
 
-	out, err := exec.Command("docker", buildDockerRunArgs(req, executionID, credsPath)...).CombinedOutput()
+	args := buildDockerRunArgs(req, executionID, credsPath)
+	var secretsPath, bootstrapDir string
+	if isScriptOp(req.Operation) {
+		if secretsPath, bootstrapDir, err = writeScriptFiles(req, executionID); err == nil {
+			args, err = buildScriptDockerArgs(req, executionID, credsPath, secretsPath, bootstrapDir)
+		}
+		if err != nil {
+			removeCredentials(credsPath, secretsPath, bootstrapDir)
+			log.Error().Err(err).Str("execution_id", executionID).Msg("failed to prepare install")
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	out, err := exec.Command("docker", args...).CombinedOutput()
 	if err != nil {
-		removeCredentials(credsPath)
+		removeCredentials(credsPath, secretsPath, bootstrapDir)
 		log.Error().Err(err).Str("execution_id", executionID).Str("output", string(out)).
 			Msg("terraform container failed to start")
 		c.JSON(500, gin.H{
@@ -616,12 +713,9 @@ func startDockerExecution(c *gin.Context, req *TerraformRequest, executionID str
 
 	// The credentials file must outlive the container's start, since
 	// terraform reads it throughout the run, but not the run itself.
-	if credsPath != "" {
-		name := containerName(req, executionID)
-		go func() {
-			_ = exec.Command("docker", "wait", name).Run()
-			removeCredentials(credsPath)
-		}()
+	rec := startRecording(c.Request.Context(), req, executionID)
+	if credsPath != "" || secretsPath != "" || bootstrapDir != "" || rec != nil {
+		go awaitDockerRun(containerName(req, executionID), rec, credsPath, secretsPath, bootstrapDir)
 	}
 
 	c.JSON(202, gin.H{
@@ -631,13 +725,46 @@ func startDockerExecution(c *gin.Context, req *TerraformRequest, executionID str
 	})
 }
 
-func removeCredentials(path string) {
-	if path == "" {
-		return
+// assumeRunRole swaps the request's identity for temporary credentials in
+// the role, which then reach the run through the same per-run file as
+// manually entered keys.
+func assumeRunRole(ctx context.Context, req *TerraformRequest) error {
+	target := awslookup.Target{Profile: req.AWSProfile, Region: req.AWSRegion, RoleARN: req.AWSRoleARN}
+	if c := req.AWSCredentials; c != nil && c.AccessKeyID != "" {
+		target.Credentials = &awslookup.Credentials{AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, SessionToken: c.SessionToken}
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		log.Error().Err(err).Msg("failed to remove run credentials file")
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	creds, err := awslookup.AssumeRoleCredentials(ctx, target)
+	if err != nil {
+		return err
 	}
+	req.AWSCredentials = &AWSCredentials{AccessKeyID: creds.AccessKeyID, SecretAccessKey: creds.SecretAccessKey, SessionToken: creds.SessionToken}
+	return nil
+}
+
+// removeCredentials deletes per-run secret files: AWS credentials and the
+// install's admin login.
+func removeCredentials(paths ...string) {
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		// RemoveAll: install-csoc's bootstrap files are a directory.
+		if err := os.RemoveAll(path); err != nil {
+			log.Error().Err(err).Msg("failed to remove run credentials file")
+		}
+	}
+}
+
+// runTarget is the AWS identity a run acts as, for API-side calls made on
+// its behalf (the registry, the install's environment lookup).
+func runTarget(req *TerraformRequest) awslookup.Target {
+	t := awslookup.Target{Profile: req.AWSProfile, Region: req.StateRegion}
+	if c := req.AWSCredentials; c != nil && c.AccessKeyID != "" {
+		t.Credentials = &awslookup.Credentials{AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, SessionToken: c.SessionToken}
+	}
+	return t
 }
 
 // startPodExecution applies the pod spec and waits briefly for it to appear.
@@ -841,66 +968,27 @@ func HandleStreamTerraformExecution() gin.HandlerFunc {
 			c.Writer.Flush()
 		}
 
-		var cmd *exec.Cmd
-		if execution.Runtime == RuntimeDocker {
-			cmd = exec.CommandContext(ctx, "docker", "logs", "-f", execution.ContainerName)
-		} else {
-			cmd = exec.CommandContext(ctx, "kubectl", "logs", "-f", execution.PodName, "-n", execution.Namespace, "-c", "terraform")
-		}
-
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			c.SSEvent("failed", err.Error())
-			c.Writer.Flush()
-			return
-		}
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			c.SSEvent("failed", err.Error())
-			c.Writer.Flush()
-			return
-		}
-		if err := cmd.Start(); err != nil {
-			c.SSEvent("failed", err.Error())
-			c.Writer.Flush()
-			return
-		}
-
-		// Both pipes feed one channel so only this goroutine writes to the
-		// response; two goroutines writing SSE concurrently was a data race.
-		//
-		// Terraform writes warnings and progress to stderr, so stderr lines are
-		// ordinary log lines. Ending the run on the first one is what made the
-		// UI report failure while the run was still going.
-		lines := make(chan string, 256)
-		var readers sync.WaitGroup
-		for _, pipe := range []io.Reader{stdout, stderr} {
-			readers.Add(1)
-			go func(r io.Reader) {
-				defer readers.Done()
-				scanner := bufio.NewScanner(r)
-				scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-				for scanner.Scan() {
-					lines <- scanner.Text()
-				}
-			}(pipe)
-		}
-		go func() {
-			readers.Wait()
-			close(lines)
-		}()
-
-		for line := range lines {
-			if ctx.Err() != nil {
-				continue // drain so the readers can exit
+		// A follow can end while the run goes on: the Docker socket proxy
+		// closes connections after 10 minutes. Each line carries its
+		// timestamp, so a new follow picks up after the last line sent.
+		var last time.Time
+		for {
+			if err := followLogs(ctx, execution, last, func(ts time.Time, line string) {
+				last = ts
+				c.SSEvent("message", line)
+				c.Writer.Flush()
+			}); err != nil {
+				c.SSEvent("failed", err.Error())
+				c.Writer.Flush()
+				return
 			}
-			c.SSEvent("message", line)
-			c.Writer.Flush()
-		}
-		_ = cmd.Wait()
-
-		if ctx.Err() != nil {
-			return
+			if ctx.Err() != nil {
+				return
+			}
+			if running, err := executionRunning(execution); err != nil || !running {
+				break
+			}
+			time.Sleep(time.Second)
 		}
 
 		// Report how the run actually ended. "done" used to be sent whatever
@@ -917,8 +1005,112 @@ func HandleStreamTerraformExecution() gin.HandlerFunc {
 	}
 }
 
-// executionExitCode reads the exit code of a finished run.
+// followLogs follows a run's log from after `since` (from the start when
+// zero) until the follow ends, calling emit with each line and its
+// timestamp.
+func followLogs(ctx context.Context, execution *TerraformExecution, since time.Time, emit func(time.Time, string)) error {
+	var cmd *exec.Cmd
+	if execution.Runtime == RuntimeDocker {
+		args := []string{"logs", "-f", "-t"}
+		if !since.IsZero() {
+			args = append(args, "--since", since.Format(time.RFC3339Nano))
+		}
+		cmd = exec.CommandContext(ctx, "docker", append(args, execution.ContainerName)...)
+	} else {
+		args := []string{"logs", "-f", "--timestamps", execution.PodName, "-n", execution.Namespace, "-c", "terraform"}
+		if !since.IsZero() {
+			args = append(args, "--since-time", since.Format(time.RFC3339Nano))
+		}
+		cmd = exec.CommandContext(ctx, "kubectl", args...)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Both pipes feed one channel so only this goroutine writes to the
+	// response; two goroutines writing SSE concurrently was a data race.
+	//
+	// Terraform writes warnings and progress to stderr, so stderr lines are
+	// ordinary log lines. Ending the run on the first one is what made the
+	// UI report failure while the run was still going.
+	lines := make(chan string, 256)
+	var readers sync.WaitGroup
+	for _, pipe := range []io.Reader{stdout, stderr} {
+		readers.Add(1)
+		go func(r io.Reader) {
+			defer readers.Done()
+			scanner := bufio.NewScanner(r)
+			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+			for scanner.Scan() {
+				lines <- scanner.Text()
+			}
+		}(pipe)
+	}
+	go func() {
+		readers.Wait()
+		close(lines)
+	}()
+
+	for line := range lines {
+		if ctx.Err() != nil {
+			continue // drain so the readers can exit
+		}
+		ts, text, ok := splitTimestamp(line)
+		// --since is inclusive: a line at the resume point was sent already.
+		if !ok || (!since.IsZero() && !ts.After(since)) {
+			continue
+		}
+		emit(ts, text)
+	}
+	_ = cmd.Wait()
+	return nil
+}
+
+// splitTimestamp splits "<RFC3339Nano> <line>", the form of `logs -t`.
+func splitTimestamp(line string) (time.Time, string, bool) {
+	stamp, text, found := strings.Cut(line, " ")
+	ts, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		return time.Time{}, line, false
+	}
+	if !found {
+		text = ""
+	}
+	return ts, text, true
+}
+
+// executionRunning says whether a run's container is still going.
+func executionRunning(e *TerraformExecution) (bool, error) {
+	var cmd *exec.Cmd
+	if e.Runtime == RuntimeDocker {
+		cmd = exec.Command("docker", "inspect", "-f", "{{.State.Running}}", e.ContainerName)
+	} else {
+		cmd = exec.Command("kubectl", "get", "pod", e.PodName, "-n", e.Namespace, "-o", "jsonpath={.status.phase}")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	s := strings.TrimSpace(string(out))
+	return s == "true" || s == "Running" || s == "Pending", nil
+}
+
+// executionExitCode reads the exit code of a finished run. A running
+// container reports exit code 0, so asking before it has finished is an
+// error, not a success.
 func executionExitCode(e *TerraformExecution) (int, error) {
+	if running, err := executionRunning(e); err == nil && running {
+		return 0, errors.New("the run is still going")
+	}
 	var cmd *exec.Cmd
 	if e.Runtime == RuntimeDocker {
 		cmd = exec.Command("docker", "inspect", "-f", "{{.State.ExitCode}}", e.ContainerName)
@@ -965,7 +1157,11 @@ func HandleTerminateTerraform() gin.HandlerFunc {
 			cmd = exec.Command("kubectl", "delete", "pod", execution.PodName, "-n", execution.Namespace)
 		}
 
+		// Marked before the stop, so the run's end is recorded as stopped
+		// rather than failed.
+		markStopped(execID)
 		if err := cmd.Run(); err != nil {
+			wasStopped(execID)
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}

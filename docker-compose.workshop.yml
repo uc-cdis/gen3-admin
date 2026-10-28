@@ -1,0 +1,101 @@
+# Bootstrap a CSOC into AWS from a clean machine with nothing but Docker.
+#
+#   docker compose -f docker-compose.workshop.yml pull
+#   docker compose -f docker-compose.workshop.yml up -d
+#   open http://localhost:3000/bootstrap
+#
+# Pull-only: every image is published by CI (docker-builds.yaml), nothing is
+# built. This is the file the workshop hands to participants;
+# docker-compose-bootstrap-csoc.yml builds from source and stays for
+# development.
+#
+# Pinned to the feat/csoc-bootstrap-wizard branch build, and the CSOC
+# Terraform to gen3-terraform's feat/csoc-bootstrap-master, until both are
+# merged; then pin every tag below and TERRAFORM_MODULES_REF to a release.
+#
+# The API starts Terraform in sibling containers through the host's Docker,
+# so every path it hands to `docker run -v` is a *host* path: ~/.aws and the
+# work dirs are mounted at the same absolute paths they have on the host, and
+# HOME is passed through. The runner image the API uses for Terraform, helm,
+# kubectl and aws comes from TERRAFORM_RUNNER_IMAGE below, not from this file.
+#
+# Both services publish to 127.0.0.1 only. The API runs with MOCK_AUTH, so
+# anything that can reach it acts as a superadmin with your AWS credentials.
+
+services:
+  # Docker API access for the API, limited to what the runner uses (create,
+  # start, inspect, logs, wait, stop, and pull for the runner image). Not
+  # published; only `api` can reach it.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+    restart: unless-stopped
+
+  api:
+    image: quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard
+    depends_on: [docker-proxy]
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
+      PORT: "8002"
+      # Inside the container; the published port below is loopback-only.
+      BIND_ADDRESS: 0.0.0.0
+      MOCK_AUTH: "true"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      HOME: ${HOME}
+      TERRAFORM_WORK_ROOT: ${HOME}/.gen3-csoc/terraform
+      # The checkout on the host holding scripts/runner and helm/csoc; the
+      # runner containers mount them from there.
+      GEN3_ADMIN_ROOT: ${PWD}
+      # The runner image every plan, apply, install and teardown runs in.
+      TERRAFORM_RUNNER_IMAGE: quay.io/cdis/csoc-terraform:feat_csoc-bootstrap-wizard
+      # Set to a local gen3-terraform checkout to test unpublished modules.
+      # TERRAFORM_MODULES_DIR: ${TERRAFORM_MODULES_DIR:-}
+      # Which gen3-terraform branch or tag the CSOC's Terraform comes from.
+      TERRAFORM_MODULES_REF: ${TERRAFORM_MODULES_REF:-feat/csoc-bootstrap-master}
+      # What the install puts in the cluster; empty leaves the chart's
+      # defaults (:master).
+      CSOC_API_IMAGE: quay.io/cdis/csoc-api:feat_csoc-bootstrap-wizard
+      CSOC_FRONTEND_IMAGE: quay.io/cdis/csoc-frontend:feat_csoc-bootstrap-wizard
+      # The agent follows the API's tag by default; name one to override.
+      # CSOC_AGENT_IMAGE: quay.io/cdis/csoc-agent:master
+      # Where the CSOC's ArgoCD gets the chart, for GitOps installs.
+      CSOC_CHART_REPO: ${CSOC_CHART_REPO:-}
+      CSOC_CHART_REVISION: ${CSOC_CHART_REVISION:-}
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      # Read-write so an SSO session can refresh its cached token.
+      - ${HOME}/.aws:${HOME}/.aws
+      - ${HOME}/.gen3-csoc:${HOME}/.gen3-csoc
+      - ./scripts/runner:${PWD}/scripts/runner:ro
+      # A CSOC installed without GitOps gets its chart from this checkout.
+      - ./helm/csoc:${PWD}/helm/csoc:ro
+    networks: [internal, default]
+    restart: unless-stopped
+
+  frontend:
+    # The wizard: Dockerfile.frontend with bootstrap mode and the compose
+    # API host baked in at build time (CI cannot pass build args, hence the
+    # separate image).
+    image: quay.io/cdis/csoc-bootstrap-frontend:feat_csoc-bootstrap-wizard
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: "6bcc8d24207ff145da5740b0ec0ed231563404b4e65325d1ac22b8b68142634f" #pragma: allowlist secret
+      MOCK_AUTH: "true"
+      # What next-auth reads to offer the mock sign-in; without it a
+      # production build only has Keycloak, which does not exist yet.
+      ENABLE_MOCK_AUTH: "true"
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true

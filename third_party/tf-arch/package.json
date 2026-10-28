@@ -1,0 +1,7 @@
+{
+  "name": "tf-arch-vendored",
+  "version": "1.4.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}
