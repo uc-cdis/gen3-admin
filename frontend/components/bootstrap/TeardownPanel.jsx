@@ -66,14 +66,14 @@ export default function TeardownPanel({
       key: 'destroy', label: 'Destroy the infrastructure',
       detail: destroyProgress && (destroyProgress.done || destroyProgress.going)
         ? `${destroyProgress.done} destroyed${destroyProgress.going ? `, ${destroyProgress.going} in progress` : ''}.`
-        : 'terraform destroy: the cluster, VPC, Squid, IAM roles and the certificate. 20 to 30 minutes.',
+        : 'terraform destroy: the cluster, VPC, Squid, IAM roles and the certificate. About 5 minutes.',
       state: !plan.destroy && status !== 'partial' && status !== 'destroyed' ? 'skipped'
         : armed && env?.last_run?.operation === 'init' && env.last_run.status === 'running' ? 'running'
           : runStep(env, 'destroy', status === 'destroyed'),
     },
     {
       key: 'zone', label: `Delete the hosted zone ${zoneName || ''}`,
-      detail: 'And the NS records that delegate it from its parent. Only a zone the bootstrap created is deleted.',
+      detail: 'With the certificate the wizard made (its validation records are in the zone) and the NS records that delegate it from its parent. Only a zone and certificate the bootstrap created are deleted.',
       state: !(armed ? teardown.zone : zone) ? 'skipped' : teardown.results.zone?.error ? 'failed'
         : teardown.results.zone?.done ? 'done' : teardown.phase === 'zone' ? 'running' : 'pending',
       result: teardown.results.zone,

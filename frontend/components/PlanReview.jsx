@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Accordion, Alert, Badge, Code, Group, Loader, Paper, Progress, SegmentedControl, Stack, Table, Text } from '@mantine/core';
+import { Accordion, Alert, Badge, Code, Group, Loader, Paper, Progress, SegmentedControl, Stack, Table, Text, UnstyledButton } from '@mantine/core';
 import { PlanDiagramLoader, displayName, iconSrc } from '@/components/PlanDiagram';
 import { IconAlertTriangle, IconX } from '@tabler/icons-react';
 import { ChangeChip, ChangeLegend } from '@/components/ApplyState';
@@ -161,6 +161,31 @@ export default function PlanReview({ target, environment, runId, progress = null
             <Progress.Section value={pct(totals.running)} color={STATE_COLOR.running} animated={running} striped />
             <Progress.Section value={pct(totals.failed)} color={STATE_COLOR.failed} />
           </Progress.Root>
+        )}
+
+        {/* What the apply is waiting on now, so a long quiet stretch has a name. */}
+        {running && totals.running > 0 && (
+          <Paper withBorder radius="sm" p="xs" bg="var(--mantine-color-blue-light)">
+            <Stack gap={6}>
+              <Text size="xs" fw={600} c="blue.8">Right now</Text>
+              {(plan.groups || []).flatMap((g) => (g.changes || [])
+                .filter((c) => progress.get(c.address)?.state === 'running')
+                .map((c) => ({ c, group: g.name })))
+                .map(({ c, group }) => {
+                  const n = names.get(c.address);
+                  return (
+                    <UnstyledButton key={c.address} onClick={() => { setView('list'); setOpened((o) => Array.from(new Set([...o, group]))); }}>
+                      <Group gap="sm" wrap="nowrap">
+                        <ChangeChip action={c.action} state={progress.get(c.address)} applying />
+                        {n?.icon && <img src={n.icon} alt="" width={18} height={18} />}
+                        <Text size="sm" fw={500}>{n?.name || c.address}</Text>
+                        <Text size="xs" c="dimmed">{group}</Text>
+                      </Group>
+                    </UnstyledButton>
+                  );
+                })}
+            </Stack>
+          </Paper>
         )}
 
         {(failed.length > 0 || otherErrors.length > 0) && (

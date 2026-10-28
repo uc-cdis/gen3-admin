@@ -418,7 +418,7 @@ function afterProblem(base: Base, env: Environment, run: Run): Base {
       return {
         ...base, id: 'bootstrap-failed', step: 'install', tone: 'red',
         title: words,
-        detail: `The cluster is up. The log below says what went wrong; bootstrapping again is safe.${lost}`,
+        detail: `The cluster is up. ${run.status === 'stopped' ? 'The log below shows where it stopped' : 'The log below says what went wrong'}; bootstrapping again is safe.${lost}`,
         primary: { kind: 'run', op: 'install-csoc', label: 'Bootstrap again', needsForm: true },
         secondary: [teardown],
       };
@@ -427,7 +427,7 @@ function afterProblem(base: Base, env: Environment, run: Run): Base {
       return {
         ...base, id: 'finish-failed', step: 'install', tone: 'red',
         title: words,
-        detail: `The CSOC is bootstrapped. The log below says what went wrong; finishing again is safe.${lost}`,
+        detail: `The CSOC is bootstrapped. ${run.status === 'stopped' ? 'The log below shows where it stopped' : 'The log below says what went wrong'}; finishing again is safe.${lost}`,
         primary: { kind: 'run', op: 'finish-csoc', label: 'Finish again' },
         secondary: [{ kind: 'run', op: 'install-csoc', label: 'Bootstrap again', needsForm: true }, teardown],
       };
@@ -552,12 +552,12 @@ export function deriveState({ env, blocker = null, portalUrl, cert = null, dns =
 
 function runningDetail(op: string): string {
   return {
-    init: 'Downloading the modules and providers. About 30 seconds.',
-    plan: 'Working out what to create. About a minute.',
-    apply: 'Creating the infrastructure. About 20 to 25 minutes; you can close this page and come back.',
-    destroy: 'Deleting the infrastructure. About 20 to 30 minutes, mostly waiting for AWS to release network interfaces.',
+    init: 'Downloading the modules and providers. Under a minute.',
+    plan: 'Working out what to create. Under a minute.',
+    apply: 'Creating the infrastructure. 15–20 minutes; you can close this page and come back.',
+    destroy: 'Deleting the infrastructure. About 5 minutes; up to 30 if AWS is slow to release network interfaces.',
     'install-csoc': 'Installing External Secrets, the load balancer controller, Keycloak and the portal. About 5 minutes.',
-    'finish-csoc': 'Waiting for Keycloak and the portal, then creating the DNS records. About 5 minutes.',
+    'finish-csoc': 'Waiting for Keycloak and the portal, then creating the DNS records. 3–6 minutes.',
     'uninstall-csoc': 'Removing the load balancers, volumes, nodes, DNS records and secrets the install added. A few minutes.',
   }[op] || '';
 }

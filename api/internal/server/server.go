@@ -218,6 +218,7 @@ func SetupHTTPServer() {
 	r.POST("/api/aws/acm/request", aws.ACMRequestHandler)
 	r.POST("/api/aws/acm/describe", aws.ACMDescribeHandler)
 	r.POST("/api/aws/acm/ensure-validation", aws.ACMEnsureValidationHandler)
+	r.POST("/api/aws/acm/delete", aws.ACMDeleteHandler)
 	r.POST("/api/aws/acm/validation-records", aws.ACMRecordsHandler)
 	r.POST("/api/aws/acm/import", aws.ACMImportHandler)
 	r.POST("/api/aws/acm/list", aws.ACMListHandler)

@@ -220,22 +220,31 @@ func sameServers(a, b []string) bool {
 // lookupNS asks a public resolver, not the local one: what matters is whether
 // ACM and the operator's browser will find the zone.
 var lookupNS = func(ctx context.Context, name string) ([]string, error) {
-	r := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, "1.1.1.1:53")
-		},
+	// Any of the big public resolvers will do: right after a zone is
+	// recreated one of them can still hold the old "no such name" for a
+	// while, and ACM asks its own anyway.
+	var lastErr error
+	for _, server := range []string{"1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"} {
+		server := server
+		r := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, server)
+			},
+		}
+		ns, err := r.LookupNS(ctx, name)
+		if err != nil || len(ns) == 0 {
+			lastErr = err
+			continue
+		}
+		out := make([]string, 0, len(ns))
+		for _, n := range ns {
+			out = append(out, n.Host)
+		}
+		return out, nil
 	}
-	ns, err := r.LookupNS(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(ns))
-	for _, n := range ns {
-		out = append(out, n.Host)
-	}
-	return out, nil
+	return nil, lastErr
 }
 
 func publiclyDelegated(ctx context.Context, name string, servers []string) bool {

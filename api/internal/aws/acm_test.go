@@ -13,6 +13,8 @@ import (
 // fakeACM is one region's certificates. A requested one has its validation
 // record from the second describe on, as ACM does after a few seconds.
 type fakeACM struct {
+	tags      map[string][]acmtypes.Tag
+	deleted   []string
 	certs     []acmtypes.CertificateSummary
 	describes map[string]int
 	requested []acm.RequestCertificateInput
@@ -160,4 +162,13 @@ func TestIdempotencyTokenIsStablePerHost(t *testing.T) {
 		idempotencyToken("a.example.org") == idempotencyToken("b.example.org") {
 		t.Error("the token must be the same for a host and differ between hosts")
 	}
+}
+
+func (f *fakeACM) ListTagsForCertificate(_ context.Context, in *acm.ListTagsForCertificateInput, _ ...func(*acm.Options)) (*acm.ListTagsForCertificateOutput, error) {
+	return &acm.ListTagsForCertificateOutput{Tags: f.tags[awssdk.ToString(in.CertificateArn)]}, nil
+}
+
+func (f *fakeACM) DeleteCertificate(_ context.Context, in *acm.DeleteCertificateInput, _ ...func(*acm.Options)) (*acm.DeleteCertificateOutput, error) {
+	f.deleted = append(f.deleted, awssdk.ToString(in.CertificateArn))
+	return &acm.DeleteCertificateOutput{}, nil
 }

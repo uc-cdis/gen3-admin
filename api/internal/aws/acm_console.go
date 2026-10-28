@@ -631,3 +631,116 @@ func CertificateStatus(ctx context.Context, t Target, arn string) (string, error
 	}
 	return d.Status, nil
 }
+
+type acmDeleteAPI interface {
+	acmAPI
+	ListTagsForCertificate(context.Context, *acm.ListTagsForCertificateInput, ...func(*acm.Options)) (*acm.ListTagsForCertificateOutput, error)
+	DeleteCertificate(context.Context, *acm.DeleteCertificateInput, ...func(*acm.Options)) (*acm.DeleteCertificateOutput, error)
+}
+
+var errNotOurCertificate = errors.New("the certificate was not made by the CSOC bootstrap (no ManagedBy=gen3-csoc tag), so it is left alone")
+
+// deleteCertificate removes a certificate the bootstrap requested or
+// imported, with the validation records it wrote for it: once the zone goes
+// it could not renew anyway. A certificate still attached to a load
+// balancer is left.
+func deleteCertificate(ctx context.Context, certs acmDeleteAPI, zones zoneAPI, arn string) (int, error) {
+	tags, err := certs.ListTagsForCertificate(ctx, &acm.ListTagsForCertificateInput{CertificateArn: awssdk.String(arn)})
+	if err != nil {
+		return 0, err
+	}
+	ours := false
+	for _, t := range tags.Tags {
+		ours = ours || (awssdk.ToString(t.Key) == "ManagedBy" && awssdk.ToString(t.Value) == "gen3-csoc")
+	}
+	if !ours {
+		return 0, errNotOurCertificate
+	}
+	d, err := describeCertificate(ctx, certs, arn)
+	if err != nil {
+		return 0, err
+	}
+	if len(d.InUseBy) > 0 {
+		return 0, fmt.Errorf("the certificate is still in use by %s", strings.Join(d.InUseBy, ", "))
+	}
+	removed := 0
+	seen := map[string]bool{}
+	for _, ds := range d.Domains {
+		if ds.Record == nil || seen[ds.Record.Name] {
+			continue
+		}
+		seen[ds.Record.Name] = true
+		host := strings.TrimPrefix(ds.Domain, "*.")
+		z, err := findPublicZone(ctx, zones, host)
+		if err == nil && z == nil {
+			z, err = findParentZone(ctx, zones, host)
+		}
+		if err != nil || z == nil {
+			continue
+		}
+		out, err := zones.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+			HostedZoneId: awssdk.String(zoneID(z)), StartRecordName: awssdk.String(ds.Record.Name),
+			StartRecordType: r53types.RRTypeCname, MaxItems: awssdk.Int32(1),
+		})
+		if err != nil {
+			return removed, err
+		}
+		for _, rr := range out.ResourceRecordSets {
+			if !sameName(awssdk.ToString(rr.Name), ds.Record.Name) || rr.Type != r53types.RRTypeCname {
+				continue
+			}
+			match := false
+			for _, v := range rr.ResourceRecords {
+				match = match || sameName(awssdk.ToString(v.Value), ds.Record.Value)
+			}
+			if !match {
+				continue // someone else's record of that name
+			}
+			if err := deleteRecords(ctx, zones, zoneID(z), []r53types.ResourceRecordSet{rr}); err != nil {
+				return removed, err
+			}
+			removed++
+		}
+	}
+	if _, err := certs.DeleteCertificate(ctx, &acm.DeleteCertificateInput{CertificateArn: awssdk.String(arn)}); err != nil {
+		var nf *acmtypes.ResourceNotFoundException
+		if !errors.As(err, &nf) {
+			return removed, err
+		}
+	}
+	return removed, nil
+}
+
+// POST /api/aws/acm/delete  {target..., arn}
+func ACMDeleteHandler(c *gin.Context) {
+	var req struct {
+		Target
+		ARN string `json:"arn"`
+	}
+	if !bindTarget(c, &req) {
+		return
+	}
+	if !validCertificateARN.MatchString(req.ARN) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "not an ACM certificate ARN"})
+		return
+	}
+	certs, zones, ctx, cancel, ok := acmClients(c, req.Target, 60*time.Second)
+	if !ok {
+		return
+	}
+	defer cancel()
+	n, err := deleteCertificate(ctx, certs, zones, req.ARN)
+	switch {
+	case errors.Is(err, errNotOurCertificate):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case err != nil:
+		var nf *acmtypes.ResourceNotFoundException
+		if errors.As(err, &nf) {
+			c.JSON(http.StatusOK, gin.H{"deleted": true, "records_removed": 0, "note": "it was already gone"})
+			return
+		}
+		acmFail(c, req.Target, err)
+	default:
+		c.JSON(http.StatusOK, gin.H{"deleted": true, "records_removed": n})
+	}
+}

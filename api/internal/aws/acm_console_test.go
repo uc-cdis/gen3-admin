@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	acmtypes "github.com/aws/aws-sdk-go-v2/service/acm/types"
+	r53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 )
 
 func TestRequestPublicAsksForEveryNameWithDNSValidation(t *testing.T) {
@@ -146,5 +148,32 @@ func TestEnsureValidationWritesWhatIsMissingAndChecks(t *testing.T) {
 	}
 	if !d.Domains[0].DNS.Public {
 		t.Errorf("public answer not seen: %+v", d.Domains[0].DNS)
+	}
+}
+
+func TestDeleteCertificateTakesItsRecordsWithIt(t *testing.T) {
+	prev := lookupCNAME
+	lookupCNAME = func(context.Context, string) (string, error) { return "", context.DeadlineExceeded }
+	t.Cleanup(func() { lookupCNAME = prev })
+
+	certs := newFakeACM()
+	arn, _ := requestPublic(context.Background(), certs, []string{"portal.workshop.example.org", "auth.workshop.example.org"}, acmtypes.KeyAlgorithmRsa2048)
+	certs.describes[arn] = 1
+	zones := newFake()
+	zones.addZone("workshop.example.org", "ZWS")
+	zones.addRecord("ZWS", "other.workshop.example.org", r53types.RRTypeCname, "elsewhere.example.org.")
+	if _, _, err := ensureValidation(context.Background(), certs, zones, arn, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteCertificate(context.Background(), certs, zones, arn); !errors.Is(err, errNotOurCertificate) {
+		t.Fatalf("an untagged certificate was deleted: %v", err)
+	}
+	certs.tags = map[string][]acmtypes.Tag{arn: {{Key: awssdk.String("ManagedBy"), Value: awssdk.String("gen3-csoc")}}}
+	n, err := deleteCertificate(context.Background(), certs, zones, arn)
+	if err != nil || n != 2 || len(certs.deleted) != 1 {
+		t.Fatalf("removed %d, deleted %v, err %v", n, certs.deleted, err)
+	}
+	if len(zones.records["ZWS"]) != 1 || awssdk.ToString(zones.records["ZWS"][0].Name) != "other.workshop.example.org." {
+		t.Errorf("zone records left = %v", zones.records["ZWS"])
 	}
 }

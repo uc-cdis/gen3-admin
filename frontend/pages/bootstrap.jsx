@@ -597,13 +597,22 @@ export default function Gen3BootstrapStepper() {
   // back everything that needs it, and is fixed right there in the banner.
   const zoneProblem = Boolean(dnsMode === 'route53' && identity && domainName && domainValidation && !validatingDomain
     && !(domainValidation.found && domainValidation.resolves !== false));
+  // A zone that exists but public DNS does not see yet is re-checked by
+  // itself: a new delegation shows up within minutes, and nothing is left
+  // to press.
+  const zoneWaiting = zoneProblem && domainValidation?.found;
+  useEffect(() => {
+    if (!zoneWaiting) return undefined;
+    const id = setInterval(() => { if (!validatingDomain) handleValidateDomain(); }, 20000);
+    return () => clearInterval(id);
+  }, [zoneWaiting]); // eslint-disable-line react-hooks/exhaustive-deps
   const blocker = authExpired
     ? { kind: 'auth', message: authExpired.message, loginCommand: authExpired.loginCommand }
     : envError ? { kind: 'registry', message: envError.message }
       : zoneProblem ? (domainValidation.found
         ? {
           kind: 'zone', title: `${domainValidation.zone_name} is not delegated yet`,
-          message: `The zone exists in this account, but public DNS does not find it, so the certificate for ${domainName} cannot be validated. Delegate it from its parent zone. Right after a new delegation, resolvers can take up to five minutes to see it; Check again then.`,
+          message: `The zone exists in this account, but public DNS does not find it yet, so the certificate for ${domainName} cannot be validated. If it is delegated, resolvers see it within a few minutes; this page checks every 20 seconds and carries on by itself. If not, delegate it below.`,
         }
         : {
           kind: 'zone', title: `No hosted zone for ${domainName}`,
@@ -655,7 +664,8 @@ export default function Gen3BootstrapStepper() {
     ? [domainName, effectiveKeycloakHostname].filter((h) => h && !certCovers(certDetail.names.map((n) => n.toLowerCase()), h))
     : [];
   const certDomains = certDetail?.domains || [];
-  const certInput = effectiveCert
+  // A certificate that is gone (deleted with a teardown) is as good as none.
+  const certInput = effectiveCert && certDetail?.status !== 'NOT_FOUND'
     ? {
       arn: effectiveCert, status: certDetail?.status, reason: certDetail?.failure_reason, missing: certMissing,
       recordsReady: certDetail?.status === 'PENDING_VALIDATION' ? certDomains.length > 0 && certDomains.every((d) => d.record) : undefined,
@@ -777,7 +787,7 @@ export default function Gen3BootstrapStepper() {
     setConfirming({
       action: { kind: 'start-teardown', opts }, button: 'Tear down anyway', noName: true,
       title: short.left <= 0 ? 'Your AWS sign-in has ended' : `Your AWS sign-in ends in ${short.left} minutes`,
-      body: `A teardown takes up to 45 minutes and stops part-way if the sign-in ends first. Sign in again from a terminal first: aws sso login --profile ${profile}`,
+      body: `A teardown takes 10–15 minutes, up to 45, and stops part-way if the sign-in ends first. Sign in again from a terminal first: aws sso login --profile ${profile}`,
     });
   };
   const startTeardown = ({ force, zone, bucket, skipUninstall, zoneRecords = false }) => {
@@ -796,6 +806,38 @@ export default function Gen3BootstrapStepper() {
     teardownBusy.current = false;
     if (!started) { disarm(); return; }
     if (op === 'destroy') chain.current = { after: started.id, op: 'destroy' };
+  };
+
+  // The certificate the Certificate step made goes with the zone: its
+  // validation records are in it, and it could not renew without them.
+  const deleteCert = async () => {
+    teardownBusy.current = true;
+    setTeardown((t) => ({ ...t, phase: 'cert' }));
+    try {
+      const res = await fetch('/api/aws/acm/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...awsTarget, arn: effectiveCert }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 409) {
+        disarm({ results: { ...teardown.results, cert: { error: data.error || `HTTP ${res.status}` } } });
+        return false;
+      }
+      const note = res.status === 409 ? 'Kept: it was not made by this wizard.' : 'Deleted, with its validation records.';
+      setTeardown((t) => ({ ...t, phase: null, results: { ...t.results, cert: { done: true, note } } }));
+      if (res.ok) {
+        // Forgotten with the environment too, so a new run starts at the chooser.
+        setCertificateArn('');
+        setCertDetail(null);
+        saveEnvironment({ certificateArn: '' });
+      }
+      return true;
+    } catch (err) {
+      disarm({ results: { ...teardown.results, cert: { error: err.message } } });
+      return false;
+    } finally {
+      teardownBusy.current = false;
+    }
   };
 
   const deleteZone = async () => {
@@ -864,6 +906,7 @@ export default function Gen3BootstrapStepper() {
       return;
     }
     if (infra) { teardownStep('destroy'); return; }
+    if (teardown.zone && effectiveCert && !teardown.results.cert?.done) { deleteCert(); return; }
     if (teardown.zone && !teardown.results.zone?.done) { deleteZone(); return; }
     if (teardown.bucket && !teardown.results.bucket?.done) { deleteBucket(); return; }
     disarm();
@@ -1123,21 +1166,8 @@ export default function Gen3BootstrapStepper() {
   };
   const prevStep = () => setActive((current) => (current > 0 ? current - 1 : current));
 
-  // Calculate estimated monthly cost based on configuration
-  const calculateCost = () => {
-    const costs = {
-      eks: 73, // EKS cluster
-      ec2: 120, // Worker nodes and Squid proxy
-      vpc: 0, // VPC is free
-      nat: 32.85, // NAT Gateway
-      ebs: 40, // EBS volumes for cluster
-      alb: 22.50, // Application Load Balancer
-      route53: 0.50, // Hosted Zone
-      dataTransfer: 50 // Estimated data transfer
-    };
-
-    return Object.values(costs).reduce((a, b) => a + b, 0);
-  };
+  // A us-east-1 range for the CSOC alone (see the docs' cost breakdown).
+  const calculateCost = () => '$720–800';
 
   const identityAlert = identityError && (
     identityError.code === 'sso_expired' ? (
@@ -1190,7 +1220,7 @@ export default function Gen3BootstrapStepper() {
             </List>
 
             <Text size="sm" c="dimmed">
-              Estimated time: 45-60 minutes. Everything is recorded in your Terraform state
+              Estimated time: about 40 minutes. Everything is recorded in your Terraform state
               bucket, so you can close this window and resume, here or from the CSOC once it is up.
             </Text>
 
@@ -1553,7 +1583,7 @@ export default function Gen3BootstrapStepper() {
                 <Text><strong>CSOC Name:</strong> {csocName || '(not set)'}</Text>
                 <Text><strong>Portal:</strong> https://{domainName || '(not set)'}</Text>
                 <Text><strong>Keycloak:</strong> https://{effectiveKeycloakHostname || '(not set)'}</Text>
-                <Text><strong>Certificate:</strong> chosen after the infrastructure is up (request, import or existing, on the Certificate &amp; DNS step)</Text>
+                <Text><strong>Certificate:</strong> chosen after the infrastructure is up (request, import or existing, on the Certificate step)</Text>
                 <Text><strong>DNS:</strong> {dnsMode === 'route53' ? `Route 53 zone ${domainValidation?.zone_name || ''}` : 'managed by you'}</Text>
                 <Text><strong>Region:</strong> {selectedRegion}</Text>
                 <Text><strong>AWS Account:</strong> {identity?.Account || '(not detected)'}</Text>
@@ -1585,7 +1615,7 @@ export default function Gen3BootstrapStepper() {
                 <Text size="sm"><strong>EKS Cluster</strong></Text>
                 <List size="sm" spacing={4} ml="md">
                   <List.Item>EKS control plane (v1.33); worker nodes come from Karpenter, which runs on Fargate and starts nodes as pods need them</List.Item>
-                  <List.Item>EBS CSI driver add-on and IAM roles for the load balancer controller and CSOC</List.Item>
+                  <List.Item>IAM roles for the load balancer controller, the EBS CSI driver and the CSOC</List.Item>
                   <List.Item>An S3 endpoint; other traffic from the private subnets goes out through Squid</List.Item>
                 </List>
 
@@ -1604,12 +1634,13 @@ export default function Gen3BootstrapStepper() {
             <Paper withBorder p="md" radius="md">
               <Group justify="space-between" mb="sm">
                 <Text fw={600}>Rough Monthly Cost Estimate</Text>
-                <Badge size="lg" color="blue">${estimatedCost.toFixed(2)}/month</Badge>
+                <Badge size="lg" color="blue">{estimatedCost}/month</Badge>
               </Group>
               <Text size="xs" c="dimmed">
-                A fixed us-east-1 ballpark for the EKS control plane, nodes, Squid, NAT, EBS, the
-                load balancer and data transfer; not a quote. Check AWS Cost Explorer once the
-                environment is running.
+                A us-east-1 ballpark, before any commons and data transfer; not a quote. Kubernetes
+                1.33 is past EKS standard support, so the control plane bills at the extended-support
+                rate ($0.60 an hour, about $438 a month); a version in standard support brings the
+                total to about $360–440. Check AWS Cost Explorer once the environment is running.
               </Text>
             </Paper>
 
@@ -1630,7 +1661,7 @@ export default function Gen3BootstrapStepper() {
             )}
 
             <Text size="sm" c="dimmed">
-              Next registers {csocName || 'the environment'} in the state bucket and starts Terraform.
+              Provision registers {csocName || 'the environment'} in the state bucket and starts Terraform.
             </Text>
           </Stack>
         );
@@ -1666,7 +1697,7 @@ export default function Gen3BootstrapStepper() {
                 : 'You create its validation records, and later the hostnames, wherever your DNS is hosted.'}
             </Text>
             <CertificateStep target={awsTarget} hostnames={[domainName, effectiveKeycloakHostname].filter(Boolean)}
-              detail={effectiveCert ? (certDetail || { arn: effectiveCert, status: '', domains: [] }) : null}
+              detail={effectiveCert && certDetail?.status !== 'NOT_FOUND' ? (certDetail || { arn: effectiveCert, status: '', domains: [] }) : null}
               dnsMode={dnsMode} onChosen={chooseCert} onChange={() => chooseCert('')} disabled={Boolean(blocker)} />
             <RunPanel runner={runner} failed={runFailed} ops={wizard?.ops || []} disabled={!setupComplete}
               onRun={(op) => onAction({ kind: 'run', op, needsForm: op === 'install-csoc' })} onTeardown={teardownAdvanced} />
@@ -1885,7 +1916,10 @@ export default function Gen3BootstrapStepper() {
           body = (
             <>
               <Leftovers
-                zoneName={teardownZone} zone={zoneLive} zoneResult={teardown.results.zone} onDeleteZone={deleteZone}
+                zoneName={teardownZone} zone={zoneLive} zoneResult={teardown.results.zone}
+                onDeleteZone={async () => { if (!effectiveCert || await deleteCert()) deleteZone(); }}
+                cert={effectiveCert && certDetail?.status !== 'NOT_FOUND' ? { arn: effectiveCert, status: certDetail?.status } : null}
+                certResult={teardown.results.cert} onDeleteCert={deleteCert}
                 parentAccess={parentAccess} setParentAccess={setParentAccess} profiles={profileNames}
                 stateBucket={stateBucket} onDeleteBucket={deleteBucket} bucketResult={teardown.results.bucket}
                 busy={teardown.phase} blocked={Boolean(blocker)}

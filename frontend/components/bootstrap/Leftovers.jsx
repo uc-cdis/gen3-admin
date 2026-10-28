@@ -49,7 +49,7 @@ function ConfirmDelete({ name, label, onConfirm, busy, disabled, children }) {
  */
 export default function Leftovers({
   zoneName, zone, onDeleteZone, zoneResult, parentAccess, setParentAccess, profiles = [],
-  stateBucket, onDeleteBucket, bucketResult, busy, blocked,
+  stateBucket, onDeleteBucket, bucketResult, busy, blocked, cert = null, certResult = null, onDeleteCert,
 }) {
   return (
     <Paper withBorder p="md" radius="md">
@@ -60,6 +60,17 @@ export default function Leftovers({
         </div>
         <Row done title="Infrastructure destroyed"
           detail="The cluster, VPC, Squid, IAM roles and certificate, and what the install added to them." />
+        {(cert || certResult?.done) && (
+          <Row done={Boolean(certResult?.done)} checking={busy === 'cert'}
+            title={certResult?.done ? 'Certificate deleted' : 'ACM certificate'}
+            detail={certResult?.done ? certResult.note
+              : `${cert.arn}. Its validation records are in the zone; deleting the zone deletes it too.`}>
+            {certResult?.error && <Text size="xs" c="red">{certResult.error}</Text>}
+            {!certResult?.done && cert && (
+              <ConfirmDelete name={zoneName || 'certificate'} label="Delete certificate…" onConfirm={onDeleteCert} busy={busy === 'cert'} disabled={blocked || Boolean(busy)} />
+            )}
+          </Row>
+        )}
         {zoneName && <Row
           checking={zone === 'checking'}
           done={zone === 'gone'}
