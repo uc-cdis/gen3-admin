@@ -46,3 +46,36 @@ jobs:
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_ROBOT_TOKEN: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+  # The bootstrap wizard's Terraform runner (terraform, helm, kubectl, aws,
+  # nodejs). The API's default runner image is this one at tag master.
+  build-terraform:
+    name: Build Terraform Runner Image
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    with:
+      DOCKERFILE_LOCATION: "./Dockerfile.terraform"
+      OVERRIDE_REPO_NAME: "csoc-terraform"
+      USE_QUAY_ONLY: true
+      BUILD_PLATFORMS: "linux/amd64,linux/arm64"
+    secrets:
+      ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
+      ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_ROBOT_TOKEN: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+  # The wizard frontend: Dockerfile.frontend with bootstrap mode and the
+  # compose API host baked in (Next fixes both into the bundle at build
+  # time, and the shared workflow cannot pass build args).
+  build-bootstrap-frontend:
+    name: Build Bootstrap Frontend Image
+    uses: uc-cdis/.github/.github/workflows/image_build_push_native.yaml@master
+    with:
+      DOCKERFILE_LOCATION: "./Dockerfile.frontend-bootstrap"
+      OVERRIDE_REPO_NAME: "csoc-bootstrap-frontend"
+      USE_QUAY_ONLY: true
+      BUILD_PLATFORMS: "linux/amd64,linux/arm64"
+    secrets:
+      ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
+      ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_ROBOT_TOKEN: ${{ secrets.QUAY_ROBOT_TOKEN }}

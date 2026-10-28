@@ -1,0 +1,44 @@
+# The bootstrap wizard frontend, published as quay.io/cdis/csoc-bootstrap-frontend.
+#
+# This is Dockerfile.frontend with the two build-time values the wizard needs
+# baked in, because Next inlines NEXT_PUBLIC_* and the /api rewrites into the
+# bundle at build time and the shared CI workflow cannot pass build args:
+#
+#   NEXT_PUBLIC_BOOTSTRAP_MODE=true  mounts /bootstrap (the wizard)
+#   API_BASE_URL=http://api:8002     the rewrites target the compose `api` service
+#
+# The in-cluster portal (Dockerfile.frontend) keeps its defaults: no
+# bootstrap mode, and http://localhost:8002 where the API runs as a sidecar.
+
+ARG AZLINUX_BASE_VERSION=master
+
+# For local development
+FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION}
+
+
+# Node 22, the current LTS line. The base image's default `nodejs` package is
+# 18, which Next 16 refuses (it wants >= 20.9), so the version has to be named
+# explicitly -- the ENV NODE_VERSION that used to sit here had no effect on
+# what yum installed, it was only a label.
+RUN yum install -y unzip nodejs22 nodejs22-npm && \
+    ln -sf /usr/bin/node-22 /usr/bin/node && \
+    ln -sf /usr/bin/npm-22 /usr/bin/npm
+
+WORKDIR /frontend
+
+ARG NEXT_PUBLIC_BOOTSTRAP_MODE=true
+ENV NEXT_PUBLIC_BOOTSTRAP_MODE=${NEXT_PUBLIC_BOOTSTRAP_MODE}
+
+ARG API_BASE_URL=http://api:8002
+ENV API_BASE_URL=${API_BASE_URL}
+
+COPY ./frontend/package.json ./frontend/package-lock.json /frontend/
+RUN npm install
+
+COPY ./frontend /frontend
+
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
