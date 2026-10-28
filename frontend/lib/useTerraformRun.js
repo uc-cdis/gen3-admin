@@ -11,8 +11,11 @@ const SAVED_PLAN_PATH = '/workspace/tf/tfplan';
 
 // The log stream goes straight to the API in development: Next's proxy
 // buffers server-sent events.
+// Dev (next dev) talks to the API on 8002 directly. Production builds —
+// including the bootstrap image, which may run on any host port — stream
+// same-origin so the server proxies /api to whatever API it is paired with.
 const streamBase = () =>
-  process.env.NEXT_PUBLIC_BOOTSTRAP_MODE === 'true' || process.env.NODE_ENV !== 'production'
+  process.env.NODE_ENV !== 'production'
     ? 'http://localhost:8002/api'
     : '/api';
 
