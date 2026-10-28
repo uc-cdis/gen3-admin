@@ -36,8 +36,7 @@
   <li>Read <b>Review &amp; Confirm</b>. With the example values it reads:
     <div class="tw"><table><thead><tr><th>Line</th><th>Reads</th></tr></thead><tbody><tr><td>CSOC Name</td><td><code class="ex">csoc-dev</code></td></tr><tr><td>Portal</td><td><code>https://portal.csoc.example.org</code></td></tr><tr><td>Keycloak</td><td><code>https://auth.csoc.example.org</code></td></tr><tr><td>Certificate</td><td>chosen after the infrastructure is up (request, import or existing, on the Certificate step)</td></tr><tr><td>DNS</td><td>Route 53 zone csoc.example.org</td></tr><tr><td>Region</td><td><code class="ex">us-east-1</code></td></tr><tr><td>AWS Account</td><td>your account ID</td></tr><tr><td>State</td><td><code>s3://gen3-csoc-csoc-dev-111122223333/gen3-csoc/environments/csoc-dev/</code></td></tr><tr><td>VPC CIDR</td><td><code>172.24.16.0/20</code></td></tr><tr><td>Data bucket</td><td>none</td></tr></tbody></table></div>
     If a line is wrong, press <b>Back</b> and change it on <b>Setup</b>.</li>
-  <li>Read the <b>Rough Monthly Cost Estimate</b>. Its badge shows <b>$720–800/month</b>: a us-east-1 figure before commons and data transfer, on Kubernetes 1.33, which is billed at the EKS extended-support rate. <a href="concepts/security.html#cost">Cost</a> breaks it down.</li>
-  <li>Press <span class="btn-ui">Provision</span> at the top right. The text below the cost reads "Provision registers csoc-dev in the state bucket and starts Terraform."</li>
+  <li>Press <span class="btn-ui">Provision</span> at the top right. The text at the bottom of the page reads "Provision registers csoc-dev in the state bucket and starts Terraform."</li>
 </ol>
 <p class="donewhen"><b>Done when:</b> the stepper moves to <b>Provision</b> and the banner reads <b>Init in progress</b>.</p>
 

@@ -143,7 +143,6 @@ users:
 
 <h3 id="where-the-data-lives">Where the data lives</h3>
 <p>A Gen3 commons keeps metadata in its database and data files in object storage. This tutorial's commons has a database, on an EBS volume with persistence on, but <b>no data bucket</b>: <b>Data Upload Bucket</b> on the <b>Globals</b> step is empty, and Crossplane, which could create one, is off. Uploading data files needs an S3 bucket and Fence access to it, which the tutorial does not create; see <a href="next-steps.html#known-gaps">Known gaps</a>.</p>
-<p>A commons also adds cost on top of the CSOC: the EC2 nodes Karpenter starts for its services, its own Application Load Balancer, and its EBS volume. See <a href="concepts/security.html#what-a-commons-adds">What a commons adds</a>.</p>
 
 <h3 id="deploy-a-second-commons">Deploy a second commons</h3>
 <p>On the success page, press <b>Deploy Another</b> and repeat the steps with the release name <code>commons-b</code> and the hostname <code class="ex">commons-b.csoc.example.org</code>.</p>
