@@ -36,13 +36,14 @@ const GlobalSettingsStep = ({ form }) => {
               {...g('values.global.frontendRoot')}
               onChange={(val) => {
                 form.setFieldValue('values.global.frontendRoot', val);
-                // Sync frontend service toggles
+                // Sync frontend service toggles. Mantine paths split on dots only
+                // (no bracket escaping), so the hyphenated key is written plain.
                 if (val === 'gen3ff') {
                   form.setFieldValue('values.portal.enabled', false);
-                  form.setFieldValue('values["frontend-framework"].enabled', true);
+                  form.setFieldValue('values.frontend-framework.enabled', true);
                 } else {
                   form.setFieldValue('values.portal.enabled', true);
-                  form.setFieldValue('values["frontend-framework"].enabled', false);
+                  form.setFieldValue('values.frontend-framework.enabled', false);
                 }
               }}
             />
