@@ -386,6 +386,22 @@ const diffValues = (current, baseline) => {
   return out;
 };
 
+/**
+ * portal and frontend-framework both serve /, and the chart's own defaults
+ * (legacy portal on, frontend-framework off) are the opposite of the wizard's
+ * default selection. A selection that happens to match the diff baseline would
+ * therefore be sent as a zero diff and silently deploy the wrong frontend, so
+ * the pair is always sent, derived from the Frontend Root control.
+ */
+const frameworkValues = (values, frontendRoot) => {
+  const gen3ff = frontendRoot === 'gen3ff';
+  return {
+    ...values,
+    'frontend-framework': { ...values['frontend-framework'], enabled: gen3ff },
+    portal: { ...values.portal, enabled: !gen3ff },
+  };
+};
+
 /** Deep merge `source` over `target` (source wins). Arrays are replaced, not merged. */
 const deepMerge = (target, source) => {
   if (!isPlainObject(source)) return source;
@@ -562,7 +578,7 @@ const StepperForm = () => {
       release: dest.releaseName,
       namespace: dest.namespace === '' ? dest.releaseName : dest.namespace,
       // Only user-touched keys; everything else falls through to the chart defaults.
-      values: diffValues(form.values.values, valuesBaseline),
+      values: frameworkValues(diffValues(form.values.values, valuesBaseline), form.values.values?.global?.frontendRoot),
     };
     try {
       const res = await callGoApi(`/agent/${dest.cluster}/helm/install`, 'POST', body, null, accessToken);
@@ -610,6 +626,10 @@ const StepperForm = () => {
             // Diff future edits against what is actually deployed, so an update neither
             // re-sends the whole release nor resurrects keys the operator removed.
             setValuesBaseline(merged);
+            // The Frontend Root control is UI-only, so rebuild it from what the
+            // release actually runs: the new frontend only if it is deployed.
+            form.setFieldValue('values.global.frontendRoot',
+              merged['frontend-framework']?.enabled === true ? 'gen3ff' : 'portal');
           }
         } catch (err) {
           console.error('Error loading existing deployment values:', err);
